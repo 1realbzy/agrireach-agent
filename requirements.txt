@@ -1,0 +1,10 @@
+# PLANNED dependencies for the AgriReach MVP.
+# These are not yet installed, exercised, or tested. No application code exists yet.
+# Versions will be pinned during the official build window after testing.
+fastapi
+uvicorn
+streamlit
+mcp
+pydantic
+httpx
+python-dotenv
