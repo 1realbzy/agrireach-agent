@@ -61,7 +61,7 @@ Planned flow:
 6. Every draft is queued for a named extension officer to approve. Uncertain, conflicting, or high-impact cases go to the urgent queue. Nothing reaches the farmer without approval.
 7. Case status and review outcomes are recorded for traceability.
 
-See [the detailed architecture](docs/architecture.md) and [MCP design](docs/mcp-design.md).
+See the one-page [ARCHITECTURE.md](ARCHITECTURE.md), [the detailed architecture](docs/architecture.md), and [MCP design](docs/mcp-design.md).
 
 ## Setup and installation instructions
 
@@ -117,7 +117,7 @@ No advice ever reaches a farmer without approval from a named extension officer.
 
 ## Development roadmap
 
-**Before the official build window (current stage):** problem framing, proposed architecture and diagram, MCP tool design, workflow and human review design, data-source policy, and the repository scaffold. No application code has been written.
+**Before the official build window (current stage):** problem framing, proposed architecture and diagram, MCP tool design, workflow and human review design, data-source policy, the one-page architecture note, the planned evals sheet, and the repository scaffold. No application code has been written.
 
 **During the official seven day build window (planned):**
 
@@ -128,7 +128,7 @@ No advice ever reaches a farmer without approval from a named extension officer.
 5. Test discovery, tool calls, error handling, source traceability, and escalation against the planned acceptance tests in [the workflow document](docs/workflow.md).
 6. Update this README with verified setup commands, usage instructions, and honest results.
 
-Design-level items planned for the window, with nothing built yet: a one-page `ARCHITECTURE.md`, an `EVALS.md` with eight or more test tasks and honest pass/fail results, one third-party MCP server alongside our own, an open-source orchestration framework (for example LangGraph or Pydantic AI), and at least one full task run on an open-weights model.
+Design scaffolds already in this repository (no application code yet): a one-page [ARCHITECTURE.md](ARCHITECTURE.md) and an [EVALS.md](EVALS.md) with nine planned test tasks (results not run). Still planned for the build window: one third-party MCP server alongside our own, an open-source orchestration framework (for example LangGraph or Pydantic AI), honest pass/fail results in `EVALS.md`, and at least one full task run on an open-weights model.
 
 **After the challenge:** see Future improvements.
 
@@ -154,13 +154,15 @@ Design-level items planned for the window, with nothing built yet: a one-page `A
 
 ## Evaluation plan
 
-The prototype should be evaluated on whether it retrieves relevant evidence, cites the source used, asks for missing context, abstains when evidence is insufficient, sends every draft to officer review, flags risky cases as urgent, and records a traceable case history. Performance claims will only be added after tests or user evaluation support them.
+The prototype should be evaluated on whether it retrieves relevant evidence, cites the source used, asks for missing context, abstains when evidence is insufficient, sends every draft to officer review, flags risky cases as urgent, and records a traceable case history. The planned task list is in [EVALS.md](EVALS.md). Performance claims will only be added after tests or user evaluation support them.
 
 ## Repository structure
 
 ```text
 .
 ├── README.md
+├── ARCHITECTURE.md
+├── EVALS.md
 ├── LICENSE
 ├── .env.example
 ├── .gitignore
