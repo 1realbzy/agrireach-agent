@@ -24,7 +24,7 @@ async def main():
         print(json.dumps({"task": name, "q": q, "status": o["status"], "priority": o["priority"],
                           "clarification": o["clarification"], "urgent_reasons": o["urgent_reasons"],
                           "sources": o["sources"], "source_checks": [(c["source_id"], c["reachable"]) for c in o["source_checks"] or []],
-                          "errors": o["errors"]}, ensure_ascii=False))
+                          "errors": o["errors"], "draft_mode": o["draft_mode"], "draft": o["draft"]}, ensure_ascii=False))
     # 7: tool failure
     os.environ["AGRIREACH_KNOWLEDGE"] = "/nonexistent.json"
     o = await agent.run("When should I harvest soybean in Tamale?", use_fetch=False)

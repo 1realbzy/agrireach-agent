@@ -1,6 +1,6 @@
 # AgriReach architecture
 
-**Status: proposed design, not yet implemented.**
+**Status: original pre-build design (written before implementation).** The as-built design is in [ARCHITECTURE.md](../ARCHITECTURE.md).
 
 ## Components
 

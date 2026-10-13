@@ -2,7 +2,7 @@
 
 **An MCP enabled agricultural extension agent for Ghana**
 
-> **Build status (13 Oct 2026):** a working MVP runs locally in **offline stub mode** (no language model). The MCP server, LangGraph agent, case database, officer gate, API, UI and tests have been run and verified. LLM drafting is implemented but **not yet run**, because no model key was available. Nothing is deployed. See the status table below and [EVALS.md](EVALS.md).
+> **Build status (13 Oct 2026):** a working MVP runs locally. The MCP server, LangGraph agent, case database, officer gate, API, UI and tests have been run and verified. LLM drafting has been run with the open-weights model `mistralai/mistral-small-3.2-24b-instruct` via OpenRouter (see EVALS.md, which includes one real LLM failure). Tests run in offline stub mode. Nothing is deployed. See the status table below and [EVALS.md](EVALS.md).
 
 ## Problem statement
 
@@ -12,7 +12,7 @@ Smallholder farmers in Ghana can struggle to access timely, reliable agricultura
 
 AgriReach is designed to help agricultural extension officers handle routine farmer enquiries more efficiently. A farmer submits a question. The agent identifies missing context, retrieves relevant guidance from curated agricultural references through tools, synthesises a draft advisory with its evidence, and places it in a review queue. A named extension officer must approve every advisory before it reaches a farmer. Uncertain or high-risk cases are flagged as urgent, but no case skips review. The agent should state uncertainty rather than guess.
 
-The initial scope is a narrow soybean advisory workflow in Ghana. A local MVP runs in offline stub mode (see status below); nothing is deployed.
+The initial scope is a narrow soybean advisory workflow in Ghana. A local MVP runs with an open-weights model or in offline stub mode (see status below); nothing is deployed.
 
 ## Project objectives
 
@@ -83,7 +83,7 @@ To use a model, copy `.env.example` to `.env` and set `LLM_BASE_URL`, `LLM_MODEL
 
 ## Technology stack
 
-Verified in this build: Python 3.13, official MCP Python SDK (`mcp` 1.30, FastMCP, stdio), LangGraph 1.2, `mcp-server-fetch` (third-party reference MCP server), SQLite, FastAPI, Streamlit, pytest. The OpenAI-compatible client (`openai` package) for open-weights models is wired up but has not been run against a model yet.
+Verified in this build: Python 3.13, official MCP Python SDK (`mcp` 1.30, FastMCP, stdio), LangGraph 1.2, `mcp-server-fetch` (third-party reference MCP server), SQLite, FastAPI, Streamlit, pytest. The OpenAI-compatible client (`openai` package) has been run against `mistralai/mistral-small-3.2-24b-instruct` (open weights) via OpenRouter.
 
 ## Agent architecture
 
@@ -110,7 +110,7 @@ A LangGraph state graph (`src/agrireach/agent.py`): `intake` (crop/region detect
 | Part | Status |
 |---|---|
 | LangGraph agent, stub drafting | **Working** |
-| LLM drafting via open-weights model | Implemented, **not run** (no key) |
+| LLM drafting via open-weights model | **Working** with Mistral Small 3.2 24B (open weights) via OpenRouter; known failure: can blur conflicting sources (EVALS task 11) |
 | SQLite cases + officer gate + release block | **Working** (tests) |
 | FastAPI + Streamlit | **Working** locally (API calls verified; UI page served, HTTP 200) |
 | One-command run `./run.sh` from clean clone | **Working** (verified) |
@@ -122,7 +122,7 @@ No advice ever reaches a farmer without approval from a named extension officer.
 
 ## Development roadmap
 
-Done (13 Oct): verified corpus, MCP server, LangGraph agent, case DB and gate, API/UI, tests, evals in stub mode.
+Done (13 Oct): verified corpus, MCP server, LangGraph agent, case DB and gate, API/UI, tests, evals in stub mode and with an open-weights model.
 Next: run evals with an open-weights model (task 9), expand the place list into a fuller district gazetteer, record the demo video, then consider a weather tool and Twi support.
 
 ## Limitations
@@ -147,7 +147,7 @@ Next: run evals with an open-weights model (task 9), expand the place list into 
 
 ## Evaluation plan
 
-The prototype should be evaluated on whether it retrieves relevant evidence, cites the source used, asks for missing context, abstains when evidence is insufficient, sends every draft to officer review, flags risky cases as urgent, and records a traceable case history. Results from real runs (offline stub mode) are in [EVALS.md](EVALS.md). Performance claims will only be added after tests or user evaluation support them.
+The prototype should be evaluated on whether it retrieves relevant evidence, cites the source used, asks for missing context, abstains when evidence is insufficient, sends every draft to officer review, flags risky cases as urgent, and records a traceable case history. Results from real runs (stub and open-weights LLM) are in [EVALS.md](EVALS.md). Performance claims will only be added after tests or user evaluation support them.
 
 ## Repository structure
 
