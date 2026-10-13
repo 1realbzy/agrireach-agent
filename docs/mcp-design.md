@@ -8,7 +8,7 @@
 - **Agricultural Knowledge MCP server:** A local server that wraps the curated agricultural reference collection and selected case operations.
 - **MCP resources:** Read only agricultural guidance documents, crop calendar references, and source metadata. Each item should carry title, publisher, publication date when available, region, crop, and licence details.
 
-## Planned tools
+## Tools
 
 | Tool | Input concept | Output concept | Safety rule |
 |---|---|---|---|
