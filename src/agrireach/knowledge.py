@@ -11,7 +11,7 @@ DEFAULT = Path(__file__).resolve().parents[2] / "data" / "knowledge.json"
 
 # Small curated synonym map so farmer wording reaches corpus topics.
 SYNONYMS = {
-    "plant": "planting", "sow": "planting", "sowing": "planting", "when": "planting",
+    "plant": "planting", "sow": "planting", "sowing": "planting",
     "spacing": "spacing", "space": "spacing", "distance": "spacing", "apart": "spacing",
     "seed": "seed", "seeds": "seed", "kg": "seed", "rate": "seed",
     "weed": "weeding", "weeds": "weeding", "weeding": "weeding",

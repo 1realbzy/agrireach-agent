@@ -1,10 +1,12 @@
-# PLANNED dependencies for the AgriReach MVP.
-# These are not yet installed, exercised, or tested. No application code exists yet.
-# Versions will be pinned during the official build window after testing.
-fastapi
-uvicorn
-streamlit
-mcp
-pydantic
-httpx
+# Tested on Python 3.13 on 2026-10-13.
+mcp==1.30.0
+mcp-server-fetch==2026.10.10
+langgraph==1.2.15
+fastapi==0.143.0
+uvicorn==0.54.0
+streamlit==1.65.0
+httpx==0.28.1
+pydantic==2.14.1
 python-dotenv
+openai==3.29.0
+pytest==9.1.1
