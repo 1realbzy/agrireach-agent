@@ -50,3 +50,16 @@ def test_tool_calls_logged():
     out = run("When should I harvest soybean in Tamale?")
     tools = [r["tool"] for r in db.case_log(db.connect(), out["case_id"])]
     assert tools.count("create_or_update_case") == 2
+
+
+def test_wa_recognised_without_clarification():
+    out = run("When should I plant soybean at Wa?")
+    assert out["status"] == "pending_review"
+    assert out["region"] == "wa"
+    assert not out.get("clarification")
+
+
+def test_water_does_not_match_wa():
+    out = run("When should I plant soybean near water?")
+    assert out["status"] == "draft"
+    assert "region" in (out.get("clarification") or "")

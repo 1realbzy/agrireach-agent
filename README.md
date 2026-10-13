@@ -12,11 +12,11 @@ Smallholder farmers in Ghana can struggle to access timely, reliable agricultura
 
 AgriReach is designed to help agricultural extension officers handle routine farmer enquiries more efficiently. A farmer submits a question. The agent identifies missing context, retrieves relevant guidance from curated agricultural references through tools, synthesises a draft advisory with its evidence, and places it in a review queue. A named extension officer must approve every advisory before it reaches a farmer. Uncertain or high-risk cases are flagged as urgent, but no case skips review. The agent should state uncertainty rather than guess.
 
-The initial scope is a narrow soybean advisory workflow in Ghana. This is a proposed MVP, not a claim that the workflow is already implemented.
+The initial scope is a narrow soybean advisory workflow in Ghana. A local MVP runs in offline stub mode (see status below); nothing is deployed.
 
 ## Project objectives
 
-These are the objectives for the proposed MVP. None of them has been achieved or measured yet.
+These are the objectives for the MVP. Stub-mode evals for several of them are recorded in [EVALS.md](EVALS.md); LLM drafting and field validation are still outstanding.
 
 - Help extension officers handle routine farmer enquiries more efficiently, while keeping a named officer responsible for approving every advisory.
 - Ground every response in curated, Ghana-relevant agricultural references and show the sources used.
@@ -37,7 +37,7 @@ The project focuses on Ghana's smallholder farming context, where agricultural a
 
 ## Proposed workflow
 
-This is a proposed workflow, not a working application. The full version is in [the workflow document](docs/workflow.md).
+This is the workflow the local MVP implements (stub drafting; officer gate enforced). The full version is in [the workflow document](docs/workflow.md).
 
 1. A farmer submits a question and selects the crop and locality if known.
 2. The agent checks whether it has enough context and, if needed, asks a short clarifying question.
@@ -123,11 +123,11 @@ No advice ever reaches a farmer without approval from a named extension officer.
 ## Development roadmap
 
 Done (13 Oct): verified corpus, MCP server, LangGraph agent, case DB and gate, API/UI, tests, evals in stub mode.
-Next: run evals with an open-weights model (task 9), fix the Wa place-name failure, add a district gazetteer, record the demo video, then consider a weather tool and Twi support.
+Next: run evals with an open-weights model (task 9), expand the place list into a fuller district gazetteer, record the demo video, then consider a weather tool and Twi support.
 
 ## Limitations
 
-- No working agent or deployed application exists in this initial scaffold.
+- No public deployment yet; the MVP runs locally only.
 - Coverage will be limited to the selected crop, knowledge documents, and region.
 - The quality of recommendations depends on the authority and freshness of source material.
 - Text based advice may not be enough to diagnose a plant health issue.

@@ -27,9 +27,27 @@ RISK_TERMS = {
 }
 REGION_DEPENDENT = {"planting", "spacing", "seed"}
 NORTHERN = ["northern", "north", "tamale", "savannah", "upper east", "upper west", "north east", "bolgatanga",
-            "wa ", "yendi", "nyankpala", "damongo", "walewale"]
+            "wa", "yendi", "nyankpala", "damongo", "walewale"]
 OTHER_REGIONS = ["ashanti", "kumasi", "volta", "accra", "greater accra", "eastern", "western", "central", "bono",
-                 "ahafo", "oti", "cape coast", "takoradi", "ho "]
+                 "ahafo", "oti", "cape coast", "takoradi", "ho"]
+
+
+def _place_in_question(place: str, q: str) -> bool:
+    """Match a place name as a whole token (or contiguous phrase), not a substring of another word."""
+    place = place.strip().lower()
+    if not place:
+        return False
+    if " " in place:
+        return place in q
+    return re.search(rf"(?<![a-z0-9]){re.escape(place)}(?![a-z0-9])", q) is not None
+
+
+def _detect_region(q: str) -> str:
+    # Longer names first so "upper west" wins over "west" if both ever listed.
+    for r in sorted(NORTHERN + OTHER_REGIONS, key=lambda s: (-len(s), s)):
+        if _place_in_question(r, q):
+            return r.strip()
+    return ""
 
 
 class S(TypedDict, total=False):
@@ -77,10 +95,7 @@ def build_graph(tools: Tools):
         crop = s.get("crop") or ("soybean" if re.search(r"soy(a)?bean", q) else "")
         region = s.get("region") or ""
         if not region:
-            for r in NORTHERN + OTHER_REGIONS:
-                if r in q + " ":
-                    region = r.strip()
-                    break
+            region = _detect_region(q)
         reasons = [f"{k.replace('_', ' ')} terms in question" for k, terms in RISK_TERMS.items()
                    if any(t in q for t in terms)]
         topics = {w for w in re.findall(r"[a-z]+", q)}

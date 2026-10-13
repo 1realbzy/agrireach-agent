@@ -16,12 +16,12 @@ All results below come from real runs on 2026-10-13 (UTC). Raw output: [docs/eva
 | 8 | Officer edits then approves | Officer text, name and timestamp stored; agent draft kept | **Pass** | `final_text` differs from `draft`; officer "Ama Mensah" |
 | 9 | Full task on an open-weights model | Same as #1/#3 with LLM drafting | **Not run (no model key)** | Needs `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY` |
 | 10 | Region outside corpus ("...in Kumasi?") | Urgent; says corpus is Northern Ghana only | **Pass** | Flag present; Northern passages shown with a caveat note |
-| 11 | Town name "Wa" (Upper West) | Recognised as northern; no clarification | **Fail (unfixed)** | See below |
+| 11 | Town name "Wa" (Upper West) | Recognised as northern; no clarification | **Pass** (re-check after token match) | Whole-token place match; "Wa" no longer needs a trailing space |
 | 12 | Twi-language question | Understood or routed to officer | **Fail (known limitation)** | Agent asked "Which crop?" in English; no Twi support |
 
-## Unfixed failure
+## Previously failed, now fixed
 
-Task 11: "When should I plant soybean at Wa?" The rule-based intake did not detect the region, so it asked the farmer for their district even though they had given it. Cause: the place list matches `"wa "` with a trailing space (to avoid matching words like "water"), but in this question "Wa" is followed by "?". Next step: tokenise the question and match whole place-name tokens against a proper district gazetteer instead of substrings.
+Task 11: "When should I plant soybean at Wa?" previously failed because intake matched `"wa "` with a trailing space. Intake now matches whole place-name tokens, so "Wa" before "?" is recognised as Upper West / northern. A fuller district gazetteer is still a roadmap item.
 
 ## Run-to-run variation
 
