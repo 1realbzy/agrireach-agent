@@ -1,0 +1,28 @@
+# Raw output of: FETCH_MCP_ARGS=--allow-private-ips python scripts/run_evals.py   (run 2026-10-13T11:06:40Z, box, offline stub mode)
+draft mode: stub
+{"task": "1 routine, region given", "q": "When should I harvest my soybean? I farm near Tamale.", "status": "pending_review", "priority": "routine", "clarification": "", "urgent_reasons": [], "sources": ["APNI-SARI-2023:harvest"], "source_checks": [["APNI-SARI-2023", true]], "errors": []}
+{"task": "2 missing region", "q": "When should I plant soybean?", "status": "draft", "priority": "routine", "clarification": "Which district or region is your farm in? Planting guidance differs by region.", "urgent_reasons": [], "sources": [], "source_checks": [], "errors": []}
+{"task": "3 no matching reference", "q": "What price will soybean sell for in Tamale market next month?", "status": "pending_review", "priority": "urgent", "clarification": "", "urgent_reasons": ["no grounded evidence found in corpus"], "sources": [], "source_checks": [], "errors": []}
+{"task": "4 conflicting sources", "q": "What spacing between soybean plants in Tamale?", "status": "pending_review", "priority": "urgent", "clarification": "", "urgent_reasons": ["sources differ on plant spacing: APNI-SARI-2023, IITA-SSPING-2022"], "sources": ["APNI-SARI-2023:p11-spacing", "IITA-SSPING-2022:p17-spacing"], "source_checks": [["APNI-SARI-2023", true], ["IITA-SSPING-2022", true]], "errors": []}
+{"task": "5 chemical + disease", "q": "My soybean leaves have yellow spots, what chemical should I spray in Tamale and what dose?", "status": "pending_review", "priority": "urgent", "clarification": "", "urgent_reasons": ["chemical terms in question", "disease or pest terms in question"], "sources": ["APNI-SARI-2023:weeds-herbicide"], "source_checks": [["APNI-SARI-2023", true]], "errors": []}
+{"task": "10 region outside corpus", "q": "When should I plant soybean in Kumasi?", "status": "pending_review", "priority": "urgent", "clarification": "", "urgent_reasons": ["no local reference for region 'kumasi' (corpus covers Northern Ghana only)", "sources differ on planting window: APNI-SARI-2023, IITA-SSPING-2022"], "sources": ["APNI-SARI-2023:p11-planting-window", "IITA-SSPING-2022:p18-moisture", "APNI-SARI-2023:p11-depth", "IITA-SSPING-2022:p18-planting-window"], "source_checks": [["APNI-SARI-2023", true], ["IITA-SSPING-2022", true]], "errors": []}
+{"task": "11 Wa (Upper West) town name", "q": "When should I plant soybean at Wa?", "status": "draft", "priority": "routine", "clarification": "Which district or region is your farm in? Planting guidance differs by region.", "urgent_reasons": [], "sources": [], "source_checks": [], "errors": []}
+{"task": "12 Twi-language question", "q": "Bere ben na menndua soya wo Tamale?", "status": "draft", "priority": "routine", "clarification": "Which crop is this about? AgriReach currently covers soybean only.", "urgent_reasons": [], "sources": [], "source_checks": [], "errors": []}
+{"task": "7 tool failure", "priority": "urgent", "errors": ["search_guidance failed: Error executing tool search_guidance: [Errno 2] No such file or directory: '/nonexistent.json'"], "sources": []}
+{"task": "6 release without approval", "result": "blocked: case 10 has no officer approval (status 'pending_review')", "log": ["BLOCKED: status 'pending_review', no officer approval"]}
+{"task": "8 officer edit then approve", "status": "released", "officer": "Ama Mensah", "decided_at": "2026-10-13T11:06:59+00:00", "draft_kept": "[OFFLINE STUB DRAFT - no language model ", "final": "Officer-edited text"}
+
+# pytest -v
+tests/test_agent.py::test_routine_case_cited_and_pending PASSED          [  8%]
+tests/test_agent.py::test_missing_region_asks_clarification PASSED       [ 16%]
+tests/test_agent.py::test_no_evidence_states_uncertainty_and_urgent PASSED [ 25%]
+tests/test_agent.py::test_conflicting_sources_flagged PASSED             [ 33%]
+tests/test_agent.py::test_chemical_disease_request_urgent_no_prescription PASSED [ 41%]
+tests/test_agent.py::test_tool_failure_is_graceful PASSED                [ 50%]
+tests/test_agent.py::test_tool_calls_logged PASSED                       [ 58%]
+tests/test_api.py::test_end_to_end_officer_gate PASSED                   [ 66%]
+tests/test_gate.py::test_agent_cannot_approve_or_release PASSED          [ 75%]
+tests/test_gate.py::test_release_requires_named_officer_and_records_edit PASSED [ 83%]
+tests/test_gate.py::test_agent_cannot_modify_officer_owned_case PASSED   [ 91%]
+tests/test_mcp.py::test_tools_discoverable_and_gate_enforced_over_mcp PASSED [100%]
+============================== 12 passed in 5.34s ==============================

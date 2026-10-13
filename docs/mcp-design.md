@@ -1,6 +1,6 @@
 # MCP design
 
-**Status: proposed design, not yet implemented.** The names below describe intended interfaces, not live tools.
+**Status:** implemented in `src/agrireach/mcp_server.py` (13 Oct 2026). The weather tool is not built.
 
 ## Components
 
@@ -39,11 +39,9 @@
 
 ## Implementation checklist
 
-- [ ] Select and document the LLM provider.
-- [ ] Implement the MCP server and tool schemas.
-- [ ] Add a curated starter corpus with clear source licences.
-- [ ] Implement the MCP client and orchestration workflow.
-- [ ] Test discovery, tool calls, error handling, and source traceability.
-- [ ] Demonstrate officer approval for every advisory, with urgent and routine queues.
-
-Until checked off and tested, the components above remain planned.
+- [x] MCP server and tool schemas (tested over stdio)
+- [x] Curated starter corpus with source licences (`data/knowledge.json`, checked by `scripts/verify_corpus.py`)
+- [x] MCP client and LangGraph orchestration
+- [x] Tests for discovery, unknown ids, gate violations, tool failure, conflicting evidence
+- [x] Officer approval for every advisory, urgent and routine queues
+- [ ] LLM provider selected and run (code supports any OpenAI-compatible open-weights endpoint; no key yet)

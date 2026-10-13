@@ -1,14 +1,14 @@
 # ARCHITECTURE.md
 
-**Status:** one-page design note for the AgriReach submission. No application code exists yet. Selections that depend on the build (model, third-party MCP server, orchestration library) are marked planned.
+**Status (13 Oct 2026):** built and tested in offline stub mode; LLM drafting not yet run (no key). See README status table.
 
 ## Agent shape
 
-AgriReach is a draft-and-escalate agent for soybean extension support in Ghana. A farmer question enters through a Streamlit UI and FastAPI case API. A Python orchestration layer (planned: LangGraph or Pydantic AI) interprets the request, asks for missing crop or location context when needed, calls MCP tools for evidence, drafts a sourced advisory, sets review priority (urgent or routine), and stops. A named extension officer must approve, edit, reject, or request more information before anything reaches a farmer. No advisory, input order, or credit action is sent autonomously.
+AgriReach is a draft-and-escalate agent for soybean extension support in Ghana. A farmer question enters through a Streamlit UI and FastAPI case API. A Python orchestration layer (LangGraph) interprets the request, asks for missing crop or location context when needed, calls MCP tools for evidence, drafts a sourced advisory, sets review priority (urgent or routine), and stops. A named extension officer must approve, edit, reject, or request more information before anything reaches a farmer. No advisory, input order, or credit action is sent autonomously.
 
 ## MCP servers: built versus borrowed
 
-**Built (Agricultural Knowledge MCP server, planned):** local server over a curated, licence-clear starter corpus and case operations.
+**Built (Agricultural Knowledge MCP server, working):** local server over a curated, licence-clear starter corpus and case operations.
 
 | Tool | Role |
 |---|---|
@@ -19,11 +19,11 @@ AgriReach is a draft-and-escalate agent for soybean extension support in Ghana. 
 
 At least one of these is an action tool (case create/update or draft advisory filing), not read-only lookup.
 
-**Borrowed (planned during build):** one third-party MCP server (for example weather or filesystem) chosen because a maintained community or vendor server beats reimplementing that integration under a seven-day window. The exact server and a one-line justification will be recorded here once selected and wired.
+**Borrowed:** `mcp-server-fetch`, the reference fetch MCP server from the modelcontextprotocol project. The agent uses it to check that every cited source page is reachable and is about soybean before a case is queued. We used it because it is a maintained, sandboxed HTTP fetch server, which is better than writing our own HTTP tool in a five-day build.
 
 ## Human gate and logging
 
-Every irreversible step (release to farmer) requires a named officer approval with timestamp. Planned logs: tool name, inputs/outputs (redacted), source ids, case id, priority, officer identity, and decision. The LLM never executes arbitrary commands; tools are allowlisted and schema-validated.
+Every irreversible step (release to farmer) requires a named officer approval with timestamp. Logged (SQLite `tool_log`): tool name, inputs/outputs (redacted), source ids, case id, priority, officer identity, and decision. The LLM never executes arbitrary commands; tools are allowlisted and schema-validated.
 
 ## Why this shape
 

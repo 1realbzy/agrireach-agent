@@ -2,7 +2,7 @@
 
 **An MCP enabled agricultural extension agent for Ghana**
 
-> **Build status:** This repository currently contains the project proposal, documentation, and planned architecture. It is not yet a working or deployed agent. The repository structure and design documents may be prepared before the official build window; the implementation intended for evaluation will be developed during the official seven day window.
+> **Build status (13 Oct 2026):** a working MVP runs locally in **offline stub mode** (no language model). The MCP server, LangGraph agent, case database, officer gate, API, UI and tests have been run and verified. LLM drafting is implemented but **not yet run**, because no model key was available. Nothing is deployed. See the status table below and [EVALS.md](EVALS.md).
 
 ## Problem statement
 
@@ -51,7 +51,7 @@ This is a proposed workflow, not a working application. The full version is in [
 
 ![AgriReach proposed architecture](docs/architecture.png)
 
-Planned flow:
+Flow as built (MVP; step 2 uses rules, and the LLM only writes the draft):
 
 1. A farmer submits a question through a lightweight web interface.
 2. A Python agent uses an LLM to interpret the request and identify missing information.
@@ -65,51 +65,56 @@ See the one-page [ARCHITECTURE.md](ARCHITECTURE.md), [the detailed architecture]
 
 ## Setup and installation instructions
 
-This repository is currently a proposal and documentation scaffold. A runnable application has not yet been implemented, so there are no working application installation or launch commands at this stage.
+Requires Python 3.11+ (tested on 3.13). From a clean clone:
 
-During the official seven day build window, the planned implementation will use Python. The repository already includes an environment file example (`.env.example`, placeholder names only) and a list of planned dependencies (`requirements.txt`, not yet installed or tested). The build will add application entry points, tests, and verified setup commands. Never put API keys or credentials in the repository.
+```bash
+./run.sh          # creates .venv, installs pinned deps, starts API on :8000 and UI on :8501
+./run.sh test     # runs the pytest suite
+# or: make run / make test  (thin wrappers around run.sh)
+```
+
+To use a model, copy `.env.example` to `.env` and set `LLM_BASE_URL`, `LLM_MODEL` and `LLM_API_KEY` for any OpenAI-compatible endpoint serving an open-weights model. If these are left empty, the app runs in a clearly labelled OFFLINE STUB mode. Never commit `.env`.
 
 ## Usage instructions
 
-There is no functioning application to use yet. The intended usage flow is described in [the workflow document](docs/workflow.md). Instructions will be updated after the implementation is built and tested during the official build window.
+- UI: open http://127.0.0.1:8501. On the **Farmer** tab, ask a question; you get a case number. On the **Extension officer** tab, enter your name, review urgent cases first (with their reasons, sources and tool-call log), then edit, approve, reject or request info. The farmer can only see an answer after it is approved.
+- CLI: `PYTHONPATH=src .venv/bin/python -m agrireach.agent "When should I harvest soybean in Tamale?"`
+- API: `POST /ask`, `GET /officer/queue`, `POST /officer/cases/{id}/decision`, `GET /farmer/cases/{id}`. `POST /cases/{id}/release` returns 409 unless an officer has approved the case.
 
 ## Technology stack
 
-Planned stack, subject to verification during implementation:
-
-- Python for application and agent logic.
-- FastAPI for the backend API.
-- Streamlit for the initial user interface.
-- Python MCP SDK for MCP client and server components.
-- An LLM API for request interpretation and response synthesis. The provider and model are not yet selected.
-- SQLite for local case records in the MVP.
-- Curated Ghana relevant agricultural extension documents as the initial knowledge source.
-- An external weather API only if its coverage, access terms, and reliability are verified.
-
-These are proposed technologies. This README does not claim that they have been integrated or tested.
+Verified in this build: Python 3.13, official MCP Python SDK (`mcp` 1.30, FastMCP, stdio), LangGraph 1.2, `mcp-server-fetch` (third-party reference MCP server), SQLite, FastAPI, Streamlit, pytest. The OpenAI-compatible client (`openai` package) for open-weights models is wired up but has not been run against a model yet.
 
 ## Agent architecture
 
-The planned agent workflow consists of request intake, context collection, evidence retrieval, recommendation synthesis, confidence and risk checks, and hand-over of every draft to the officer review queue. The agent never sends advice to a farmer itself. Tool selection will be constrained to a small set of approved operations. The first version should use explicit workflow states rather than unrestricted autonomous action.
+A LangGraph state graph (`src/agrireach/agent.py`): `intake` (crop/region detection, risk terms, opens a `draft` case) → either `clarify` (end) or `retrieve` (MCP: `search_guidance`, `retrieve_reference` for each hit, `get_crop_calendar`; conflict and risk flags) → `check_sources` (third-party fetch MCP server checks the cited source pages are reachable) → `write` (LLM or stub draft) → `file_case` (MCP: `create_or_update_case` to `pending_review`, urgent or routine) → end. The graph has no node that can approve or release. Intake and routing are rule-based; the LLM is only used to word the draft.
 
 ## MCP implementation
 
-MCP is planned as the standard interface between the agent and agricultural tools. The intended architecture includes a Python MCP client and a local Agricultural Knowledge MCP server. The server is expected to expose tools such as `search_guidance`, `get_crop_calendar`, `retrieve_reference`, and `create_or_update_case`. These are proposed tool names and are **not implemented yet**.
-
-The server may expose resources containing curated extension documents, crop calendar material, and source metadata. An external weather service may be wrapped as a tool after an appropriate provider is selected. See [MCP design](docs/mcp-design.md).
+`src/agrireach/mcp_server.py` is our own MCP server, built with the official Python SDK (FastMCP over stdio). The agent connects to it and to `mcp-server-fetch` as MCP clients. Every tool call is logged to the `tool_log` table, with actor, arguments, result summary and ok/blocked.
 
 ## MCP tools and servers
 
 | Component | Purpose | Status |
 |---|---|---|
-| Agricultural Knowledge MCP server | Expose approved agricultural reference material | Planned |
-| `search_guidance` | Search the curated knowledge set | Planned |
-| `get_crop_calendar` | Retrieve crop and season reference information | Planned |
-| `retrieve_reference` | Return supporting passages and source metadata | Planned |
-| `create_or_update_case` | Record a case and its review status | Planned |
-| Weather API tool | Retrieve local forecast data if verified | Optional, not selected |
+| AgriReach Knowledge MCP server (ours) | Curated corpus + case actions | **Working** (tested over MCP stdio) |
+| `search_guidance` | Search curated verbatim passages | **Working** |
+| `get_crop_calendar` | Cited calendar activities; empty when no local reference | **Working** |
+| `retrieve_reference` | One passage + source metadata; errors on unknown id | **Working** |
+| `create_or_update_case` (acting tool) | File case as `draft`/`pending_review` only; `approved` is rejected | **Working** |
+| `mcp-server-fetch` (third-party, not ours) | Check that cited source pages are reachable | **Working** (needs `--allow-private-ips` on networks with fake-IP DNS; runs with `raw=true` because its HTML extractor failed on Node 20) |
+| Weather tool | Forecasts | Not built |
 
-No live MCP server or external API integration is currently claimed.
+**Status of other parts**
+
+| Part | Status |
+|---|---|
+| LangGraph agent, stub drafting | **Working** |
+| LLM drafting via open-weights model | Implemented, **not run** (no key) |
+| SQLite cases + officer gate + release block | **Working** (tests) |
+| FastAPI + Streamlit | **Working** locally (API calls verified; UI page served, HTTP 200) |
+| One-command run `./run.sh` from clean clone | **Working** (verified) |
+| Deployment / public demo | Not done |
 
 ## Human in the loop workflow
 
@@ -117,20 +122,8 @@ No advice ever reaches a farmer without approval from a named extension officer.
 
 ## Development roadmap
 
-**Before the official build window (current stage):** problem framing, proposed architecture and diagram, MCP tool design, workflow and human review design, data-source policy, the one-page architecture note, the planned evals sheet, and the repository scaffold. No application code has been written.
-
-**During the official seven day build window (planned):**
-
-1. Select and document the LLM provider and a small, verified starter corpus of soybean references with clear licences.
-2. Implement the Agricultural Knowledge MCP server and its tool schemas.
-3. Implement the MCP client and the agent orchestration workflow, including escalation rules.
-4. Add the SQLite case records, the FastAPI backend, and the Streamlit interface, including officer review.
-5. Test discovery, tool calls, error handling, source traceability, and escalation against the planned acceptance tests in [the workflow document](docs/workflow.md).
-6. Update this README with verified setup commands, usage instructions, and honest results.
-
-Design scaffolds already in this repository (no application code yet): a one-page [ARCHITECTURE.md](ARCHITECTURE.md) and an [EVALS.md](EVALS.md) with nine planned test tasks (results not run). Still planned for the build window: one third-party MCP server alongside our own, an open-source orchestration framework (for example LangGraph or Pydantic AI), honest pass/fail results in `EVALS.md`, and at least one full task run on an open-weights model.
-
-**After the challenge:** see Future improvements.
+Done (13 Oct): verified corpus, MCP server, LangGraph agent, case DB and gate, API/UI, tests, evals in stub mode.
+Next: run evals with an open-weights model (task 9), fix the Wa place-name failure, add a district gazetteer, record the demo video, then consider a weather tool and Twi support.
 
 ## Limitations
 
@@ -154,33 +147,22 @@ Design scaffolds already in this repository (no application code yet): a one-pag
 
 ## Evaluation plan
 
-The prototype should be evaluated on whether it retrieves relevant evidence, cites the source used, asks for missing context, abstains when evidence is insufficient, sends every draft to officer review, flags risky cases as urgent, and records a traceable case history. The planned task list is in [EVALS.md](EVALS.md). Performance claims will only be added after tests or user evaluation support them.
+The prototype should be evaluated on whether it retrieves relevant evidence, cites the source used, asks for missing context, abstains when evidence is insufficient, sends every draft to officer review, flags risky cases as urgent, and records a traceable case history. Results from real runs (offline stub mode) are in [EVALS.md](EVALS.md). Performance claims will only be added after tests or user evaluation support them.
 
 ## Repository structure
 
 ```text
-.
-├── README.md
-├── ARCHITECTURE.md
-├── EVALS.md
-├── LICENSE
-├── .env.example
-├── .gitignore
-├── requirements.txt
-├── docs/
-│   ├── architecture.md
-│   ├── architecture.png
-│   ├── mcp-design.md
-│   ├── workflow.md
-│   └── data-sources.md
-├── src/README.md
-├── tests/README.md
-└── data/README.md
+src/agrireach/  mcp_server.py  agent.py  db.py  knowledge.py  llm.py  api.py  ui.py
+data/knowledge.json   verbatim cited passages (APNI/CSIR-SARI 2023, IITA SSPiNG 2022)
+tests/                pytest suite (offline stub mode)
+scripts/              run_evals.py, verify_corpus.py
+docs/                 architecture, MCP design, workflow, data sources, eval-run.txt
+run.sh  Makefile  requirements.txt  .env.example  EVALS.md  ARCHITECTURE.md
 ```
 
 ## Build window integrity
 
-The proposal and repository scaffold are documented before implementation. The evaluated application code is intended to be developed during the official seven day build window. The build window dates must be confirmed by the challenge organisers. This repository should not be represented as a working agent until the implementation has been completed and tested.
+The design documents were prepared earlier. The application code was written from 13 October 2026, after the organiser confirmed the submission deadline (15 Oct 2026, 23:59 EAT). Commit timestamps are real.
 
 ## Licence
 
