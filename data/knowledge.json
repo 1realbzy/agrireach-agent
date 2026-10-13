@@ -1,58 +1,198 @@
 {
-  "_note": "Curated starter corpus. Every 'text' field is a VERBATIM excerpt from the cited public document (checked against the downloaded PDF on 2026-10-13). No agronomic statements were written by the AgriReach authors. 'claim_key' and 'topic' are AgriReach curation labels used for retrieval and conflict detection.",
-  "sources": {
-    "APNI-SARI-2023": {
-      "title": "Soybean Cropping Guide: 4R Nutrient Management and Best Agronomic Practices, Northern Ghana",
-      "publisher": "African Plant Nutrition Institute (APNI) and CSIR-Savanna Agricultural Research Institute (SARI)",
-      "year": 2023,
-      "region": "Northern Ghana",
-      "licence": "CC BY 4.0 (stated in document: '\u00a9 2023 BY 4.0')",
-      "url": "https://www.apni.net/wp-content/uploads/2023/06/4R-Soybean-Guide-N-Ghana.pdf"
-    },
-    "IITA-SSPING-2022": {
-      "title": "Training Manual on GAPs for Sustainable Intensification of Soyabean Production for Agricultural Extension Agents",
-      "publisher": "IITA Ghana, SSPiNG Project (with YARA Ghana, MoFA, FKRA); authors M. Kermah, S. Adjei-Nsiah, A. Ofosu",
-      "year": 2022,
-      "region": "Northern Ghana",
-      "licence": "Not stated in the document; short excerpts quoted with attribution for reference only",
-      "url": "https://cgspace.cgiar.org/bitstreams/cfc71dfe-5804-4f06-9617-7165a8e44cf9/download"
-    }
+ "_note": "Curated starter corpus. Every 'text' field is a VERBATIM excerpt from the cited public document (checked against the downloaded PDF on 2026-10-13). No agronomic statements were written by the AgriReach authors. 'claim_key' and 'topic' are AgriReach curation labels used for retrieval and conflict detection.",
+ "sources": {
+  "APNI-SARI-2023": {
+   "title": "Soybean Cropping Guide: 4R Nutrient Management and Best Agronomic Practices, Northern Ghana",
+   "publisher": "African Plant Nutrition Institute (APNI) and CSIR-Savanna Agricultural Research Institute (SARI)",
+   "year": 2023,
+   "region": "Northern Ghana",
+   "licence": "CC BY 4.0 (stated in document: '© 2023 BY 4.0')",
+   "url": "https://www.apni.net/wp-content/uploads/2023/06/4R-Soybean-Guide-N-Ghana.pdf",
+   "landing_url": "https://www.apni.net/2022/07/07/new-release-soybean-cropping-guide-for-northern-Ghana/"
   },
-  "passages": [
-    {"id": "APNI-SARI-2023:p11-planting-window", "source_id": "APNI-SARI-2023", "page": "11", "crop": "soybean", "region": "northern", "topic": "planting", "claim_key": "planting_window",
-     "text": "Soybean planting in the northern region should be done between mid-June and late July based on the onset of the rains and the variety."},
-    {"id": "APNI-SARI-2023:p11-spacing", "source_id": "APNI-SARI-2023", "page": "11", "crop": "soybean", "region": "northern", "topic": "spacing", "claim_key": "plant_spacing",
-     "text": "The recommended plant spacing for soybean in northern Ghana is a row to row spacing of 50 cm and 15 cm spacing between plants in a row."},
-    {"id": "APNI-SARI-2023:p11-depth", "source_id": "APNI-SARI-2023", "page": "11", "crop": "soybean", "region": "northern", "topic": "planting", "claim_key": "planting_depth",
-     "text": "To achieve the desired spacing, make planting holes that are about 5 cm deep at a spacing of 15 cm between holes."},
-    {"id": "APNI-SARI-2023:p10-seed-rate", "source_id": "APNI-SARI-2023", "page": "10", "crop": "soybean", "region": "northern", "topic": "seed", "claim_key": "seed_rate",
-     "text": "The recommended seed rate for good soybean yields is about 50 to 60 kg per hectare."},
-    {"id": "APNI-SARI-2023:p3-land-prep", "source_id": "APNI-SARI-2023", "page": "3", "crop": "soybean", "region": "northern", "topic": "land preparation", "claim_key": "land_prep_timing",
-     "text": "Start field preparation 2 to 3 weeks before the start of the rainy season (from mid-May to early June)."},
-    {"id": "APNI-SARI-2023:p3-rotation", "source_id": "APNI-SARI-2023", "page": "3", "crop": "soybean", "region": "northern", "topic": "rotation", "claim_key": "rotation",
-     "text": "To ensure good soybean yields each season, avoid growing soybean on the same field continuously and rotate soybean with cereal crops such as maize. Planting soybean in the same field continuously increases the chance of pest and disease infestations."},
-    {"id": "APNI-SARI-2023:weeds-manual", "source_id": "APNI-SARI-2023", "page": "Management of Weeds", "crop": "soybean", "region": "northern", "topic": "weeding", "claim_key": "manual_weeding",
-     "text": "Manual weed control: Weed about 3 to 4 weeks after planting and again at around 6 weeks after planting. If the crops grow very well and the canopy closes early, the second weeding is not required."},
-    {"id": "APNI-SARI-2023:weeds-herbicide", "source_id": "APNI-SARI-2023", "page": "Management of Weeds", "crop": "soybean", "region": "northern", "topic": "herbicide", "claim_key": "herbicide_use", "risk": "chemical",
-     "text": "Before applying any herbicide, carefully read and follow instructions provided by the manufacturer or consult your local AEA."},
-    {"id": "APNI-SARI-2023:harvest", "source_id": "APNI-SARI-2023", "page": "Harvesting", "crop": "soybean", "region": "northern", "topic": "harvest", "claim_key": "harvest_timing",
-     "text": "Soybean should be harvested when 9 out of 10 pods are mature (brown in color or dry). Leaving the crop in the field too long makes the pods very dry, so they might shatter during harvesting. To avoid shattering, it is best to harvest early in the morning."},
-    {"id": "IITA-SSPING-2022:p18-planting-window", "source_id": "IITA-SSPING-2022", "page": "18", "crop": "soybean", "region": "northern", "topic": "planting", "claim_key": "planting_window",
-     "text": "The best planting time for soyabean is between mid-June to mid-July with the rains likely well established."},
-    {"id": "IITA-SSPING-2022:p17-spacing", "source_id": "IITA-SSPING-2022", "page": "17", "crop": "soybean", "region": "northern", "topic": "spacing", "claim_key": "plant_spacing",
-     "text": "This will allow the recommended spacing of 50 cm between rows (roughly the length of two footprints) and 10 cm between plants within the rows (roughly the length from the base of your thumb to the top of your index finger) to be applied and to achieve the required plant population."},
-    {"id": "IITA-SSPING-2022:p18-depth", "source_id": "IITA-SSPING-2022", "page": "18", "crop": "soybean", "region": "northern", "topic": "planting", "claim_key": "planting_depth",
-     "text": "Avoid deeper sowing (recommended depth = 3 cm; not deeper than 5 cm) as this may result in loss of seed vigor and poor germination or failure to germinate."},
-    {"id": "IITA-SSPING-2022:seed-rate", "source_id": "IITA-SSPING-2022", "page": "seed rate section", "crop": "soybean", "region": "northern", "topic": "seed", "claim_key": "seed_rate",
-     "text": "Seed rate: About 40 \u2013 45 kg of soyabean seeds are required to plant one hectare and 16 \u2013 18 kg (dibbling) or 20 kg (drilling) to plant one acre. These are targeted at achieving the optimum population of 400,000 plants per hectare and about 162,000 plants per acre."},
-    {"id": "IITA-SSPING-2022:p18-moisture", "source_id": "IITA-SSPING-2022", "page": "18", "crop": "soybean", "region": "northern", "topic": "planting", "claim_key": "early_planting_risk",
-     "text": "Do not plant too early before the rains are well established as a prolonged dry spell after planting may cause the plants to die."}
-  ],
-  "crop_calendar": [
-    {"crop": "soybean", "region": "northern", "activity": "land preparation", "passage_id": "APNI-SARI-2023:p3-land-prep"},
-    {"crop": "soybean", "region": "northern", "activity": "planting", "passage_id": "APNI-SARI-2023:p11-planting-window"},
-    {"crop": "soybean", "region": "northern", "activity": "planting", "passage_id": "IITA-SSPING-2022:p18-planting-window"},
-    {"crop": "soybean", "region": "northern", "activity": "weeding", "passage_id": "APNI-SARI-2023:weeds-manual"},
-    {"crop": "soybean", "region": "northern", "activity": "harvest", "passage_id": "APNI-SARI-2023:harvest"}
-  ]
+  "IITA-SSPING-2022": {
+   "title": "Training Manual on GAPs for Sustainable Intensification of Soyabean Production for Agricultural Extension Agents",
+   "publisher": "IITA Ghana, SSPiNG Project (with YARA Ghana, MoFA, FKRA); authors M. Kermah, S. Adjei-Nsiah, A. Ofosu",
+   "year": 2022,
+   "region": "Northern Ghana",
+   "licence": "Not stated in the document; short excerpts quoted with attribution for reference only",
+   "url": "https://cgspace.cgiar.org/bitstreams/cfc71dfe-5804-4f06-9617-7165a8e44cf9/download",
+   "landing_url": "https://cgspace.cgiar.org/server/api/core/bitstreams/cfc71dfe-5804-4f06-9617-7165a8e44cf9"
+  }
+ },
+ "passages": [
+  {
+   "id": "APNI-SARI-2023:p11-planting-window",
+   "source_id": "APNI-SARI-2023",
+   "page": "11",
+   "crop": "soybean",
+   "region": "northern",
+   "topic": "planting",
+   "claim_key": "planting_window",
+   "text": "Soybean planting in the northern region should be done between mid-June and late July based on the onset of the rains and the variety."
+  },
+  {
+   "id": "APNI-SARI-2023:p11-spacing",
+   "source_id": "APNI-SARI-2023",
+   "page": "11",
+   "crop": "soybean",
+   "region": "northern",
+   "topic": "spacing",
+   "claim_key": "plant_spacing",
+   "text": "The recommended plant spacing for soybean in northern Ghana is a row to row spacing of 50 cm and 15 cm spacing between plants in a row."
+  },
+  {
+   "id": "APNI-SARI-2023:p11-depth",
+   "source_id": "APNI-SARI-2023",
+   "page": "11",
+   "crop": "soybean",
+   "region": "northern",
+   "topic": "planting",
+   "claim_key": "planting_depth",
+   "text": "To achieve the desired spacing, make planting holes that are about 5 cm deep at a spacing of 15 cm between holes."
+  },
+  {
+   "id": "APNI-SARI-2023:p10-seed-rate",
+   "source_id": "APNI-SARI-2023",
+   "page": "10",
+   "crop": "soybean",
+   "region": "northern",
+   "topic": "seed",
+   "claim_key": "seed_rate",
+   "text": "The recommended seed rate for good soybean yields is about 50 to 60 kg per hectare."
+  },
+  {
+   "id": "APNI-SARI-2023:p3-land-prep",
+   "source_id": "APNI-SARI-2023",
+   "page": "3",
+   "crop": "soybean",
+   "region": "northern",
+   "topic": "land preparation",
+   "claim_key": "land_prep_timing",
+   "text": "Start field preparation 2 to 3 weeks before the start of the rainy season (from mid-May to early June)."
+  },
+  {
+   "id": "APNI-SARI-2023:p3-rotation",
+   "source_id": "APNI-SARI-2023",
+   "page": "3",
+   "crop": "soybean",
+   "region": "northern",
+   "topic": "rotation",
+   "claim_key": "rotation",
+   "text": "To ensure good soybean yields each season, avoid growing soybean on the same field continuously and rotate soybean with cereal crops such as maize. Planting soybean in the same field continuously increases the chance of pest and disease infestations."
+  },
+  {
+   "id": "APNI-SARI-2023:weeds-manual",
+   "source_id": "APNI-SARI-2023",
+   "page": "Management of Weeds",
+   "crop": "soybean",
+   "region": "northern",
+   "topic": "weeding",
+   "claim_key": "manual_weeding",
+   "text": "Manual weed control: Weed about 3 to 4 weeks after planting and again at around 6 weeks after planting. If the crops grow very well and the canopy closes early, the second weeding is not required."
+  },
+  {
+   "id": "APNI-SARI-2023:weeds-herbicide",
+   "source_id": "APNI-SARI-2023",
+   "page": "Management of Weeds",
+   "crop": "soybean",
+   "region": "northern",
+   "topic": "herbicide",
+   "claim_key": "herbicide_use",
+   "risk": "chemical",
+   "text": "Before applying any herbicide, carefully read and follow instructions provided by the manufacturer or consult your local AEA."
+  },
+  {
+   "id": "APNI-SARI-2023:harvest",
+   "source_id": "APNI-SARI-2023",
+   "page": "Harvesting",
+   "crop": "soybean",
+   "region": "northern",
+   "topic": "harvest",
+   "claim_key": "harvest_timing",
+   "text": "Soybean should be harvested when 9 out of 10 pods are mature (brown in color or dry). Leaving the crop in the field too long makes the pods very dry, so they might shatter during harvesting. To avoid shattering, it is best to harvest early in the morning."
+  },
+  {
+   "id": "IITA-SSPING-2022:p18-planting-window",
+   "source_id": "IITA-SSPING-2022",
+   "page": "18",
+   "crop": "soybean",
+   "region": "northern",
+   "topic": "planting",
+   "claim_key": "planting_window",
+   "text": "The best planting time for soyabean is between mid-June to mid-July with the rains likely well established."
+  },
+  {
+   "id": "IITA-SSPING-2022:p17-spacing",
+   "source_id": "IITA-SSPING-2022",
+   "page": "17",
+   "crop": "soybean",
+   "region": "northern",
+   "topic": "spacing",
+   "claim_key": "plant_spacing",
+   "text": "This will allow the recommended spacing of 50 cm between rows (roughly the length of two footprints) and 10 cm between plants within the rows (roughly the length from the base of your thumb to the top of your index finger) to be applied and to achieve the required plant population."
+  },
+  {
+   "id": "IITA-SSPING-2022:p18-depth",
+   "source_id": "IITA-SSPING-2022",
+   "page": "18",
+   "crop": "soybean",
+   "region": "northern",
+   "topic": "planting",
+   "claim_key": "planting_depth",
+   "text": "Avoid deeper sowing (recommended depth = 3 cm; not deeper than 5 cm) as this may result in loss of seed vigor and poor germination or failure to germinate."
+  },
+  {
+   "id": "IITA-SSPING-2022:seed-rate",
+   "source_id": "IITA-SSPING-2022",
+   "page": "seed rate section",
+   "crop": "soybean",
+   "region": "northern",
+   "topic": "seed",
+   "claim_key": "seed_rate",
+   "text": "Seed rate: About 40 – 45 kg of soyabean seeds are required to plant one hectare and 16 – 18 kg (dibbling) or 20 kg (drilling) to plant one acre. These are targeted at achieving the optimum population of 400,000 plants per hectare and about 162,000 plants per acre."
+  },
+  {
+   "id": "IITA-SSPING-2022:p18-moisture",
+   "source_id": "IITA-SSPING-2022",
+   "page": "18",
+   "crop": "soybean",
+   "region": "northern",
+   "topic": "planting",
+   "claim_key": "early_planting_risk",
+   "text": "Do not plant too early before the rains are well established as a prolonged dry spell after planting may cause the plants to die."
+  }
+ ],
+ "crop_calendar": [
+  {
+   "crop": "soybean",
+   "region": "northern",
+   "activity": "land preparation",
+   "passage_id": "APNI-SARI-2023:p3-land-prep"
+  },
+  {
+   "crop": "soybean",
+   "region": "northern",
+   "activity": "planting",
+   "passage_id": "APNI-SARI-2023:p11-planting-window"
+  },
+  {
+   "crop": "soybean",
+   "region": "northern",
+   "activity": "planting",
+   "passage_id": "IITA-SSPING-2022:p18-planting-window"
+  },
+  {
+   "crop": "soybean",
+   "region": "northern",
+   "activity": "weeding",
+   "passage_id": "APNI-SARI-2023:weeds-manual"
+  },
+  {
+   "crop": "soybean",
+   "region": "northern",
+   "activity": "harvest",
+   "passage_id": "APNI-SARI-2023:harvest"
+  }
+ ]
 }
