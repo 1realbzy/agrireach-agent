@@ -123,7 +123,7 @@ No advice ever reaches a farmer without approval from a named extension officer.
 ## Development roadmap
 
 Done (13 Oct): verified corpus, MCP server, LangGraph agent, case DB and gate, API/UI, tests, evals in stub mode and with an open-weights model.
-Next: run evals with an open-weights model (task 9), expand the place list into a fuller district gazetteer, record the demo video, then consider a weather tool and Twi support.
+Next: add a check that every date and number in a draft appears in its cited passage (task 11), expand the place list into a fuller district gazetteer, record the demo video, then consider a weather tool and Twi support.
 
 ## Limitations
 
