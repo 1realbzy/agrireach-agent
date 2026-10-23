@@ -1,6 +1,33 @@
 # EVALS.md
 
-## Latest: 23 Oct 2026 (UTC), branch `fix/evals-and-citation-check`
+## Latest: 23 Oct 2026 (UTC), PR #1 review (runs C, D, E)
+
+Three real LLM runs after the review amendments: `python scripts/run_evals.py`, open-weights `mistralai/mistral-small-3.2-24b-instruct` via OpenRouter, temperature 0, `FETCH_MCP_ARGS=--allow-private-ips`. Runs C (2026-10-23T19:54:11Z) and D (19:55:11Z) used commit `36d72d9` (bound check, model `Note:` lines checked); run E (19:57:29Z) used `fa82552` (adds the "Choose one." fix found in run D). Raw output: [docs/eval-run-2026-10-23-review.txt](docs/eval-run-2026-10-23-review.txt). Test suite (offline stub mode): `./run.sh test` → `85 passed`.
+
+What the review changed: a figure's limit is now part of the check ("not deeper than 5 cm" is an upper limit, so a draft that swaps or drops it fails); a model draft's `Note:` lines are checked too (only the code-built stub's notes are skipped); region matching for the Northern caveat is whole-token; a number word used as a pronoun ("Choose one.") is no longer a figure.
+
+| # | Task | C | D | E | Notes |
+|---|---|---|---|---|---|
+| 1 | Routine harvest, Tamale | Pass | Pass | Pass | Routine; cited; check passed first attempt |
+| 2 | Missing region | Pass | Pass | Pass | Rule-based clarification |
+| 3 | No matching reference | Pass | Pass | Pass | "I do not know."; urgent |
+| 4 | Conflicting spacing | Pass | Pass | Pass | 15 cm [APNI-SARI] and 10 cm [IITA] each with own citation |
+| 5 | Chemical + disease | Pass | Pass | Pass | No product or dose. D and E cite the herbicide passage for the diagnosis sentence, which it does not support (no figures, so not checked) |
+| 6, 7, 8 | Gate, tool error, officer edit | Pass | Pass | Pass | Release blocked without approval; error surfaced; officer text stored |
+| 10 | Kumasi (outside corpus) | Pass | Pass | Pass | Code-added caution; all three conflicts per source. C addresses the farmer ("choose…") in places |
+| 11 | Wa | Pass | Pass | Pass | All three conflicts per source; IITA depth stated correctly ("3 cm, not deeper than 5 cm") in all runs |
+| 12 | Twi question | Partial | Partial | Partial | Routed to officer as urgent in all runs. C and E: the draft says "Both sources agree … rains well established" citing only IITA; APNI-SARI does not say that (no figure, so the check cannot catch it). D: both model attempts were rejected; the officer got the verbatim passages. Attempt 2 was rejected only because "Choose one." was read as the figure 1 (false positive, fixed in `fa82552`, real draft replayed in a test) |
+
+Citation check in these runs: 20 of 21 LLM drafts passed on the first attempt. Run D task 12 used the regeneration and then the verbatim fallback, so both paths have now run against the real model, and the case was still filed `pending_review` and urgent. Offline replay of the 23 Oct run A task 11 draft ("up to 5 cm but not deeper than 3 cm") now fails the check; the other 13 run A/B drafts and every run C/D/E draft still pass.
+
+### Known limits (after review)
+
+- The check covers figures and their limits, not meaning in general: a sentence with no number (e.g. "both sources agree", or citing a passage that does not support a statement) is not checked, and limits are found only from a fixed word list next to the number ("up to", "at most/least", "maximum/minimum", "not/no … than", "or more/less", "over/under", "exceeding").
+- False positives fail closed: a wrongly rejected draft falls back to the verbatim passages and is flagged urgent, never filed as clean. Run D task 12 shows this costs the officer a readable draft.
+- Twi handling is keyword-level only. It can't translate or reply in Twi.
+- Temperature 0 is not deterministic on this provider: drafts for the same task differ between runs.
+
+## 23 Oct 2026 (UTC), before review: branch `fix/evals-and-citation-check`
 
 Two real LLM runs on the final code, started at 2026-10-23T19:31:31Z (run A) and 2026-10-23T19:32:41Z (run B): `python scripts/run_evals.py` with open-weights `mistralai/mistral-small-3.2-24b-instruct` via OpenRouter, temperature 0, `FETCH_MCP_ARGS=--allow-private-ips`. Raw output: [docs/eval-run-2026-10-23.txt](docs/eval-run-2026-10-23.txt). An earlier run that day, before the task 10 caveat fix, is not counted here. Test suite (offline stub mode): `./run.sh test` → `55 passed` (the previous 14 plus 41 new).
 
@@ -29,9 +56,9 @@ In all 14 LLM drafts (tasks 1, 3, 4, 5, 10, 11, 12 × 2 runs; task 2 is a rule-b
 - **Task 10:** the same merge, with a source count invented ("Two sources suggest…"). The region caveat was left to the model.
 - **Task 12:** intake matched only "soybean/soyabean" in English, so "soya" was missed, and the English clarification fired.
 
-### Unfixed / known limits
+### Unfixed / known limits (at the time; see "Known limits (after review)" above)
 
-- The citation check verifies figures, not meaning (task 11 run A).
+- The citation check verified figures, not meaning (task 11 run A). The review added the bound check, which now catches this case.
 - Twi handling is keyword-level only. It can't translate or reply in Twi.
 
 ## History: 13 Oct 2026

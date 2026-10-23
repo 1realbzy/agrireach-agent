@@ -94,11 +94,12 @@ A LangGraph state graph (`src/agrireach/agent.py`): `intake` (crop/region detect
 Before a draft is filed for the officer, `src/agrireach/citation_check.py` (plain code, no model) checks it against the retrieved passages:
 
 - Every number (with its unit if given, e.g. `2.5 cm`, `50kg`, `1,000`, `two weeks`) and every date (`15 March`, `March 15`, `mid-June`, `late July`) must appear in a passage cited for it. Figures attach to the next citation bracket; a figure with no citation, or a citation to a passage that was not retrieved, fails.
+- A figure's limit counts too: "up to 5 cm" and "not deeper than 5 cm" are upper limits, "at least 50 kg" a lower limit, otherwise a plain value. A draft that swaps limits ("up to 5 cm but not deeper than 3 cm" for "recommended 3 cm; not deeper than 5 cm") or states a maximum as the recommendation fails.
 - When code has detected that sources disagree (same claim, different sources), each source's figure must be stated with that source's own citation. A draft that merges the sources into one range or cites both for one figure fails. That was the task 10/11 failure.
 - If the model's draft fails, it is regenerated once with the list of problems. If it fails again, the officer gets the verbatim passages instead, the case is marked urgent with `citation check failed: ...`, and the rejected draft is kept in the result for review. A failing draft is never filed as if it were clean, and nothing is released without officer approval either way.
 - Retrieval is conflict-complete: if any passage on a claim is retrieved, every other source's passage on that claim is retrieved too, so a disagreement can't be hidden by ranking.
 
-Limit: the check is about figures, not meaning. A draft that keeps the right numbers but changes what they mean still passes (EVALS task 11, run A).
+Limits: the check covers figures and their limits, found from a fixed word list next to each number. A sentence without a number (e.g. "both sources agree…") is not checked. False positives fail closed: the officer gets the verbatim passages and an urgent flag. See EVALS "Known limits (after review)".
 
 ## MCP implementation
 
@@ -121,8 +122,8 @@ Limit: the check is about figures, not meaning. A draft that keeps the right num
 | Part | Status |
 |---|---|
 | LangGraph agent, stub drafting | **Working** |
-| LLM drafting via open-weights model | **Working** with Mistral Small 3.2 24B (open weights) via OpenRouter; every draft passes through the citation check. Known gap: the check verifies figures, not meaning (see EVALS task 11, 23 Oct run A) |
-| Citation check (dates and numbers vs cited passage) | **Working** (unit tests + real-model eval runs, 23 Oct) |
+| LLM drafting via open-weights model | **Working** with Mistral Small 3.2 24B (open weights) via OpenRouter; every draft passes through the citation check. Known gap: sentences without figures are not checked (see EVALS task 12, runs C and E) |
+| Citation check (dates, numbers and their limits vs cited passage) | **Working** (unit tests + real-model eval runs, 23 Oct; regeneration and fallback both exercised in run D) |
 | Twi questions | **Partial**: detected and routed to the officer as urgent with a keyword gloss; no translation and no Twi replies |
 | SQLite cases + officer gate + release block | **Working** (tests) |
 | FastAPI + Streamlit | **Working** locally (API calls verified; UI page served, HTTP 200) |
@@ -137,7 +138,8 @@ No advice ever reaches a farmer without approval from a named extension officer.
 
 Done (13 Oct): verified corpus, MCP server, LangGraph agent, case DB and gate, API/UI, tests, evals in stub mode and with an open-weights model.
 Done (23 Oct): citation check for dates and numbers, conflict-complete retrieval, Twi detection and officer routing (EVALS tasks 10-12).
-Next: catch drafts that keep the right figures but change their meaning (e.g. swapping "recommended" and "not deeper than"), expand the place list into a fuller district gazetteer, record the demo video, then consider a weather tool and real Twi support with native-speaker review.
+Done (23 Oct, review): the check also compares each figure's limit ("not deeper than", "up to", "at least"), so swapped bounds fail.
+Next: check sentences without figures (e.g. "both sources agree"), expand the place list into a fuller district gazetteer, record the demo video, then consider a weather tool and real Twi support with native-speaker review.
 
 ## Limitations
 
@@ -146,7 +148,7 @@ Next: catch drafts that keep the right figures but change their meaning (e.g. sw
 - The quality of recommendations depends on the authority and freshness of source material.
 - Text based advice may not be enough to diagnose a plant health issue.
 - Twi support is detection plus a keyword gloss only: AgriReach cannot translate or reply in Twi, so Twi cases go to the officer as urgent. Other local languages are not handled. Offline access and accessibility require further work.
-- The citation check confirms that every date and number in a draft appears in the passage it cites. It cannot tell if the sentence around a correct figure changes its meaning.
+- The citation check confirms that every date and number in a draft, and any limit on it ("up to", "not deeper than", "at least"), appears in the passage it cites. It does not check sentences without figures, or other ways the words around a correct figure can change its meaning.
 - Weather coverage and API access have not yet been verified.
 - The system is decision support and does not replace qualified agricultural advice.
 
