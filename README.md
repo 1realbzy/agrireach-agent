@@ -87,7 +87,18 @@ Verified in this build: Python 3.13, official MCP Python SDK (`mcp` 1.30, FastMC
 
 ## Agent architecture
 
-A LangGraph state graph (`src/agrireach/agent.py`): `intake` (crop/region detection, risk terms, opens a `draft` case) → either `clarify` (end) or `retrieve` (MCP: `search_guidance`, `retrieve_reference` for each hit, `get_crop_calendar`; conflict and risk flags) → `check_sources` (third-party fetch MCP server checks the cited source pages are reachable) → `write` (LLM or stub draft) → `file_case` (MCP: `create_or_update_case` to `pending_review`, urgent or routine) → end. The graph has no node that can approve or release. Intake and routing are rule-based; the LLM is only used to word the draft.
+A LangGraph state graph (`src/agrireach/agent.py`): `intake` (crop/region detection, risk terms, opens a `draft` case) → either `clarify` (end) or `retrieve` (MCP: `search_guidance`, `retrieve_reference` for each hit, `get_crop_calendar`; conflict and risk flags) → `check_sources` (third-party fetch MCP server checks the cited source pages are reachable) → `write` (LLM or stub draft, then the code citation check below) → `file_case` (MCP: `create_or_update_case` to `pending_review`, urgent or routine) → end. The graph has no node that can approve or release. Intake and routing are rule-based; the LLM is only used to word the draft.
+
+## Citation check
+
+Before a draft is filed for the officer, `src/agrireach/citation_check.py` (plain code, no model) checks it against the retrieved passages:
+
+- Every number (with its unit if given, e.g. `2.5 cm`, `50kg`, `1,000`, `two weeks`) and every date (`15 March`, `March 15`, `mid-June`, `late July`) must appear in a passage cited for it. Figures attach to the next citation bracket; a figure with no citation, or a citation to a passage that was not retrieved, fails.
+- When code has detected that sources disagree (same claim, different sources), each source's figure must be stated with that source's own citation. A draft that merges the sources into one range or cites both for one figure fails. That was the task 10/11 failure.
+- If the model's draft fails, it is regenerated once with the list of problems. If it fails again, the officer gets the verbatim passages instead, the case is marked urgent with `citation check failed: ...`, and the rejected draft is kept in the result for review. A failing draft is never filed as if it were clean, and nothing is released without officer approval either way.
+- Retrieval is conflict-complete: if any passage on a claim is retrieved, every other source's passage on that claim is retrieved too, so a disagreement can't be hidden by ranking.
+
+Limit: the check is about figures, not meaning. A draft that keeps the right numbers but changes what they mean still passes (EVALS task 11, run A).
 
 ## MCP implementation
 
@@ -110,7 +121,9 @@ A LangGraph state graph (`src/agrireach/agent.py`): `intake` (crop/region detect
 | Part | Status |
 |---|---|
 | LangGraph agent, stub drafting | **Working** |
-| LLM drafting via open-weights model | **Working** with Mistral Small 3.2 24B (open weights) via OpenRouter; known failure: can blur conflicting sources (EVALS task 11) |
+| LLM drafting via open-weights model | **Working** with Mistral Small 3.2 24B (open weights) via OpenRouter; every draft passes through the citation check. Known gap: the check verifies figures, not meaning (see EVALS task 11, 23 Oct run A) |
+| Citation check (dates and numbers vs cited passage) | **Working** (unit tests + real-model eval runs, 23 Oct) |
+| Twi questions | **Partial**: detected and routed to the officer as urgent with a keyword gloss; no translation and no Twi replies |
 | SQLite cases + officer gate + release block | **Working** (tests) |
 | FastAPI + Streamlit | **Working** locally (API calls verified; UI page served, HTTP 200) |
 | One-command run `./run.sh` from clean clone | **Working** (verified) |
@@ -123,7 +136,8 @@ No advice ever reaches a farmer without approval from a named extension officer.
 ## Development roadmap
 
 Done (13 Oct): verified corpus, MCP server, LangGraph agent, case DB and gate, API/UI, tests, evals in stub mode and with an open-weights model.
-Next: add a check that every date and number in a draft appears in its cited passage (task 11), expand the place list into a fuller district gazetteer, record the demo video, then consider a weather tool and Twi support.
+Done (23 Oct): citation check for dates and numbers, conflict-complete retrieval, Twi detection and officer routing (EVALS tasks 10-12).
+Next: catch drafts that keep the right figures but change their meaning (e.g. swapping "recommended" and "not deeper than"), expand the place list into a fuller district gazetteer, record the demo video, then consider a weather tool and real Twi support with native-speaker review.
 
 ## Limitations
 
@@ -131,7 +145,8 @@ Next: add a check that every date and number in a draft appears in its cited pas
 - Coverage will be limited to the selected crop, knowledge documents, and region.
 - The quality of recommendations depends on the authority and freshness of source material.
 - Text based advice may not be enough to diagnose a plant health issue.
-- Local language support, offline access, and accessibility require further work.
+- Twi support is detection plus a keyword gloss only: AgriReach cannot translate or reply in Twi, so Twi cases go to the officer as urgent. Other local languages are not handled. Offline access and accessibility require further work.
+- The citation check confirms that every date and number in a draft appears in the passage it cites. It cannot tell if the sentence around a correct figure changes its meaning.
 - Weather coverage and API access have not yet been verified.
 - The system is decision support and does not replace qualified agricultural advice.
 
