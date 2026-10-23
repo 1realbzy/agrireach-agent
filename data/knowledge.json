@@ -49,6 +49,7 @@
    "region": "northern",
    "topic": "planting",
    "claim_key": "planting_depth",
+   "also_claims": ["plant_spacing"],
    "text": "To achieve the desired spacing, make planting holes that are about 5 cm deep at a spacing of 15 cm between holes."
   },
   {

@@ -48,7 +48,23 @@ def search(query: str, crop: str | None = None, region: str | None = None, limit
         if score >= 3:
             out.append({**p, "score": score, "source": kb["sources"][p["source_id"]]})
     out.sort(key=lambda r: -r["score"])
-    return out[:limit]
+    out = out[:limit]
+    # Conflict completeness: if a hit states a claim, also return every other source's passage on the same claim,
+    # so a disagreement is never hidden just because the other source scored lower or fell past `limit`.
+    keys = {k for r in out for k in claim_keys(r)}
+    have = {r["id"] for r in out}
+    for p in kb["passages"]:
+        if p["id"] in have or (crop and p["crop"] != crop.lower()) or (region and p["region"] not in region.lower()):
+            continue
+        if keys & set(claim_keys(p)):
+            out.append({**p, "score": 0, "source": kb["sources"][p["source_id"]], "added_for_conflict_check": True})
+            have.add(p["id"])
+    return out
+
+
+def claim_keys(p: dict) -> list[str]:
+    """The claim a passage makes, plus any secondary claims it also states (e.g. a depth passage giving hole spacing)."""
+    return [p["claim_key"], *p.get("also_claims", [])]
 
 
 def reference(passage_id: str) -> dict | None:
