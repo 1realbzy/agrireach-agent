@@ -133,3 +133,64 @@ def test_task4_real_draft_passes():
     d = ("For soybean planting in Tamale, use a row-to-row spacing of 50 cm. For spacing between plants in a row, choose "
          "either 15 cm [APNI-SARI-2023:p11-spacing] or 10 cm [IITA-SSPING-2022:p17-spacing]. Both are recommended.")
     assert check_draft(d, [a, b], {"plant_spacing": [a, b]}).ok
+
+
+# --- Bound words: a limit is part of the figure ("not deeper than 5 cm" is not "5 cm") ---
+
+DEPTH_B = P("IITA-SSPING-2022:p18-depth", "IITA-SSPING-2022",
+            "Avoid deeper sowing (recommended depth = 3 cm; not deeper than 5 cm) as this may result in loss of seed "
+            "vigor and poor germination or failure to germinate.")
+# Real draft, 23 Oct run A, task 11 (docs/eval-run-2026-10-23.txt): right figures, bounds swapped.
+RUN_A_WA_DEPTH = "Plant seeds at 5 cm deep [APNI-SARI-2023:p11-depth], or up to 5 cm but not deeper than 3 cm [IITA-SSPING-2022:p18-depth]."
+
+
+def bounds(s):
+    return [(f.value, f.unit, f.bound) for f in extract_figures(s)]
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("recommended depth = 3 cm; not deeper than 5 cm", [("3", "cm", ""), ("5", "cm", "max")]),
+    ("up to 5 cm", [("5", "cm", "max")]),
+    ("at most 5 cm", [("5", "cm", "max")]),
+    ("a maximum of 5 cm", [("5", "cm", "max")]),
+    ("do not plant deeper than 5 cm", [("5", "cm", "max")]),
+    ("less than 5 cm", [("5", "cm", "max")]),
+    ("at least 50 kg", [("50", "kg", "min")]),
+    ("no less than 50 kg", [("50", "kg", "min")]),
+    ("more than 3 weeks", [("3", "week", "min")]),
+    ("50 kg or more", [("50", "kg", "min")]),
+    ("3 weeks or less", [("3", "week", "max")]),
+    ("50 to 60 kg", [("50", "kg", ""), ("60", "kg", "")]),       # a range is not a bound
+    ("ideally 3 cm, not deeper than 5 cm", [("3", "cm", ""), ("5", "cm", "max")]),
+    ("not deeper than 3 cm. Use 5 cm", [("3", "cm", "max"), ("5", "cm", "")]),  # bound does not cross a sentence
+])
+def test_bound_extraction(text, expected):
+    assert bounds(text) == expected
+
+
+def test_flipped_bounds_real_run_a_draft_fails():
+    r = check_draft(RUN_A_WA_DEPTH, [DEPTH_A, DEPTH_B])
+    assert not r.ok
+    assert r.problems == ["'3 cm' states 3 cm as an upper limit, but the cited passage(s) "
+                          "['IITA-SSPING-2022:p18-depth'] give(s) it as a plain value"]
+
+
+@pytest.mark.parametrize("draft,ok", [
+    ("Recommended 3 cm, not deeper than 5 cm [IITA-SSPING-2022:p18-depth].", True),
+    ("Plant up to 5 cm deep; 3 cm is recommended [IITA-SSPING-2022:p18-depth].", True),
+    ("Plant 5 cm deep [IITA-SSPING-2022:p18-depth].", False),          # a maximum stated as the recommendation
+    ("Plant at least 3 cm deep [IITA-SSPING-2022:p18-depth].", False),  # a bound the source does not give
+    ("Plant at least 5 cm deep [IITA-SSPING-2022:p18-depth].", False),  # max turned into min
+])
+def test_bounds_must_match_source(draft, ok):
+    assert check_draft(draft, [DEPTH_B]).ok is ok
+
+
+def test_every_corpus_passage_passes_when_quoted_with_its_own_citation():
+    # Guards against false positives: the verbatim source text must always pass its own check.
+    import json
+    from pathlib import Path
+    kb = json.loads((Path(__file__).resolve().parents[1] / "data" / "knowledge.json").read_text())
+    for p in kb["passages"]:
+        r = check_draft(f"{p['text']} [{p['id']}]", [p])
+        assert r.ok, (p["id"], r.problems)

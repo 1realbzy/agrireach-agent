@@ -2,7 +2,7 @@
 import asyncio
 
 from agrireach import agent, db, llm
-from tests.test_citation_check import TASK10_DRAFT, TASK11_DRAFT
+from tests.test_citation_check import RUN_A_WA_DEPTH, TASK10_DRAFT, TASK11_DRAFT
 
 run = lambda q, **k: asyncio.run(agent.run(q, use_fetch=False, **k))
 GOOD_WA = ("APNI-SARI gives mid-June to late July [APNI-SARI-2023:p11-planting-window]. "
@@ -88,6 +88,16 @@ def test_task10_out_of_corpus_region_caveat_added_by_code(monkeypatch):
     assert out["citation_check"]["ok"]
     assert out["draft"].startswith("Caution: the curated sources cover Northern Ghana only")
     assert "Kumasi" in out["draft"].splitlines()[0]
+
+
+def test_flipped_depth_bound_is_regenerated(monkeypatch):
+    # 23 Oct run A, task 11: every figure was in its passage but the IITA bounds were swapped. Now rejected.
+    calls = fake_llm(monkeypatch, [GOOD_WA.replace("or 3 cm, not deeper than 5 cm [IITA-SSPING-2022:p18-depth].",
+                                                   RUN_A_WA_DEPTH.split("], ", 1)[1]), GOOD_WA])
+    out = run("When should I plant soybean at Wa?")
+    assert len(calls) == 2 and any("upper limit" in f for f in calls[1]["feedback"])
+    assert out["citation_check"]["attempts"][0]["ok"] is False and out["citation_check"]["ok"]
+    assert out["draft"] == GOOD_WA and out["status"] == "pending_review"
 
 
 def test_model_cannot_hide_a_figure_behind_a_note_line(monkeypatch):

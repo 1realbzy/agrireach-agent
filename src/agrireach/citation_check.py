@@ -4,8 +4,15 @@ Runs in code (no model) before a draft reaches the officer. A draft fails when:
   - a figure (number, number+unit, or date) is not found in any passage cited for it;
   - a figure appears with no citation at all;
   - a citation names a passage id that was not retrieved;
+  - a figure is stated with a different limit than in its passage: "not deeper than 3 cm" when the
+    passage says "recommended depth = 3 cm; not deeper than 5 cm" (a flipped bound), or a plain
+    "5 cm" when the passage gives 5 cm only as a maximum;
   - code detected a conflict between sources, but the draft does not attribute each source's
     figure to that source alone (i.e. it merged or hid the disagreement).
+
+Limits are detected from a small fixed list of bound words next to the number (see BOUND WORDS
+below). Anything else about meaning (a sentence with no figure, or a figure whose surrounding words
+change what it means in other ways) is NOT checked; that stays the officer's job.
 
 How figures are attached to citations: the text between one citation bracket and the next is
 the "segment" for the later bracket, so "... 9 out of 10 pods ... [A]." checks 9 and 10 against
@@ -48,6 +55,48 @@ NUMBER_RE = re.compile(rf"(?<![\w.])(?P<n>{NUM})\s*(?P<u>(?:{_unit_alt})(?![a-z]
 WORDNUM_RE = re.compile(rf"\b(?P<w>{'|'.join(WORD_NUMS)})\b(?!\s+{META_NOUNS}\b)\s*(?P<u>(?:{_unit_alt})(?![a-z]))?", re.I)
 RANGE_GLUE = re.compile(r"^\s*(?:to|-|–|—|and|or)\s*$", re.I)
 
+# --- BOUND WORDS -------------------------------------------------------------------------------------------
+# A number can be stated as a plain value ("3 cm"), an upper limit ("up to 5 cm", "not deeper than 5 cm") or
+# a lower limit ("at least 50 kg", "no less than 50 kg"). The limit is part of the figure's identity, so a draft
+# that turns a maximum into a recommendation or swaps two bounds fails like a wrong number would.
+MAX, MIN = "max", "min"
+_GREATER = r"more|deeper|higher|greater|longer|later|larger|wider|heavier|bigger"
+_LESS = r"less|fewer|shallower|lower|shorter|earlier|smaller|narrower|lighter"
+_FIXED_BOUND = [
+    (re.compile(r"\b(?:up\s+to|at\s+(?:the\s+)?most|(?:a\s+)?maximum(?:\s+of)?|max\.?)\s*$", re.I), MAX),
+    (re.compile(r"\b(?:at\s+(?:the\s+)?least|(?:a\s+)?minimum(?:\s+of)?|min\.?)\s*$", re.I), MIN),
+]
+_COMPARATIVE = re.compile(rf"\b(?:(?P<g>(?:{_GREATER})\s+than|over|above|exceeding)"
+                          rf"|(?P<l>(?:{_LESS})\s+than|under|below))\s*$", re.I)
+# A negation up to two words before the comparative flips it: "not deeper than", "do not plant deeper than".
+_NEGATION = re.compile(r"\b(?:not|no|never|avoid|avoiding|don't|without)(?:\s+\w+){0,2}\s*$", re.I)
+_SUFFIX_BOUND = [
+    (re.compile(rf"^\s*(?:or|and)\s+(?:{_GREATER}|over|above)\b", re.I), MIN),   # "50 kg or more"
+    (re.compile(rf"^\s*(?:or|and)\s+(?:{_LESS}|under|below)\b", re.I), MAX),     # "3 weeks or less"
+]
+_BOUND_WINDOW = 40   # chars before a number searched for bound words; enough for "do not plant deeper than"
+_CLAUSE_BREAK = re.compile(r"[;:()\[\]]|\.(?!\d)")
+_BOUND_TEXT = {MAX: "an upper limit", MIN: "a lower limit", "": "a plain value"}
+
+
+def _bound(t: str, start: int, end: int, prev_end: int) -> str:
+    """'max', 'min' or '' for the number at t[start:end]. Looks only within the same clause and after the previous
+    number, so in "3 cm; not deeper than 5 cm" the bound attaches to 5, not 3."""
+    before = _CLAUSE_BREAK.split(t[max(prev_end, start - _BOUND_WINDOW):start])[-1]
+    for pat, kind in _FIXED_BOUND:
+        if pat.search(before):
+            return kind
+    m = _COMPARATIVE.search(before)
+    if m:
+        kind = MIN if m.group("g") else MAX
+        if _NEGATION.search(before[:m.start()]):
+            kind = MAX if kind == MIN else MIN
+        return kind
+    for pat, kind in _SUFFIX_BOUND:
+        if pat.search(t[end:end + _BOUND_WINDOW]):
+            return kind
+    return ""
+
 
 @dataclass(frozen=True)
 class Figure:
@@ -55,6 +104,7 @@ class Figure:
     value: str         # normalised: "1000", "2.5", "mid july", "15 march", "july"
     unit: str = ""     # normalised unit for numbers, "" if none
     raw: str = ""
+    bound: str = ""    # numbers only: MAX ("up to 5 cm"), MIN ("at least 50 kg") or "" for a plain value
 
     def label(self) -> str:
         return self.raw or (f"{self.value} {self.unit}".strip())
@@ -122,16 +172,24 @@ def extract_figures(text: str) -> list[Figure]:
         ns, _, nf = nums[i + 1]
         if not f.unit and nf.unit and RANGE_GLUE.match(t[e:ns]):
             nums[i] = (s, e, Figure(f.kind, f.value, nf.unit, f.raw))
+    prev_end = 0
+    for i, (s, e, f) in enumerate(nums):
+        nums[i] = (s, e, Figure(f.kind, f.value, f.unit, f.raw, _bound(t, s, e, prev_end)))
+        prev_end = e
     figs += [(s, f) for s, _, f in nums]
     figs.sort(key=lambda x: x[0])
     return [f for _, f in figs]
+
+
+def _same_number(f: Figure, p: Figure) -> bool:
+    return p.value == f.value and (not f.unit or not p.unit or f.unit == p.unit)
 
 
 def _matches(f: Figure, pool: list[Figure]) -> bool:
     for p in pool:
         if p.kind != f.kind:
             continue
-        if f.kind == "number" and p.value == f.value and (not f.unit or not p.unit or f.unit == p.unit):
+        if f.kind == "number" and _same_number(f, p) and p.bound == f.bound:
             return True
         if f.kind == "date":
             if p.value == f.value:
@@ -139,6 +197,17 @@ def _matches(f: Figure, pool: list[Figure]) -> bool:
             if " " not in f.value and p.value.split()[-1] == f.value:  # bare "July" vs "late July"
                 return True
     return False
+
+
+def _mismatch(f: Figure, pool: list[Figure], where: str) -> str:
+    """Problem text for a figure that did not match; names a wrong limit separately so the regeneration
+    feedback tells the model exactly what to fix."""
+    limits = sorted({p.bound for p in pool if p.kind == "number" and f.kind == "number" and _same_number(f, p)})
+    if limits:
+        given = " or ".join(_BOUND_TEXT[b] for b in limits)
+        return (f"'{f.label()}' states {f.value} {f.unit}".rstrip() + f" as {_BOUND_TEXT[f.bound]}, but {where} "
+                f"give(s) it as {given}")
+    return f"'{f.label()}' is not in {where}"
 
 
 def _split_ids(inner: str) -> list[str]:
@@ -189,7 +258,7 @@ def check_draft(draft: str, passages: list[dict], conflicts: dict[str, list[dict
         for f in extract_figures(text):
             checked += 1
             if not _matches(f, pool):
-                problems.append(f"'{f.label()}' is not in the cited passage(s) {known or ids}")
+                problems.append(_mismatch(f, pool, f"the cited passage(s) {known or ids}"))
     trailing_figs = extract_figures(trailing)
     if trailing_figs:
         pool = [f for i in cited_all for f in figs_of[i]]
@@ -198,7 +267,7 @@ def check_draft(draft: str, passages: list[dict], conflicts: dict[str, list[dict
             if not segs:
                 problems.append(f"'{f.label()}' has no citation")
             elif not _matches(f, pool):
-                problems.append(f"'{f.label()}' (uncited, after the last citation) is not in any cited passage")
+                problems.append(_mismatch(f, pool, "any cited passage") + " (uncited, after the last citation)")
     for key, group in (conflicts or {}).items():
         sources = {p["source_id"] for p in group}
         for p in group:
