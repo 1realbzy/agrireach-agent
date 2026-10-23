@@ -194,3 +194,29 @@ def test_every_corpus_passage_passes_when_quoted_with_its_own_citation():
     for p in kb["passages"]:
         r = check_draft(f"{p['text']} [{p['id']}]", [p])
         assert r.ok, (p["id"], r.problems)
+
+
+# Real draft, 23 Oct run D, task 12 (2nd attempt): rejected only because "Choose one." was read as the figure 1.
+RUN_D_TWI_DRAFT = "**Advice for Extension Officer:**\n\nTo advise the farmer in Tamale on soybean planting, consider the following:\n\n**Planting Window:**\n- One source says plant between mid-June and late July, depending on rains and variety [APNI-SARI-2023:p11-planting-window].\n- Another says mid-June to mid-July, when rains are well established [IITA-SSPING-2022:p18-planting-window]. Choose one.\n\n**Planting Depth:**\n- One source says make holes about 5 cm deep [APNI-SARI-2023:p11-depth].\n- Another says avoid deeper than 5 cm, with 3 cm recommended [IITA-SSPING-2022:p18-depth]. Choose one.\n\n**Plant Spacing:**\n- One source says 50 cm between rows and 15 cm between plants [APNI-SARI-2023:p11-spacing].\n- Another says 50 cm between rows and 10 cm between plants [IITA-SSPING-2022:p17-spacing]. Choose one.\n\n**Additional Advice:**\n- Do not plant too early before rains are well established to avoid plant death from dry spells [IITA-SSPING-2022:p18-moisture].\n\n**Note:** The farmer's question was in Twi. Please respond in Twi."
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("Choose one.", []),
+    ("Pick one\nnext line", []),
+    ("one hectare", [("1", "ha")]),
+    ("two weeks", [("2", "week")]),
+])
+def test_number_word_used_as_pronoun_is_not_a_figure(text, expected):
+    assert vals(text) == expected
+
+
+def test_run_d_twi_draft_with_choose_one_passes():
+    spacing_a = P("APNI-SARI-2023:p11-spacing", "APNI-SARI-2023",
+                  "The recommended plant spacing for soybean in northern Ghana is a row to row spacing of 50 cm and 15 cm spacing between plants in a row.")
+    spacing_b = P("IITA-SSPING-2022:p17-spacing", "IITA-SSPING-2022",
+                  "This will allow the recommended spacing of 50 cm between rows and 10 cm between plants within the rows.")
+    ps = [WIN_A, WIN_B, MOIST, DEPTH_A, DEPTH_B, spacing_a, spacing_b]
+    conflicts = {"planting_window": [WIN_A, WIN_B], "planting_depth": [DEPTH_A, DEPTH_B],
+                 "plant_spacing": [spacing_a, spacing_b, DEPTH_A]}
+    r = check_draft(RUN_D_TWI_DRAFT, ps, conflicts)
+    assert r.ok, r.problems

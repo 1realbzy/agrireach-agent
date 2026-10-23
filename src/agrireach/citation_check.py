@@ -52,7 +52,8 @@ DATE_RE = re.compile(
     rf"|(?:\b(?P<m3>{_month_alt})\.?\s+(?P<d3>\d{{1,2}})(?:st|nd|rd|th)?\b(?!\s*(?:{_unit_alt})\b))"  # March 15
     rf"|(?:\b(?P<m4>{_month_alt})\b)", re.I)
 NUMBER_RE = re.compile(rf"(?<![\w.])(?P<n>{NUM})\s*(?P<u>(?:{_unit_alt})(?![a-z]))?", re.I)
-WORDNUM_RE = re.compile(rf"\b(?P<w>{'|'.join(WORD_NUMS)})\b(?!\s+{META_NOUNS}\b)\s*(?P<u>(?:{_unit_alt})(?![a-z]))?", re.I)
+# A number word directly before punctuation or a line end is a pronoun ("Choose one."), not an advice figure.
+WORDNUM_RE = re.compile(rf"\b(?P<w>{'|'.join(WORD_NUMS)})\b(?!\s+{META_NOUNS}\b)(?![ \t]*(?:[.,;:!?)\]\n]|$))\s*(?P<u>(?:{_unit_alt})(?![a-z]))?", re.I)
 RANGE_GLUE = re.compile(r"^\s*(?:to|-|–|—|and|or)\s*$", re.I)
 
 # --- BOUND WORDS -------------------------------------------------------------------------------------------
