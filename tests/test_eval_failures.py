@@ -88,3 +88,29 @@ def test_task10_out_of_corpus_region_caveat_added_by_code(monkeypatch):
     assert out["citation_check"]["ok"]
     assert out["draft"].startswith("Caution: the curated sources cover Northern Ghana only")
     assert "Kumasi" in out["draft"].splitlines()[0]
+
+
+def test_model_cannot_hide_a_figure_behind_a_note_line(monkeypatch):
+    # Only the code-built stub's "Note:" lines are skipped; in a model draft they are checked like any other line.
+    bad = GOOD_WA + "\nNote: plant 8 cm deep."
+    fake_llm(monkeypatch, [bad])
+    out = run("When should I plant soybean at Wa?")
+    assert not out["citation_check"]["ok"] and out["citation_check"]["rejected_draft"] == bad
+    assert out["priority"] == "urgent" and out["draft"].startswith(llm.STUB_LABEL)
+    assert any("8 cm" in r for r in out["urgent_reasons"])
+
+
+def test_llm_exception_gives_labelled_stub_for_officer(monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("provider timeout")
+    monkeypatch.setattr(llm, "draft", boom)
+    out = run("When should I plant soybean at Wa?")
+    assert out["draft_mode"] == "stub(llm-error)" and out["draft"].startswith(llm.STUB_LABEL)
+    assert "LLM call failed: provider timeout" in out["draft"] and out["status"] == "pending_review"
+    assert len(out["citation_check"]["attempts"]) == 1  # no retry loop against a failing provider
+
+
+def test_region_name_containing_wa_is_not_northern():
+    # 'Kwahu' (Eastern Region) contains the letters 'wa' but is not Wa; it must get the out-of-corpus flag.
+    out = run("When should I plant soybean?", region="kwahu")
+    assert any("no local reference for region 'kwahu'" in r for r in out["urgent_reasons"])

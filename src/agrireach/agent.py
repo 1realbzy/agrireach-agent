@@ -28,6 +28,11 @@ RISK_TERMS = {
 REGION_DEPENDENT = {"planting", "spacing", "seed"}
 NORTHERN = ["northern", "north", "tamale", "savannah", "upper east", "upper west", "north east", "bolgatanga",
             "wa", "yendi", "nyankpala", "damongo", "walewale"]
+# One model draft plus one regeneration with the citation check's feedback; then fall back to verbatim passages.
+MAX_DRAFT_ATTEMPTS = 2
+# Cap on the citation-check problems copied into an urgent reason, so the officer's queue stays readable
+# (the full list is kept in the result's citation_check.attempts).
+MAX_REASON_CHARS = 600
 OTHER_REGIONS = ["ashanti", "kumasi", "volta", "accra", "greater accra", "eastern", "western", "central", "bono",
                  "ahafo", "oti", "cape coast", "takoradi", "ho"]
 
@@ -40,6 +45,11 @@ def _place_in_question(place: str, q: str) -> bool:
     if " " in place:
         return place in q
     return re.search(rf"(?<![a-z0-9]){re.escape(place)}(?![a-z0-9])", q) is not None
+
+
+def _is_northern(region: str) -> bool:
+    """True if the region is covered by the Northern Ghana corpus (whole-token match, so 'Kwahu' is not 'Wa')."""
+    return any(_place_in_question(n, region.lower()) for n in NORTHERN)
 
 
 def _detect_region(q: str) -> str:
@@ -129,7 +139,7 @@ def build_graph(tools: Tools):
     async def retrieve(s: S) -> S:
         errors, notes, reasons = list(s["errors"]), list(s["notes"]), list(s["urgent_reasons"])
         region = s["region"]
-        if region and not any(n.strip() in region for n in NORTHERN):
+        if region and not _is_northern(region):
             reasons.append(f"no local reference for region '{region}' (corpus covers Northern Ghana only)")
             notes.append(f"The curated sources are for Northern Ghana; they may not apply in {region}.")
         passages, cal = [], []
@@ -201,12 +211,15 @@ def build_graph(tools: Tools):
         attempts = []
         feedback = None
         text, used = "", ""
-        for _ in range(2):
+        for _ in range(MAX_DRAFT_ATTEMPTS):
             try:
                 text, used = llm.draft(s["question"], s["passages"], notes, conflicts=conflicts, feedback=feedback)
             except Exception as e:
                 text, used = llm.stub_draft(s["question"], s["passages"], notes + [f"LLM call failed: {e}"]), "stub(llm-error)"
-            res = citation_check.check_draft(text, s["passages"], conflicts, ignore_prefixes=("Note:", llm.STUB_LABEL))
+            # Only the code-built stub has trusted "Note:" lines (system notes such as an error message). A model
+            # draft is checked in full, so it cannot slip an unchecked figure past the check behind "Note:".
+            skip = ("Note:", llm.STUB_LABEL) if used.startswith("stub") else ()
+            res = citation_check.check_draft(text, s["passages"], conflicts, ignore_prefixes=skip)
             attempts.append({"draft_mode": used, "ok": res.ok, "problems": res.problems, "figures_checked": res.checked})
             if res.ok or used.startswith("stub"):
                 break
@@ -218,9 +231,9 @@ def build_graph(tools: Tools):
                 "The model draft failed the citation check, so the verbatim passages are shown instead."])
             used = f"stub(citation-check-fallback after {used})"
             check["rejected_draft"] = rejected
-            reasons.append("citation check failed: " + "; ".join(attempts[-1]["problems"])[:600])
+            reasons.append("citation check failed: " + "; ".join(attempts[-1]["problems"])[:MAX_REASON_CHARS])
         region = s.get("region") or ""
-        if region and not any(n.strip() in region for n in NORTHERN) and not text.startswith(llm.STUB_LABEL):
+        if region and not _is_northern(region) and not text.startswith(llm.STUB_LABEL):
             # Added by code, not left to the model: the guidance below is from Northern Ghana sources.
             text = (f"Caution: the curated sources cover Northern Ghana only. The guidance below comes from them and "
                     f"may not apply in {region.title()}; the officer should confirm local timing.\n\n{text}")
