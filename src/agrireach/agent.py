@@ -17,7 +17,7 @@ from langgraph.graph import END, StateGraph
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from agrireach import llm
+from agrireach import citation_check, knowledge, language, llm
 
 RISK_TERMS = {
     "chemical": ["spray", "herbicide", "pesticide", "insecticide", "fungicide", "chemical", "glyphosate", "paraquat",
@@ -28,6 +28,11 @@ RISK_TERMS = {
 REGION_DEPENDENT = {"planting", "spacing", "seed"}
 NORTHERN = ["northern", "north", "tamale", "savannah", "upper east", "upper west", "north east", "bolgatanga",
             "wa", "yendi", "nyankpala", "damongo", "walewale"]
+# One model draft plus one regeneration with the citation check's feedback; then fall back to verbatim passages.
+MAX_DRAFT_ATTEMPTS = 2
+# Cap on the citation-check problems copied into an urgent reason, so the officer's queue stays readable
+# (the full list is kept in the result's citation_check.attempts).
+MAX_REASON_CHARS = 600
 OTHER_REGIONS = ["ashanti", "kumasi", "volta", "accra", "greater accra", "eastern", "western", "central", "bono",
                  "ahafo", "oti", "cape coast", "takoradi", "ho"]
 
@@ -40,6 +45,11 @@ def _place_in_question(place: str, q: str) -> bool:
     if " " in place:
         return place in q
     return re.search(rf"(?<![a-z0-9]){re.escape(place)}(?![a-z0-9])", q) is not None
+
+
+def _is_northern(region: str) -> bool:
+    """True if the region is covered by the Northern Ghana corpus (whole-token match, so 'Kwahu' is not 'Wa')."""
+    return any(_place_in_question(n, region.lower()) for n in NORTHERN)
 
 
 def _detect_region(q: str) -> str:
@@ -62,6 +72,10 @@ class S(TypedDict, total=False):
     clarification: str
     draft: str
     draft_mode: str
+    language: str
+    search_query: str
+    conflicts: dict
+    citation_check: dict
     source_checks: list
     status: str
     errors: list
@@ -92,38 +106,52 @@ class Tools:
 def build_graph(tools: Tools):
     async def intake(s: S) -> S:
         q = s["question"].lower()
-        crop = s.get("crop") or ("soybean" if re.search(r"soy(a)?bean", q) else "")
+        lang = "twi" if language.is_twi(s["question"]) else "en"
+        search_query = s["question"]
+        reasons = []
+        if lang == "twi":
+            gl = language.gloss(s["question"])
+            search_query = f"{gl} {s['question']}".strip()
+            q = f"{gl} {q}"
+            reasons.append("question appears to be in Twi: officer must confirm the meaning and reply in Twi "
+                           f"(AgriReach keyword gloss, not a translation: '{gl or 'none'}')")
+        crop = s.get("crop") or ("soybean" if re.search(language.CROP_WORDS, q) else "")
         region = s.get("region") or ""
         if not region:
             region = _detect_region(q)
-        reasons = [f"{k.replace('_', ' ')} terms in question" for k, terms in RISK_TERMS.items()
-                   if any(t in q for t in terms)]
+        reasons += [f"{k.replace('_', ' ')} terms in question" for k, terms in RISK_TERMS.items()
+                    if any(t in q for t in terms)]
         topics = {w for w in re.findall(r"[a-z]+", q)}
         clar = ""
         if not crop:
             clar = "Which crop is this about? AgriReach currently covers soybean only."
         elif not region and topics & {"plant", "planting", "sow", "when", "spacing", "seed", "seeds"}:
             clar = "Which district or region is your farm in? Planting guidance differs by region."
+        if clar and lang == "twi":
+            # Never answer a Twi speaker with an English question: route the case to an officer instead.
+            reasons.append(f"could not ask the farmer a clarifying question in Twi; officer should ask: {clar}")
+            clar = ""
         case = await tools.call("create_or_update_case", {"status": "draft", "question": s["question"], "crop": crop,
                                                           "region": region})
-        return {"crop": crop, "region": region, "urgent_reasons": reasons, "clarification": clar,
-                "case_id": case["case_id"], "notes": [], "errors": []}
+        return {"crop": crop, "region": region, "urgent_reasons": reasons, "clarification": clar, "language": lang,
+                "search_query": search_query, "case_id": case["case_id"], "notes": [], "errors": []}
 
     async def retrieve(s: S) -> S:
         errors, notes, reasons = list(s["errors"]), list(s["notes"]), list(s["urgent_reasons"])
         region = s["region"]
-        if region and not any(n.strip() in region for n in NORTHERN):
+        if region and not _is_northern(region):
             reasons.append(f"no local reference for region '{region}' (corpus covers Northern Ghana only)")
             notes.append(f"The curated sources are for Northern Ghana; they may not apply in {region}.")
         passages, cal = [], []
         try:
-            passages = await tools.call("search_guidance", {"query": s["question"], "crop": s["crop"], "region": ""})
+            passages = await tools.call("search_guidance", {"query": s.get("search_query") or s["question"],
+                                                             "crop": s["crop"] or "soybean", "region": ""})
             verified = []
             for p in passages:
                 verified.append(await tools.call("retrieve_reference", {"passage_id": p["id"]}))
             passages = verified
-            if re.search(r"\b(when|calendar|season)\b", s["question"].lower()):
-                cal = await tools.call("get_crop_calendar", {"crop": s["crop"], "region": "northern"})
+            if re.search(r"\b(when|calendar|season)\b", (s.get("search_query") or s["question"]).lower()):
+                cal = await tools.call("get_crop_calendar", {"crop": s["crop"] or "soybean", "region": "northern"})
         except Exception as e:  # tool failure: never invent results
             errors.append(str(e))
             passages = []
@@ -132,16 +160,22 @@ def build_graph(tools: Tools):
             reasons.append("no grounded evidence found in corpus")
         by_key: dict = {}
         for p in passages:
-            by_key.setdefault(p["claim_key"], set()).add(p["source_id"])
-        for k, srcs in by_key.items():
+            for k in knowledge.claim_keys(p):
+                by_key.setdefault(k, []).append(p)
+        conflicts = {}
+        for k, group in by_key.items():
+            srcs = {p["source_id"] for p in group}
             if len(srcs) > 1:
+                conflicts[k] = group
                 reasons.append(f"sources differ on {k.replace('_', ' ')}: {', '.join(sorted(srcs))}")
                 notes.append(f"Sources give different figures for {k.replace('_', ' ')}; officer should choose.")
+        if s.get("language") == "twi":
+            notes.append("The farmer wrote in Twi. This draft is in English for the officer, who must reply in Twi.")
         if any(p.get("risk") == "chemical" for p in passages) or any("chemical" in r for r in reasons):
             notes.append("Chemical use: AgriReach does not recommend products or doses. Refer to the label and the officer.")
         if any("disease" in r for r in reasons):
             notes.append("Possible pest/disease: this is not a diagnosis. Officer should inspect or refer.")
-        return {"passages": passages, "calendar": cal, "errors": errors, "notes": notes,
+        return {"passages": passages, "calendar": cal, "errors": errors, "notes": notes, "conflicts": conflicts,
                 "urgent_reasons": sorted(set(reasons), key=reasons.index)}
 
     async def check_sources(s: S) -> S:
@@ -167,14 +201,44 @@ def build_graph(tools: Tools):
         return {"source_checks": checks}
 
     async def write(s: S) -> S:
+        """Draft, then run the code citation check. One regeneration with the check's feedback; if the model still
+        fails, the officer gets the verbatim passages instead and the case is flagged urgent. Never silent."""
         notes = list(s["notes"])
+        reasons = list(s["urgent_reasons"])
         if s["errors"]:
             notes.append("A tool failed during retrieval; no guidance is shown rather than guessing.")
-        try:
-            text, used = llm.draft(s["question"], s["passages"], notes)
-        except Exception as e:
-            text, used = llm.stub_draft(s["question"], s["passages"], notes + [f"LLM call failed: {e}"]), "stub(llm-error)"
-        return {"draft": text, "draft_mode": used}
+        conflicts = s.get("conflicts") or {}
+        attempts = []
+        feedback = None
+        text, used = "", ""
+        for _ in range(MAX_DRAFT_ATTEMPTS):
+            try:
+                text, used = llm.draft(s["question"], s["passages"], notes, conflicts=conflicts, feedback=feedback)
+            except Exception as e:
+                text, used = llm.stub_draft(s["question"], s["passages"], notes + [f"LLM call failed: {e}"]), "stub(llm-error)"
+            # Only the code-built stub has trusted "Note:" lines (system notes such as an error message). A model
+            # draft is checked in full, so it cannot slip an unchecked figure past the check behind "Note:".
+            skip = ("Note:", llm.STUB_LABEL) if used.startswith("stub") else ()
+            res = citation_check.check_draft(text, s["passages"], conflicts, ignore_prefixes=skip)
+            attempts.append({"draft_mode": used, "ok": res.ok, "problems": res.problems, "figures_checked": res.checked})
+            if res.ok or used.startswith("stub"):
+                break
+            feedback = res.problems
+        check = {"ok": attempts[-1]["ok"], "attempts": attempts}
+        if not check["ok"]:
+            rejected = text
+            text = llm.stub_draft(s["question"], s["passages"], notes + [
+                "The model draft failed the citation check, so the verbatim passages are shown instead."])
+            used = f"stub(citation-check-fallback after {used})"
+            check["rejected_draft"] = rejected
+            reasons.append("citation check failed: " + "; ".join(attempts[-1]["problems"])[:MAX_REASON_CHARS])
+        region = s.get("region") or ""
+        if region and not _is_northern(region) and not text.startswith(llm.STUB_LABEL):
+            # Added by code, not left to the model: the guidance below is from Northern Ghana sources.
+            text = (f"Caution: the curated sources cover Northern Ghana only. The guidance below comes from them and "
+                    f"may not apply in {region.title()}; the officer should confirm local timing.\n\n{text}")
+        return {"draft": text, "draft_mode": used, "citation_check": check,
+                "urgent_reasons": sorted(set(reasons), key=reasons.index)}
 
     async def file_case(s: S) -> S:
         reasons = s["urgent_reasons"]
@@ -220,7 +284,8 @@ async def run(question: str, crop: str = "", region: str = "", use_fetch: bool |
         graph = build_graph(Tools(own, fetch))
         out = await graph.ainvoke({"question": question, "crop": crop, "region": region})
     return {k: out.get(k) for k in ("case_id", "status", "crop", "region", "clarification", "draft", "draft_mode",
-                                     "urgent_reasons", "source_checks", "errors")} | {
+                                     "urgent_reasons", "source_checks", "errors", "language",
+                                     "citation_check")} | {
         "priority": "urgent" if out.get("urgent_reasons") else "routine",
         "sources": [p["id"] for p in out.get("passages") or []]}
 

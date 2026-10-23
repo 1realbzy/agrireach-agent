@@ -27,6 +27,7 @@ def search_guidance(query: str, crop: str = "soybean", region: str = "") -> str:
     db.log(con, "agent", "search_guidance", {"query": query, "crop": crop, "region": region},
            f"{len(hits)} hits: {[h['id'] for h in hits]}")
     return json.dumps([{k: h[k] for k in ("id", "topic", "claim_key", "text", "page", "source_id", "source")}
+                       | ({"also_claims": h["also_claims"]} if h.get("also_claims") else {})
                        | ({"risk": h["risk"]} if "risk" in h else {}) for h in hits], ensure_ascii=False)
 
 

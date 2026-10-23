@@ -33,22 +33,41 @@ def tokens(s: str) -> list[str]:
     return [t for t in re.findall(r"[a-z]+", s.lower()) if t not in STOP]
 
 
+def _in_scope(p: dict, crop: str | None, region: str | None) -> bool:
+    """Crop/region filter shared by ranked hits and conflict-completion hits."""
+    return (not crop or p["crop"] == crop.lower()) and (not region or p["region"] in region.lower())
+
+
 def search(query: str, crop: str | None = None, region: str | None = None, limit: int = 4) -> list[dict]:
     kb = load()
     q = tokens(query)
     topics = {SYNONYMS[t] for t in q if t in SYNONYMS}
     out = []
     for p in kb["passages"]:
-        if crop and p["crop"] != crop.lower():
-            continue
-        if region and p["region"] not in region.lower():
+        if not _in_scope(p, crop, region):
             continue
         words = set(tokens(p["text"]))
         score = 3 * (p["topic"] in topics) + sum(t in words for t in q if len(t) > 3)
         if score >= 3:
             out.append({**p, "score": score, "source": kb["sources"][p["source_id"]]})
     out.sort(key=lambda r: -r["score"])
-    return out[:limit]
+    out = out[:limit]
+    # Conflict completeness: if a hit states a claim, also return every other source's passage on the same claim,
+    # so a disagreement is never hidden just because the other source scored lower or fell past `limit`.
+    keys = {k for r in out for k in claim_keys(r)}
+    have = {r["id"] for r in out}
+    for p in kb["passages"]:
+        if p["id"] in have or not _in_scope(p, crop, region):
+            continue
+        if keys & set(claim_keys(p)):
+            out.append({**p, "score": 0, "source": kb["sources"][p["source_id"]], "added_for_conflict_check": True})
+            have.add(p["id"])
+    return out
+
+
+def claim_keys(p: dict) -> list[str]:
+    """The claim a passage makes, plus any secondary claims it also states (e.g. a depth passage giving hole spacing)."""
+    return [p["claim_key"], *p.get("also_claims", [])]
 
 
 def reference(passage_id: str) -> dict | None:
