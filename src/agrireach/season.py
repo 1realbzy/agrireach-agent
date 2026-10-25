@@ -46,24 +46,44 @@ def _label(p: dict) -> str:
     return f"{src}, {p.get('region', '')} region".rstrip(", ")
 
 
-def fact(received: date, passages: list[dict]) -> str:
-    """'Question received 25 Oct 2026. Windows cited: ...' plus a flag when the date is outside all of them.
-    Empty when no cited passage gives a planting window."""
+def _rows(passages: list[dict]) -> list[tuple[str, str, tuple | None]]:
     rows, seen = [], set()
     for p in passages:
         if is_window(p) and p["id"] not in seen:
             seen.add(p["id"])
             rows.append((_label(p), _phrase(p), window(p)))
+    return rows
+
+
+def _inside(received: date, rows) -> bool:
+    md = (received.month, received.day)
+    return any(w and w[0] <= md <= w[1] for _, _, w in rows)
+
+
+def outside(received: date, passages: list[dict]) -> bool:
+    """True only when windows are cited, every one could be read, and none contains the received date."""
+    rows = _rows(passages)
+    return bool(rows) and all(w for _, _, w in rows) and not _inside(received, rows)
+
+
+def prompt(received: date) -> str:
+    """Approval prompt for the officer when outside() is True. A fact and a request to check; no advice."""
+    return (f"season check: the question was received on {received.day} {received:%b %Y}, which is outside every "
+            "planting window cited in the draft; check the timing before approving")
+
+
+def fact(received: date, passages: list[dict]) -> str:
+    """'Question received 25 Oct 2026. Windows cited: ...' plus a flag when the date is outside all of them.
+    Empty when no cited passage gives a planting window."""
+    rows = _rows(passages)
     if not rows:
         return ""
     cited = "; ".join(f"{label}: {phrase}" for label, phrase, _ in rows)
     out = f"Question received {received.day} {received:%b %Y}. Windows cited: {cited}"
     out += "" if out.endswith(".") else "."
-    md = (received.month, received.day)
-    inside = any(w and w[0] <= md <= w[1] for _, _, w in rows)
     unread = [label for label, _, w in rows if not w]
     if unread:
         out += f" AgriReach could not read the dates of: {', '.join(unread)}."
-    elif not inside:
+    elif not _inside(received, rows):
         out += " The date is outside the cited windows."
     return out
