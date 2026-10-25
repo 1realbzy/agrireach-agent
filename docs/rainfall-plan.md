@@ -20,6 +20,9 @@ Goal: show the extension officer recent and forecast rainfall for the farmer's p
 guidance, so the officer can judge whether the guide's onset condition looks met. The tool informs the officer. It
 never decides, never changes the guide's window, and never reaches the farmer without the officer's approval.
 
+
+**Update (25 Oct 2026, after review):** top-dressing questions now get the rainfall record too, because the guide says to delay top dressing when the soil is very dry (APNI-SARI-2023-MAIZE p13). When the question gives only a region, or no place, no record is attached. Instead an officer-only line says why and asks the officer to get the district from the farmer. Planting questions also get an officer-only line with the case's received date next to the cited windows, plus a flag when the date is outside all of them (`src/agrireach/season.py`). These lines start with `Note: (officer only)`, are added after the citation checks, and are stripped before the SMS is proposed. A proposed SMS that reads as "rains are good, plant now" is withheld, so the officer writes it. A live check with the real model is in [season-fact-live-2026-10-25.md](season-fact-live-2026-10-25.md).
+
 ## What the cited guides say about onset (verbatim)
 
 - IITA 2025 maize guide, p. 15 (`IITA-MAIZE-2025:p15-three-good-rains`): "It is recommended to plant after three good
