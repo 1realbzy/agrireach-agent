@@ -11,12 +11,14 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from agrireach import agent, db, farmer_reply, knowledge, llm
-from agrireach.channels import service, simulator, whatsapp
+from agrireach.channels import service, simulator, sms, whatsapp
 from agrireach.channels.base import mask_sender
 
 app = FastAPI(title="AgriReach", version="0.1.0")
 if whatsapp.enabled():  # off by default; see docs/whatsapp-setup.md
     app.include_router(whatsapp.router(whatsapp.Config.from_env()))
+if sms.enabled():  # off by default; see docs/sms-setup.md
+    app.include_router(sms.router(sms.Config.from_env()))
 
 
 class Ask(BaseModel):
@@ -162,7 +164,7 @@ def farmer_view(case_id: int):
             "approved_at": row["decided_at"]}
 
 
-# --- Voice notes and channels (local simulator; WhatsApp only if enabled) ------------------------------------
+# --- Voice notes and channels (local simulator; WhatsApp and SMS only if enabled) -----------------------------
 
 def _simulator_enabled() -> None:
     """The simulator is a local demo of a farmer's phone: its outbox lists every farmer's messages with no sign-in.
