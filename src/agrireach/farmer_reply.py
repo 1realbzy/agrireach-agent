@@ -35,6 +35,42 @@ PROMPT = (
 )
 
 
+# A quoted planting-window table row: "Major season | Transition | Mid-March-end of April" [MOFA-MAIZE:p11-...]
+ROW_RE = re.compile(r'^"?(Major|Minor)(?:\s+cropping)?\s+season\s*\|\s*([^|]+?)\s*\|\s*([^|"]+?)"?\s*'
+                    r'\[([A-Z0-9][A-Z0-9-]*):[^\]]*\]', re.I)
+SOURCE_NAMES = {"MOFA": "MoFA", "IITA": "IITA", "APNI": "APNI"}
+CONFIRM = "Your extension officer will confirm which to follow."
+
+
+def _zone_words(cell: str) -> str:
+    c = re.sub(r"\bcostal\b", "coastal", cell.strip(), flags=re.I)  # IITA's table spells it "Costal"
+    if "/" in c:  # "Guinea/Sudan savannah"
+        a, b = c.split("/", 1)
+        return f"the {a.strip()} and {b.strip()} zones"
+    low = c.lower()
+    return f"the {c if low.startswith(('guinea', 'sudan')) else low} zone"
+
+
+def _lower1(s: str) -> str:
+    return s[:1].lower() + s[1:]
+
+
+def row_sentence(line: str) -> str | None:
+    """Plain sentence for a quoted planting-window row, naming its source; None if the line is not one.
+    The period's own words are kept (only the first letter lowered); the officer view keeps the verbatim row."""
+    m = ROW_RE.match(line.strip())
+    if not m:
+        return None
+    season, zone, period, sid = m.groups()
+    parts = period.split(" - ", 1) if " - " in period else \
+        re.split(r"-(?=(?:end|early|mid)\b)", period, maxsplit=1, flags=re.I)
+    when = f"from {_lower1(parts[0].strip())} to {_lower1(parts[1].strip())}" if len(parts) == 2 else \
+        f"in {_lower1(period.strip())}"
+    crop = "maize" if "MAIZE" in sid else "the crop"
+    src = SOURCE_NAMES.get(sid.split("-")[0], sid)
+    return f"In {_zone_words(zone)}, plant {season.lower()}-season {crop} {when} ({src})."
+
+
 @dataclass
 class FarmerDraft:
     text: str
@@ -49,6 +85,8 @@ def check(text: str, officer_text: str) -> list[str]:
     out = []
     if CITE_RE.search(text) or "[" in text:
         out.append("contains citation brackets")
+    if "|" in text:
+        out.append("contains a raw table row ('|'): write it as a sentence")
     if OFFICER_RE.search(ALLOWED_OFFICER.sub("", text)):
         out.append("still addresses the officer")
     if len(text) > MAX_CHARS:
@@ -73,11 +111,17 @@ def _sentences(text: str) -> list[str]:
     return [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
 
 
-def rule_rewrite(officer_text: str) -> str:
-    """Deterministic plain version: drop notes and officer-only lines, strip citations, address the farmer."""
-    keep = []
+def rule_rewrite(officer_text: str, max_chars: int = MAX_CHARS) -> str:
+    """Deterministic plain version: drop notes and officer-only lines, strip citations, address the farmer.
+    Planting-window table rows become plain sentences naming their source, and come first."""
+    rows, keep = [], []
     for line in officer_text.splitlines():
         l = line.strip()
+        sent = row_sentence(re.sub(r"^[-*•]\s+", "", l))
+        if sent:
+            if sent not in rows:
+                rows.append(sent)
+            continue
         if not l or l.startswith(("Note:", "Caution:", llm.STUB_LABEL, "What the curated sources say")) or \
                 l.endswith(":") or l.startswith("**Advice for"):
             continue
@@ -102,8 +146,8 @@ def rule_rewrite(officer_text: str) -> str:
             if s not in keep:
                 keep.append(s)
     out = ""
-    for s in keep:
-        if len(out) + len(s) + 1 > MAX_CHARS:
+    for s in rows + keep:
+        if len(out) + len(s) + 1 > max_chars:
             break
         out = f"{out} {s}".strip()
     return out
@@ -133,6 +177,9 @@ def propose(officer_text: str, question: str = "", language: str = "en", conflic
     if "cover Northern Ghana only" in officer_text:
         notes.append("the guidance is from Northern Ghana sources and the farmer is elsewhere: say so in the farmer "
                      "text, or adjust it, before approving")
+    elif "Caution: some of the guidance below is from sources for the" in officer_text:
+        notes.append("some guidance is for another agroecological zone than the farmer's: say so in the farmer text, "
+                     "or adjust it, before approving")
     if llm.mode() == "llm" and not officer_text.startswith(llm.STUB_LABEL):
         try:
             text, mode = _llm_rewrite(officer_text, question, conflicts)
@@ -142,7 +189,10 @@ def propose(officer_text: str, question: str = "", language: str = "en", conflic
             notes.append(f"model rewrite rejected ({'; '.join(problems)}); rule-based version shown")
         except Exception as e:
             notes.append(f"model rewrite failed ({type(e).__name__}); rule-based version shown")
-    text = rule_rewrite(officer_text)
+    text = rule_rewrite(officer_text, MAX_CHARS - (len(CONFIRM) + 1 if conflicts else 0))
+    if conflicts and text and CONFIRM not in text:
+        # The options are listed with their sources; never present them as if they agree.
+        text = f"{text} {CONFIRM}"
     problems = check(text, officer_text)
     if not text:
         return FarmerDraft("", "rule", notes + ["nothing farmer-facing left after removing officer notes; "

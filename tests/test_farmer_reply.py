@@ -41,3 +41,41 @@ def test_region_caution_is_raised_to_the_officer_not_silently_dropped():
     d = fr.propose(officer, "When should I plant soybean in Kumasi?", "en")
     assert "Caution" not in d.text and "officer" not in d.text.lower()
     assert any("Northern Ghana" in p for p in d.problems)
+
+
+STUB_ROWS = ('[OFFLINE STUB DRAFT - no language model was used; text is assembled from retrieved passages]\n'
+             'What the curated sources say:\n'
+             '- "Major season | Transition | Mid-March-end of April" [MOFA-MAIZE:p11-transition-major]\n'
+             '- "Major cropping season | Transition | End of March - End of April" [IITA-MAIZE-2025:p16-transition-major]\n'
+             '- "Minor season | Forest | Mid July-early Sept." [MOFA-MAIZE:p12-forest-minor]\n'
+             'Note: Sources give different figures for maize planting window major season; officer should choose.')
+
+
+def test_planting_table_rows_become_plain_sentences_for_the_farmer():
+    t = fr.rule_rewrite(STUB_ROWS)
+    assert "|" not in t
+    assert "In the transition zone, plant major-season maize from mid-March to end of April (MoFA)." in t
+    assert "In the transition zone, plant major-season maize from end of March to end of April (IITA)." in t
+    assert "In the forest zone, plant minor-season maize from mid July to early Sept. (MoFA)." in t
+    assert fr.check(t, STUB_ROWS) == []
+
+
+def test_raw_table_row_in_farmer_text_is_a_problem():
+    assert any("table" in p for p in fr.check("Major season | Forest | Early March-end of April", STUB_ROWS))
+
+
+def test_differing_windows_flagged_and_not_presented_as_agreeing():
+    d = fr.propose(STUB_ROWS, "When should I plant maize in Techiman?", "en", conflicts=True)
+    assert "sources differ: edit to keep only the option you choose" in d.problems
+    assert "(MoFA)" in d.text and "(IITA)" in d.text
+    assert d.text.rstrip().endswith("Your extension officer will confirm which to follow.")
+
+
+def test_ejura_farmer_text_is_readable_and_flags_the_difference():
+    import asyncio
+    from agrireach import agent
+    out = asyncio.run(agent.run("When should I plant maize in Ejura?", use_fetch=False))
+    fd = out["farmer_draft"]
+    assert "|" not in fd["text"] and "transition zone" in fd["text"] and "(MoFA)" in fd["text"]
+    assert "sources differ: edit to keep only the option you choose" in fd["problems"]
+    assert "Major season | Transition | Mid-March-end of April" in out["draft"]  # officer view keeps verbatim cells
