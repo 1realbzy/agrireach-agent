@@ -2,6 +2,8 @@
 
 **Status (25 Oct 2026, later):** built on branch `feat/rainfall-signal` as the read-only MCP tool `get_recent_rainfall`
 (`src/agrireach/rainfall.py`). What differs from the plan below:
+- Licence decision: on 25 Oct 2026 Herbert approved Open-Meteo for non-commercial use (CC BY 4.0, credited as
+  `RAINFALL-OPEN-METEO` in every draft that uses it). If AgriReach ever charges users, it needs a paid Open-Meteo plan.
 - Provider: Herbert first chose NASA POWER, then asked to keep it off the default path. Default is **Open-Meteo**
   (CC BY 4.0; free API for non-commercial use, which fits a non-commercial challenge entry). NASA POWER is an opt-in
   cross-check (`AGRIREACH_RAINFALL_CROSSCHECK=nasa_power`) that only uses days at least 7 days old and only
