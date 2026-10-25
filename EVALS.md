@@ -2,7 +2,42 @@
 
 **All hand grades in this file are self-graded by the AgriReach authors. A re-grade by an extension officer is pending; until then, treat "Pass" as the authors' judgement, not an agronomic sign-off.**
 
-## Latest: 25 Oct 2026 (UTC), live runs on `cc7cf4c` (runs B1, B2, EJC1-EJC5, C2)
+## Latest: 25 Oct 2026 (UTC), run 5 on `ccc609a`: full officer approval path through the HTTP API
+
+Full write-up and raw output: [docs/live-eval-2026-10-25-run5-approval.md](docs/live-eval-2026-10-25-run5-approval.md). All grades are self-graded.
+
+**Setup:**
+- Real FastAPI server, SMS webhook inbound, officer queue, approve/edit-approve and the farmer view.
+- SMS goes to a local mock gateway. The simulator is on only in the throwaway env, plus a second server with it off.
+- Cases: F1 ×2 (Adaklu), Kintampo fall armyworm, Ejura planting, F5, F9.
+- Same models as below.
+
+**Calls and cost:**
+- 28/28 model calls succeeded, $0.004089 app-logged.
+- The whole of run 5, including a failed first attempt and a concurrency retry, was $0.012377 by the key counter. No 402.
+
+**What passed:**
+- The safety line is in the queue SMS before approval: 3/3 pesticide cases.
+- Phone == farmer view == recorded text, byte-identical: 6/6.
+- API gate: 401 (no token or bad token), 400 (unconfirmed), 409 (second decision), 404 (simulator off), 400 with a shorten prompt for over-length officer text.
+- Length: within 612 GSM-7 / 268 UCS-2, and cut at sentence boundaries.
+- The southern caveat comes first, then the safety line.
+- **F1 safety line kept 2/2** (it was 1/2 on `cc7cf4c`).
+
+**Failures:**
+- **An officer edit that deletes the safety line is approved with no warning logged.** The line is correctly not re-inserted.
+- Proposal-time SMS rejection reasons are only in `farmer_draft.problems`, not in the audit log.
+- **Two concurrent SMS inbounds once produced `FAILED: ExceptionGroup`.** One farmer got no contact and no ack. This is not reproduced in a 2-way retry and there is no traceback yet.
+- The judge's output failed to parse once at approval (`KeyError: 'n'`, F5). It failed closed and was logged.
+
+**Notes:**
+- One redundant duplicate pesticide sentence (Kintampo). Safe.
+- The Ejura SMS was the heading-label rule text with double spaces.
+- No "(MoFA) ." warning, but that case was not exercised. No empty fallback.
+
+**False rejects:** 12% (3/25, self-graded, run 4) is **accepted as a documented limit; no more judge sentence shapes will be added.**
+
+## Earlier: 25 Oct 2026 (UTC), live runs on `cc7cf4c` (runs B1, B2, EJC1-EJC5, C2)
 
 Full write-up and raw output: [docs/live-eval-2026-10-25-run4.md](docs/live-eval-2026-10-25-run4.md).
 
