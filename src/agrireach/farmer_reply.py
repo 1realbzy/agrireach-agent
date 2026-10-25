@@ -301,11 +301,24 @@ def ensure_safety_line(text: str, passages: list[dict] | None, caveat: dict | No
     dropped: list[str] = []
     if fit and not fits(join(body)):
         # Why one at a time: cutting the whole tail after one long sentence also lost short ones that fit (run 5,
-        # Techiman lost "Rotate maize with non-host plants..."). Keep each sentence, in order, if it still fits.
-        kept: list[str] = []
-        for s in body:
-            (kept if fits(join([*kept, s])) else dropped).append(s)
-        body = kept
+        # Techiman lost "Rotate maize with non-host plants..."). Keep each sentence, in order, if it still fits,
+        # measured with the real encoding. One non-GSM character makes the whole SMS Unicode (268, not 612), so the
+        # fit without the Unicode sentences is tried too and kept if it keeps more advice (run 6: "in Kɔforidua"
+        # left caveat + safety line only).
+        def greedy(cands: list[int]) -> list[int]:  # indexes into body
+            kept: list[int] = []
+            for i in cands:
+                if fits(join([body[j] for j in (*kept, i)])):
+                    kept.append(i)
+            return kept
+        from agrireach.channels import sms
+        gsm = lambda x: sms.measure(plain_punctuation(x)).encoding == "GSM-7"  # noqa: E731
+        options = [greedy(list(range(len(body))))]
+        if not all(gsm(s) for s in body) and gsm(join([])):
+            options.append(greedy([i for i, s in enumerate(body) if gsm(s)]))
+        kept = max(options, key=lambda k: sum(len(body[i]) for i in k))  # first (all sentences) on a tie
+        dropped = [s for i, s in enumerate(body) if i not in kept]
+        body = [body[i] for i in kept]
     out, notes = join(body), []
     if audit is not None:
         audit["dropped"] = list(dropped)
