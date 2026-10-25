@@ -78,6 +78,7 @@ class FarmerDraft:
     problems: list[str] = field(default_factory=list)  # shown to the officer next to the proposal
     needs_officer_text: bool = False
     language: str = "en"
+    zone_caveat: dict | None = None  # set when the guidance is for another zone; see zone_caveat()
 
 
 def check(text: str, officer_text: str) -> list[str]:
@@ -166,7 +167,31 @@ def _llm_rewrite(officer_text: str, question: str, conflicts: bool = False) -> t
     return (r.choices[0].message.content or "").strip(), f"llm:{os.environ['LLM_MODEL']}"
 
 
-def propose(officer_text: str, question: str = "", language: str = "en", conflicts: bool = False) -> FarmerDraft:
+def zone_caveat(region: str, where: str = "") -> dict:
+    """The farmer-facing caveat for guidance from another agroecological zone. `where` is the zone the passages are
+    for ("" means the Northern Ghana guides). Plain words, no figures, and it doesn't address the officer."""
+    src = f"the {where} zone" if where else "Northern Ghana"
+    return {"region": region.title(), "sources_for": src,
+            "sentence": f"This advice comes from guides for {src} and may not suit {region.title()}, so check the "
+                        "timing with your local extension agent."}
+
+
+def caveat_kept(text: str, caveat: dict | None) -> bool:
+    """Whether an (officer-edited) farmer text still tells the farmer the guidance may not suit their place."""
+    if not caveat:
+        return True
+    t = text.lower()
+    return caveat["sentence"].lower() in t or caveat["region"].lower() in t
+
+
+def propose(officer_text: str, question: str = "", language: str = "en", conflicts: bool = False,
+            zone_caveat: dict | None = None) -> FarmerDraft:
+    fd = _propose(officer_text, question, language, conflicts, zone_caveat)
+    fd.zone_caveat = zone_caveat
+    return fd
+
+
+def _propose(officer_text: str, question: str, language: str, conflicts: bool, caveat: dict | None) -> FarmerDraft:
     if language not in SUPPORTED_LANGUAGES:
         return FarmerDraft("", "none", [f"the farmer wrote in {language}; AgriReach can't write farmer text in that "
                                         "language, so the officer must write it"], needs_officer_text=True,
@@ -174,7 +199,12 @@ def propose(officer_text: str, question: str = "", language: str = "en", conflic
     if not officer_text.strip():
         return FarmerDraft("", "none", ["no officer text yet"], needs_officer_text=True)
     notes = ["sources differ: edit to keep only the option you choose"] if conflicts else []
-    if "cover Northern Ghana only" in officer_text:
+    lead = f"{caveat['sentence']} " if caveat else ""
+    if caveat:
+        notes.append(f"the guidance is from sources for {caveat['sources_for']} and the farmer is in "
+                     f"{caveat['region']}: a caveat sentence opens the farmer text; keep it, or adjust the advice, "
+                     "before approving")
+    elif "cover Northern Ghana only" in officer_text:
         notes.append("the guidance is from Northern Ghana sources and the farmer is elsewhere: say so in the farmer "
                      "text, or adjust it, before approving")
     elif "Caution: some of the guidance below is from sources for the" in officer_text:
@@ -183,16 +213,18 @@ def propose(officer_text: str, question: str = "", language: str = "en", conflic
     if llm.mode() == "llm" and not officer_text.startswith(llm.STUB_LABEL):
         try:
             text, mode = _llm_rewrite(officer_text, question, conflicts)
+            text = lead + text if text and caveat and not caveat_kept(text, caveat) else text
             problems = check(text, officer_text)
             if not problems:
                 return FarmerDraft(text, mode, notes)
             notes.append(f"model rewrite rejected ({'; '.join(problems)}); rule-based version shown")
         except Exception as e:
             notes.append(f"model rewrite failed ({type(e).__name__}); rule-based version shown")
-    text = rule_rewrite(officer_text, MAX_CHARS - (len(CONFIRM) + 1 if conflicts else 0))
+    text = rule_rewrite(officer_text, MAX_CHARS - len(lead) - (len(CONFIRM) + 1 if conflicts else 0))
     if conflicts and text and CONFIRM not in text:
         # The options are listed with their sources; never present them as if they agree.
         text = f"{text} {CONFIRM}"
+    text = lead + text if text else text
     problems = check(text, officer_text)
     if not text:
         return FarmerDraft("", "rule", notes + ["nothing farmer-facing left after removing officer notes; "

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict
 from pathlib import Path
 
@@ -92,6 +93,13 @@ def decide(case_id: int, d: Decision, officer: str = Depends(current_officer)):
         raise HTTPException(400, "farmer_text required: approve the exact text the farmer will receive")
     if d.decision in ("approve", "edit_approve") and not d.confirmed:
         raise HTTPException(400, "confirm that you checked the farmer text against the cited sources before approving")
+    warnings = []
+    if d.decision in ("approve", "edit_approve"):
+        current = db.get_case(con, case_id)
+        caveat = (json.loads(current["farmer_draft"] or "null") or {}).get("zone_caveat") if current else None
+        if not farmer_reply.caveat_kept(d.farmer_text, caveat):
+            warnings.append(f"the approved farmer text has no zone caveat: the guidance is from sources for "
+                            f"{caveat['sources_for']} and the farmer is in {caveat['region']}")
     try:
         row = db.officer_decide(con, case_id, officer=officer, decision=d.decision, edited_text=d.edited_text,
                                 note=d.note, farmer_text=d.farmer_text)
@@ -103,7 +111,9 @@ def decide(case_id: int, d: Decision, officer: str = Depends(current_officer)):
         raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
-    return _case(row) | {"delivery": delivery}
+    for w in warnings:
+        db.log(con, f"officer:{officer}", "approval_warning", {"decision": d.decision}, w, ok=False, case_id=case_id)
+    return _case(row) | {"delivery": delivery, "warnings": warnings}
 
 
 @app.post("/officer/cases/{case_id}/farmer-draft")
@@ -112,8 +122,9 @@ def farmer_draft(case_id: int, body: OfficerText, officer: str = Depends(current
     row = db.get_case(db.connect(), case_id)
     if not row:
         raise HTTPException(404, "not found")
-    lang = (json.loads(row["farmer_draft"] or "null") or {}).get("language", "en")
-    return asdict(farmer_reply.propose(body.officer_text, row["question"], lang))
+    stored = json.loads(row["farmer_draft"] or "null") or {}
+    return asdict(farmer_reply.propose(body.officer_text, row["question"], stored.get("language", "en"),
+                                       zone_caveat=stored.get("zone_caveat")))
 
 
 @app.post("/cases/{case_id}/release")
@@ -143,7 +154,14 @@ def farmer_view(case_id: int):
 
 # --- Voice notes and channels (local simulator; WhatsApp only if enabled) ------------------------------------
 
-@app.post("/channels/simulator/inbound")
+def _simulator_enabled() -> None:
+    """The simulator is a local demo of a farmer's phone: its outbox lists every farmer's messages with no sign-in.
+    Off unless AGRIREACH_SIMULATOR=1; never enable it on a deployed server."""
+    if os.getenv("AGRIREACH_SIMULATOR") != "1":
+        raise HTTPException(404, "not found")
+
+
+@app.post("/channels/simulator/inbound", dependencies=[Depends(_simulator_enabled)])
 async def simulator_inbound(sender: str = Form(...), text: str = Form(""), audio: UploadFile | None = File(None)):
     """A simulated farmer phone sends a text and/or a voice note. Sender ids must look like 'sim:farmer-1'."""
     try:
@@ -163,7 +181,7 @@ async def simulator_inbound(sender: str = Form(...), text: str = Form(""), audio
                                         channel=simulator.SimulatorChannel())
 
 
-@app.get("/channels/simulator/outbox")
+@app.get("/channels/simulator/outbox", dependencies=[Depends(_simulator_enabled)])
 def simulator_outbox(sender: str | None = None):
     return simulator.SimulatorChannel().messages(sender)
 

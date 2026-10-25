@@ -353,22 +353,31 @@ def build_graph(tools: Tools):
             check["rejected_draft"] = rejected
             reasons.append("citation check failed: " + "; ".join(attempts[-1]["problems"])[:MAX_REASON_CHARS])
         region = s.get("region") or ""
-        if region and s.get("zone_mismatch") and not text.startswith(llm.STUB_LABEL):
-            # Added by code, not left to the model: name where the guidance below is from.
+        if region and s.get("zone_mismatch"):
+            # Added by code, not left to the model, and in offline mode too: name where the guidance is from.
             if s.get("mismatch_zones"):
                 here = f" ({zones.label(s['zone']['zone'])} zone)" if s.get("zone") else ""
-                text = (f"Caution: some of the guidance below is from sources for the {s['mismatch_zones']} zone and "
-                        f"may not apply in {region.title()}{here}; the officer should confirm local timing.\n\n{text}")
+                caution = (f"Caution: some of the guidance below is from sources for the {s['mismatch_zones']} zone "
+                           f"and may not apply in {region.title()}{here}; the officer should confirm local timing.")
             else:
-                text = (f"Caution: the curated sources cover Northern Ghana only. The guidance below comes from them "
-                        f"and may not apply in {region.title()}; the officer should confirm local timing.\n\n{text}")
+                caution = (f"Caution: the curated sources cover Northern Ghana only. The guidance below comes from them "
+                           f"and may not apply in {region.title()}; the officer should confirm local timing.")
+            if text.startswith(llm.STUB_LABEL):  # keep the offline label first so the draft stays recognisable
+                label, _, rest = text.partition("\n")
+                text = f"{label}\n{caution}\n{rest}"
+            else:
+                text = f"{caution}\n\n{text}"
         return {"draft": text, "draft_mode": used, "citation_check": check,
                 "urgent_reasons": sorted(set(reasons), key=reasons.index)}
 
     async def file_case(s: S) -> S:
         reasons = s["urgent_reasons"]
         conflicts = any(n.startswith("Sources give different figures") for n in s.get("notes", []))
-        fd = farmer_reply.propose(s["draft"], s["question"], s.get("language", "en"), conflicts=conflicts)
+        # Keyed on the zone_mismatch flag, not on the caution's wording.
+        caveat = (farmer_reply.zone_caveat(s["region"], s.get("mismatch_zones") or "")
+                  if s.get("region") and s.get("zone_mismatch") else None)
+        fd = farmer_reply.propose(s["draft"], s["question"], s.get("language", "en"), conflicts=conflicts,
+                                  zone_caveat=caveat)
         r = await tools.call("create_or_update_case", {
             "status": "pending_review", "case_id": s["case_id"], "draft": s["draft"],
             "source_ids": [p["id"] for p in s["passages"]], "priority": "urgent" if reasons else "routine",

@@ -16,6 +16,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("AGRIREACH_MEDIA_DIR", str(tmp_path / "media"))
     monkeypatch.setenv("AGRIREACH_OUTBOX", str(tmp_path / "outbox"))
     monkeypatch.setenv("AGRIREACH_CONSENT", "0")  # consent flow has its own tests (test_consent.py) that turn it on
+    monkeypatch.setenv("AGRIREACH_SIMULATOR", "1")  # local phone simulator; test_simulator_gate.py checks it's off by default
     monkeypatch.setenv("AGRIREACH_STT", "none")  # tests pass a fake transcriber; test_stt_real.py opts in
     for k in ("WHATSAPP_ENABLED", "AGRIREACH_TTS"):
         monkeypatch.delenv(k, raising=False)
