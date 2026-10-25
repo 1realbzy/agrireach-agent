@@ -137,8 +137,12 @@ def officer_decide(con, case_id: int, *, officer: str, decision: str, edited_tex
     row = get_case(con, case_id)
     if row is None:
         raise ValueError(f"case {case_id} not found")
-    if row["status"] != "pending_review":
-        raise GateError(f"case {case_id} is '{row['status']}', not pending_review")
+    prev = row["status"]
+    if prev == "not_delivered" and decision not in ("approve", "edit_approve"):
+        raise GateError(f"case {case_id} was approved but not delivered: approve it again (after editing if needed) "
+                        "or retry the send")
+    if prev not in ("pending_review", "not_delivered"):
+        raise GateError(f"case {case_id} is '{prev}', not pending_review")
     status = {"approve": "approved", "edit_approve": "approved", "reject": "rejected",
               "request_info": "needs_info"}[decision]
     final = None
@@ -152,18 +156,19 @@ def officer_decide(con, case_id: int, *, officer: str, decision: str, edited_tex
     if final is not None:
         farmer = farmer_text.strip() if farmer_text and farmer_text.strip() else final
     t = now()
-    # Write only if the case is STILL pending_review: the status check above and this write are not atomic, so two
+    # Write only if the case is STILL in the status read above: the check and this write are not atomic, so two
     # officers deciding at once would otherwise both "win" (last write on the record, first text on the phone).
     cur = con.execute("UPDATE cases SET status=?, final_text=?, farmer_text=?, officer=?, decided_at=?, officer_note=?,"
-                      " updated_at=? WHERE id=? AND status='pending_review'",
-                      (status, final, farmer, officer.strip(), t, note, t, case_id))
+                      " updated_at=? WHERE id=? AND status=?",
+                      (status, final, farmer, officer.strip(), t, note, t, case_id, prev))
     con.commit()
     if cur.rowcount != 1:
         log(con, f"officer:{officer.strip()}", "officer_decision", {"decision": decision},
             "BLOCKED: another decision was recorded first", ok=False, case_id=case_id)
         raise GateError(f"case {case_id} was decided by someone else first; reload it")
     log(con, f"officer:{officer.strip()}", "officer_decision",
-        {"decision": decision, "farmer_text": None if farmer is None else
+        {"decision": decision, **({"after": "re-approval after a failed delivery"} if prev == "not_delivered" else {}),
+         "farmer_text": None if farmer is None else
          ("officer-approved farmer text" if farmer != final else "same as officer text"),
          "farmer_text_chars": len(farmer or "")}, status, case_id=case_id)
     return dict(get_case(con, case_id))
@@ -197,27 +202,51 @@ def release_to_farmer(con, case_id: int, actor: str = "system") -> dict:
     row = get_case(con, case_id)
     if row is None:
         raise ValueError(f"case {case_id} not found")
-    if row["status"] != "approved" or not row["officer"]:
-        log(con, actor, "release_to_farmer", {}, f"BLOCKED: status '{row['status']}', no officer approval",
+    """approved -> released. A 'not_delivered' case (released, then the channel send failed) goes back to
+    'released' so the same approved text can be sent again (a retry)."""
+    st = row["status"]
+    if st == "released":
+        log(con, actor, "release_to_farmer", {}, "BLOCKED: already released", ok=False, case_id=case_id)
+        raise GateError(f"case {case_id} is already released")
+    if st not in ("approved", "not_delivered") or not row["officer"]:
+        log(con, actor, "release_to_farmer", {}, f"BLOCKED: status '{st}', no officer approval",
             ok=False, case_id=case_id)
-        raise GateError(f"case {case_id} has no officer approval (status '{row['status']}')")
-    cur = con.execute("UPDATE cases SET status='released', updated_at=? WHERE id=? AND status='approved'",
-                      (now(), case_id))
+        raise GateError(f"case {case_id} has no officer approval (status '{st}')")
+    cur = con.execute("UPDATE cases SET status='released', updated_at=? WHERE id=? AND status=?", (now(), case_id, st))
     con.commit()
     if cur.rowcount != 1:
-        raise GateError(f"case {case_id} is no longer 'approved'")
-    log(con, actor, "release_to_farmer", {}, f"released; approved by {row['officer']}", case_id=case_id)
+        raise GateError(f"case {case_id} is no longer '{st}'; reload it")
+    what = "retry after a failed delivery" if st == "not_delivered" else "released"
+    log(con, actor, "release_to_farmer", {}, f"{what}; approved by {row['officer']}", case_id=case_id)
     return dict(get_case(con, case_id))
+
+
+def mark_not_delivered(con, case_id: int, reason: str, actor: str = "system") -> bool:
+    """released -> not_delivered when the channel could not send the approved answer. The case goes back to the
+    officer queue; the farmer view stops showing it as answered."""
+    cur = con.execute("UPDATE cases SET status='not_delivered', updated_at=? WHERE id=? AND status='released'",
+                      (now(), case_id))
+    con.commit()
+    if cur.rowcount == 1:
+        log(con, actor, "mark_not_delivered", {}, f"not_delivered: {reason}", ok=False, case_id=case_id)
+    return cur.rowcount == 1
+
+
+def delivery_problem(con, case_id: int) -> str | None:
+    r = con.execute("SELECT detail FROM channel_deliveries WHERE case_id=? AND kind='answer' AND ok=0 "
+                    "ORDER BY id DESC LIMIT 1", (case_id,)).fetchone()
+    return r["detail"] if r else None
 
 
 def get_case(con, case_id: int):
     return con.execute("SELECT * FROM cases WHERE id=?", (case_id,)).fetchone()
 
 
-def list_cases(con, status: str | None = None) -> list[dict]:
+def list_cases(con, status: str | tuple | None = None) -> list[dict]:
     q, a = "SELECT * FROM cases", ()
     if status:
-        q, a = q + " WHERE status=?", (status,)
+        a = (status,) if isinstance(status, str) else tuple(status)
+        q += f" WHERE status IN ({','.join('?' * len(a))})"
     q += " ORDER BY CASE priority WHEN 'urgent' THEN 0 ELSE 1 END, id"
     return [dict(r) for r in con.execute(q, a)]
 

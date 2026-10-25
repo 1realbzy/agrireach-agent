@@ -50,7 +50,14 @@ with officer:
         st.stop()
     for c in q.json():
         tag = "URGENT" if c["priority"] == "urgent" else "routine"
+        if c["status"] == "not_delivered":
+            tag = "NOT DELIVERED"
         with st.expander(f"[{tag}] Case {c['id']}: {c['question']}"):
+            if c["status"] == "not_delivered":
+                st.error(f"Approved by {c['officer']} but not delivered: {c.get('delivery_problem')}. Edit the "
+                         "farmer text and approve again, or retry sending the same text.")
+                if st.button("Retry sending the approved text", key=f"retry{c['id']}"):
+                    st.write(httpx.post(f"{API}/cases/{c['id']}/release", headers=H, timeout=60).json())
             for reason in c["urgent_reasons"]:
                 st.error(reason)
             v = httpx.get(f"{API}/officer/cases/{c['id']}/voice", headers=H, timeout=10)
@@ -71,7 +78,8 @@ with officer:
             for p in fd.get("problems", []):
                 st.warning(f"Farmer text: {p}")
             farmer_txt = st.text_area("Farmer text: exactly what the farmer will receive (approve covers this text)",
-                                      fd.get("text", ""), key=f"f{c['id']}", height=140)
+                                      (c["status"] == "not_delivered" and c.get("farmer_text")) or fd.get("text", ""),
+                                      key=f"f{c['id']}", height=140)
             st.caption(f"{len(farmer_txt)} characters (aim for under 600)")
             if fd.get("sms_limit"):  # SMS case: show the limit, and check the text as it stands now
                 st.caption(fd["sms_limit"])

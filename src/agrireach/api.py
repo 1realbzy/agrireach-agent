@@ -57,6 +57,8 @@ def _case(row) -> dict:
     d["sources"] = json.loads(d["sources"] or "[]")
     d["urgent_reasons"] = json.loads(d["urgent_reasons"] or "[]")
     d["farmer_draft"] = json.loads(d.get("farmer_draft") or "null")
+    if d.get("status") == "not_delivered":  # released, then the channel send failed: shown to the officer with why
+        d["delivery_problem"] = db.delivery_problem(db.connect(), d["id"]) or "the send failed"
     return d
 
 
@@ -76,7 +78,7 @@ async def ask(a: Ask):
 @app.get("/officer/queue")
 def queue(officer: str = Depends(current_officer)):
     con = db.connect()
-    return [_case(r) for r in db.list_cases(con, "pending_review")]
+    return [_case(r) for r in db.list_cases(con, ("pending_review", "not_delivered"))]
 
 
 @app.get("/officer/cases/{case_id}")
@@ -118,6 +120,7 @@ def decide(case_id: int, d: Decision, officer: str = Depends(current_officer)):
         if row["status"] == "approved":
             row = db.release_to_farmer(con, case_id, actor=f"officer:{officer}")
             delivery = service.deliver(con, case_id, service.configured_channels())
+            row = db.get_case(con, case_id)  # 'not_delivered' if the channel send failed
     except db.GateError as e:
         raise HTTPException(409, str(e))
     except ValueError as e:
@@ -164,13 +167,15 @@ def sms_check(case_id: int, body: FarmerText, officer: str = Depends(current_off
 
 @app.post("/cases/{case_id}/release")
 def release(case_id: int, officer: str = Depends(current_officer)):
-    """Explicit release endpoint (signed-in officers only); refuses anything without officer approval."""
+    """Explicit release endpoint (signed-in officers only); refuses anything without officer approval. On a
+    'not_delivered' case it retries sending the same approved text."""
     con = db.connect()
     try:
-        row = db.release_to_farmer(con, case_id, actor=f"officer:{officer}")
+        db.release_to_farmer(con, case_id, actor=f"officer:{officer}")
     except db.GateError as e:
         raise HTTPException(409, str(e))
-    return _case(row) | {"delivery": service.deliver(con, case_id, service.configured_channels())}
+    delivery = service.deliver(con, case_id, service.configured_channels())
+    return _case(db.get_case(con, case_id)) | {"delivery": delivery}
 
 
 @app.get("/farmer/cases/{case_id}")
@@ -179,6 +184,9 @@ def farmer_view(case_id: int):
     row = db.get_case(con, case_id)
     if not row:
         raise HTTPException(404, "not found")
+    if row["status"] == "not_delivered":  # approved, but the channel send failed: no answer has reached the farmer
+        return {"case_id": case_id, "status": "not_delivered", "answer": None,
+                "message": "Your answer has not been sent yet. An extension officer is working on it."}
     if row["status"] != "released":
         return {"case_id": case_id, "status": row["status"], "answer": None,
                 "message": "Waiting for an extension officer to review your question."}

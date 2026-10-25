@@ -251,7 +251,11 @@ def router(cfg: Config) -> APIRouter:
     async def receive(token: str, request: Request, background: BackgroundTasks):
         if not hmac.compare_digest(token.encode(), cfg.webhook_token.encode()):
             raise HTTPException(404, "not found")
-        if int(request.headers.get("content-length") or 0) > MAX_BODY_BYTES:
+        try:
+            declared = int(request.headers.get("content-length") or 0)
+        except ValueError:
+            raise HTTPException(400, "bad content-length")
+        if declared > MAX_BODY_BYTES:
             raise HTTPException(413, "payload too large")
         raw = await request.body()
         if len(raw) > MAX_BODY_BYTES:

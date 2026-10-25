@@ -241,7 +241,9 @@ def deliver(con, case_id: int, channels: dict[str, Channel]) -> dict | None:
     db.record_delivery(con, case_id, contact["channel"], "answer", r.ok, r.detail)
     db.log(con, f"channel:{contact['channel']}", "send_answer",
            {"to": mask_sender(contact["sender_id"]), "audio": bool(audio)},
-           ("sent" if r.ok else "FAILED: ") + r.detail, ok=r.ok, case_id=case_id)
+           ("sent: " if r.ok else "FAILED: ") + r.detail, ok=r.ok, case_id=case_id)
+    if not r.ok:  # never looks delivered: back to the officer queue with the reason
+        db.mark_not_delivered(con, case_id, r.detail, actor=f"channel:{contact['channel']}")
     return {"ok": r.ok, "detail": r.detail, "audio": bool(audio)}
 
 
