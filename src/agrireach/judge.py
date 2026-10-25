@@ -63,18 +63,40 @@ def _call(user: str) -> str:
     return r.choices[0].message.content or ""
 
 
+class JudgeParseError(ValueError):
+    """The judge's reply couldn't be read as a verdict for every item. The message quotes the raw reply (truncated)
+    so the officer and the audit log show what the judge said; the check then fails closed. Live run 5 (F5) got a
+    bare KeyError: 'n' here instead, from a verdict without its item number."""
+
+    def __init__(self, reason: str, raw: str):
+        super().__init__(f"{reason}; judge reply: {raw[:160]!r}{'...' if len(raw) > 160 else ''}")
+
+
 def parse(raw: str, items: list[tuple[str, list[dict]]]) -> list[dict]:
-    """Verdicts in item order. Raises ValueError if the reply doesn't cover every item with a valid verdict."""
+    """Verdicts in item order. Raises JudgeParseError (a ValueError) if the reply doesn't cover every item with a
+    valid verdict, whatever shape it has: no item is ever matched by guessing (fails closed)."""
+    raw = raw or ""
     start = raw.find("{")
     if start < 0:
-        raise ValueError("no JSON object in judge reply")
-    data, _end = json.JSONDecoder().raw_decode(raw[start:])  # the first object; ignore anything after it
-    by_n = {int(v["n"]): v for v in data.get("verdicts", [])}
+        raise JudgeParseError("no JSON object in judge reply", raw)
+    try:
+        data, _end = json.JSONDecoder().raw_decode(raw[start:])  # the first object; ignore anything after it
+    except ValueError as e:
+        raise JudgeParseError(f"judge reply is not valid JSON ({e.msg})", raw) from None
+    verdicts = data.get("verdicts") if isinstance(data, dict) else None
+    if not isinstance(verdicts, list):
+        raise JudgeParseError("judge reply has no 'verdicts' list", raw)
+    by_n = {}
+    for v in verdicts:
+        n = v.get("n") if isinstance(v, dict) else None
+        if isinstance(n, bool) or not isinstance(n, (int, str)) or not str(n).strip().isdigit():
+            raise JudgeParseError("judge reply has a verdict without a valid item number 'n'", raw)
+        by_n[int(n)] = v
     out = []
     for n, (sentence, ps) in enumerate(items, 1):
         v = by_n.get(n)
         if not v or v.get("verdict") not in ("supported", "not_supported"):
-            raise ValueError(f"judge reply has no valid verdict for item {n}")
+            raise JudgeParseError(f"judge reply has no valid verdict for item {n}", raw)
         out.append({"n": n, "sentence": sentence, "cited": [p["id"] for p in ps], "verdict": v["verdict"],
                     "why": str(v.get("why", ""))[:160]})
     return out
