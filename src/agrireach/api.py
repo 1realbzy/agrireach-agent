@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadF
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from agrireach import agent, db, farmer_reply, llm
+from agrireach import agent, db, farmer_reply, knowledge, llm
 from agrireach.channels import service, simulator, whatsapp
 from agrireach.channels.base import mask_sender
 
@@ -100,6 +100,11 @@ def decide(case_id: int, d: Decision, officer: str = Depends(current_officer)):
         if not farmer_reply.caveat_kept(d.farmer_text, caveat):
             warnings.append(f"the approved farmer text has no zone caveat: the guidance is from sources for "
                             f"{caveat['sources_for']} and the farmer is in {caveat['region']}")
+        # Officer-written or kept text is warned about and logged, never blocked: the officer is the authority.
+        if current:
+            ps = [knowledge.reference(i) for i in json.loads(current["sources"] or "[]")]
+            warnings += [f"farmer text not backed by the case's sources: {p}"
+                         for p in farmer_reply.sms_claims(d.farmer_text, ps, caveat=caveat)]
     try:
         row = db.officer_decide(con, case_id, officer=officer, decision=d.decision, edited_text=d.edited_text,
                                 note=d.note, farmer_text=d.farmer_text)
@@ -123,8 +128,10 @@ def farmer_draft(case_id: int, body: OfficerText, officer: str = Depends(current
     if not row:
         raise HTTPException(404, "not found")
     stored = json.loads(row["farmer_draft"] or "null") or {}
+    conflicts = any(str(n).startswith("sources differ") for n in stored.get("problems", []))
+    ps = [knowledge.reference(i) for i in json.loads(row["sources"] or "[]")]
     fd = asdict(farmer_reply.propose(body.officer_text, row["question"], stored.get("language", "en"),
-                                     zone_caveat=stored.get("zone_caveat")))
+                                     conflicts=conflicts, zone_caveat=stored.get("zone_caveat"), passages=ps))
     if stored.get("season_prompt"):  # received date outside every cited window: keep prompting the officer
         fd["problems"] = fd["problems"] + [stored["season_prompt"]]
     return fd

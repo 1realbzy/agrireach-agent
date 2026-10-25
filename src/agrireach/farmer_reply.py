@@ -186,14 +186,37 @@ def caveat_kept(text: str, caveat: dict | None) -> bool:
     return caveat["sentence"].lower() in t or caveat["region"].lower() in t
 
 
+def sms_claims(text: str, passages: list[dict], judge_call=None, caveat: dict | None = None) -> list[str]:
+    """Problems with the farmer text measured against the case's own passages: every sentence (except the code-built
+    caveat and sources-differ sentences) is checked like a cited officer sentence (figures, lexical support, judge)
+    against all of them. Fails closed: no passages, or a judge that can't run, is a problem."""
+    from agrireach import claim_check
+
+    fixed = {CONFIRM} | ({caveat["sentence"]} if caveat else set())
+    sents = [s for s in _sentences(text) if s not in fixed and re.search(r"[A-Za-z]{3}", s)]
+    if not sents:
+        return []
+    passages = [p for p in passages if p and p.get("text")]
+    if not passages:
+        return [f"'{s[:80]}' has no source behind it: the case cites no passage" for s in sents]
+    ids = ", ".join(p["id"] for p in passages)
+    draft = "\n".join(re.sub(r"([.!?]*)$", lambda m: f" [{ids}]{m.group(1) or '.'}", s, count=1) for s in sents)
+    out = list(citation_check.check_draft(draft, passages).problems)
+    out += claim_check.check_claims(draft, passages, judge=True, judge_call=judge_call).problems
+    return list(dict.fromkeys(out))
+
+
 def propose(officer_text: str, question: str = "", language: str = "en", conflicts: bool = False,
-            zone_caveat: dict | None = None) -> FarmerDraft:
-    fd = _propose(officer_text, question, language, conflicts, zone_caveat)
+            zone_caveat: dict | None = None, passages: list[dict] | None = None) -> FarmerDraft:
+    """passages: the case's sources. When given, a model-written SMS must pass sms_claims or it is replaced by the
+    rule-based version (fail closed)."""
+    fd = _propose(officer_text, question, language, conflicts, zone_caveat, passages)
     fd.zone_caveat = zone_caveat
     return fd
 
 
-def _propose(officer_text: str, question: str, language: str, conflicts: bool, caveat: dict | None) -> FarmerDraft:
+def _propose(officer_text: str, question: str, language: str, conflicts: bool, caveat: dict | None,
+             passages: list[dict] | None = None) -> FarmerDraft:
     if language not in SUPPORTED_LANGUAGES:
         return FarmerDraft("", "none", [f"the farmer wrote in {language}; AgriReach can't write farmer text in that "
                                         "language, so the officer must write it"], needs_officer_text=True,
@@ -216,7 +239,11 @@ def _propose(officer_text: str, question: str, language: str, conflicts: bool, c
         try:
             text, mode = _llm_rewrite(officer_text, question, conflicts)
             text = lead + text if text and caveat and not caveat_kept(text, caveat) else text
+            if conflicts and text and CONFIRM not in text:
+                text = f"{text} {CONFIRM}"  # same as the rule-based path: never present the options as agreeing
             problems = check(text, officer_text)
+            if not problems and passages is not None:
+                problems = sms_claims(text, passages, caveat=caveat)
             if not problems:
                 return FarmerDraft(text, mode, notes)
             notes.append(f"model rewrite rejected ({'; '.join(problems)}); rule-based version shown")
