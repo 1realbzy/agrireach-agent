@@ -6,7 +6,7 @@ F14 ("dry-spell advisory as a voice script") is now a code-only eval: `voice_scr
 
 The same run is a regression check for the channel work: field auto checks 12/12; core tasks 6, 7 and 8 passed; every case was routed to the officer as before. Fallbacks: task 5 (the herbicide-citation flag, as in the claim-check runs), task 12 (agreement claim, then the "5 cm" bound) and F6 (a figure problem). One run only.
 
-Speech-to-text is not an eval here: it was tested only on synthetic US-English clips (see [docs/voice-channel.md](docs/voice-channel.md)). Nothing is known yet about Ghanaian-accented English, Twi, Dagbani or Wali voice notes.
+Speech-to-text is not a scored eval here. It was tested on synthetic US-English clips and, in run S1, on 10 Ghanaian broadcast-English clips from the Ghana English ASR Dataset (CC BY-NC 4.0, downloaded at run time, not committed; [docs/eval-run-2026-10-25-stt-ghana.txt](docs/eval-run-2026-10-25-stt-ghana.txt)): Whisper "base" word error rate 52.5%, language mis-detected in 7 of 10, all 10 flagged for the officer, 2 of 5 place mentions transcribed right. Details in [docs/voice-channel.md](docs/voice-channel.md). Real farmer voice notes, and Twi, Dagbani or Wali, are untested.
 
 ## 25 Oct 2026 (UTC), claim check for sentences without figures (runs G1-N3)
 
