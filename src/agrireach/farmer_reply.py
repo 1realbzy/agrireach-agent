@@ -188,6 +188,57 @@ def rule_rewrite(officer_text: str, max_chars: int = MAX_CHARS) -> str:
     return out
 
 
+def ensure_safety_line(text: str, passages: list[dict] | None, caveat: dict | None = None,
+                       max_chars: int | None = None) -> tuple[str, list[str]]:
+    """The pesticide safety guarantee, applied to every proposed farmer text (model or rule-based).
+
+    Why it exists: F1 lost the safety line from the farmer SMS three different ways in live runs, each a different
+    wording, so patching wordings did not hold. a5e9192 run 2: the late-timing check flagged "worms are still a
+    problem" and the rule fallback dropped "Agriculture Extension Agent (AEA)". cc7cf4c B1: the faithful model SMS was
+    723 characters (over the limit) and the rule fallback dropped "the officer should consult the local AEA ...
+    pesticide" as an officer instruction (docs/live-eval-2026-10-25-run4.md).
+
+    When a case passage carries a pesticide safety sentence (SAFETY_RE; a referral to the AEA is preferred), that
+    sentence goes word for word, with its source named like the planting rows ("(APNI)"), first after the zone caveat.
+    It is never reworded or shortened: other sentences are dropped from the end to fit (the caveat and the
+    sources-differ sentence stay). If it still can't fit, the text is "" with a note: no SMS is proposed and the
+    officer writes it. The rainfall record is never a source. Returns (text, notes for the officer)."""
+    limit = MAX_CHARS if max_chars is None else max_chars
+    line = src = None
+    for p in passages or []:
+        pid = str(p.get("id", "")) if p else ""
+        if not p or pid.startswith("RAINFALL-"):
+            continue
+        cands = [s for s in _sentences(p.get("text") or "") if SAFETY_RE.search(s) and not LIMIT_RE.search(s)
+                 and not OFFICER_RE.search(ALLOWED_OFFICER.sub("", s))]
+        cands.sort(key=lambda s: not ALLOWED_OFFICER.search(s))  # "consult your local AEA" is the safety advice
+        if cands:
+            src = SOURCE_NAMES.get(pid.split("-")[0], pid.split(":")[0])
+            line = f"{re.sub(r'[.!?]+$', '', cands[0])} ({src})."
+            break
+    if not line or not text:
+        return text, []  # nothing to guarantee, or no proposal at all (the officer writes the text)
+    head = caveat["sentence"] if caveat and text.startswith(caveat["sentence"]) else ""
+
+    def key(s: str) -> str:  # the same sentence with or without its "(Source)" name
+        return re.sub(r"\W+", " ", re.sub(r"\s*\([^)]*\)\s*[.!?]*$", "", s)).strip().lower()
+    body = [s for s in _sentences(text[len(head):].strip()) if key(s) != key(line)]
+    tail = [s for s in body if s == CONFIRM]
+    body = [s for s in body if s != CONFIRM]
+    dropped = 0
+    while body and len(" ".join([head, line, *body, *tail]).strip()) > limit:
+        body.pop()
+        dropped += 1
+    out = " ".join([head, line, *body, *tail]).strip()
+    if len(out) > limit:
+        return "", [f"the cited source's pesticide sentence ({src}) does not fit in {limit} characters with the "
+                    "caveat; it is never shortened, so no SMS is proposed: the officer must write the farmer text"]
+    if out == text:
+        return text, []
+    return out, [f"the cited source's pesticide sentence ({src}) was put first, word for word"
+                 + (f"; {dropped} other sentence(s) dropped to fit {limit} characters" if dropped else "")]
+
+
 def _llm_rewrite(officer_text: str, question: str, conflicts: bool = False) -> tuple[str, str]:
     from openai import OpenAI
 
@@ -286,11 +337,14 @@ def _propose(officer_text: str, question: str, language: str, conflicts: bool, c
             text = lead + text if text and caveat and not caveat_kept(text, caveat) else text
             if conflicts and text and CONFIRM not in text:
                 text = f"{text} {CONFIRM}"  # same as the rule-based path: never present the options as agreeing
-            problems = check(text, officer_text)
+            # Before the checks, so an over-length faithful SMS is trimmed (not discarded) and the trimmed text is
+            # what the checks pass.
+            text, safety = ensure_safety_line(text, passages, caveat)
+            problems = check(text, officer_text) if text else safety
             if not problems and passages is not None:
                 problems = sms_claims(text, passages, caveat=caveat)
             if not problems:
-                return FarmerDraft(text, mode, notes)
+                return FarmerDraft(text, mode, notes + safety)
             notes.append(f"model rewrite rejected ({'; '.join(problems)}); rule-based version shown")
         except Exception as e:
             notes.append(f"model rewrite failed ({type(e).__name__}); rule-based version shown")
@@ -299,8 +353,8 @@ def _propose(officer_text: str, question: str, language: str, conflicts: bool, c
         # The options are listed with their sources; never present them as if they agree.
         text = f"{text} {CONFIRM}"
     text = lead + text if text else text
-    problems = check(text, officer_text)
+    text, safety = ensure_safety_line(text, passages, caveat)
     if not text:
-        return FarmerDraft("", "rule", notes + ["nothing farmer-facing left after removing officer notes; "
-                                                "the officer must write it"], needs_officer_text=True)
-    return FarmerDraft(text, "rule", notes + problems)
+        return FarmerDraft("", "rule", notes + (safety or ["nothing farmer-facing left after removing officer notes; "
+                                                           "the officer must write it"]), needs_officer_text=True)
+    return FarmerDraft(text, "rule", notes + safety + check(text, officer_text))
