@@ -34,15 +34,29 @@ SMS has two encodings, and the adapter works out which one a message needs befor
 | UCS-2 | any other character | 70 | 67 |
 
 - `[ ] { } ~ ^ | \` and the euro sign are in GSM-7's extension table and count as two characters.
-- Twi and Dagbani letters such as **ɛ ɔ ŋ ʒ** are not in GSM-7. One of them turns the whole message into UCS-2, so
+- Twi, Ga, Ewe and Dagbani letters such as **ɛ ɔ ŋ ɣ ʒ** are not in GSM-7. One of them turns the whole message into UCS-2, so
   it fits less than half as much text per SMS. So do curly quotes (’ “ ”), en and em dashes and emoji. Emoji count
   as two.
-- `SMS_MAX_SEGMENTS` (default 4) is the most parts one message may use. A text over it is **not sent and not cut**.
-  The delivery fails, and the officer sees how many parts it needed, which encoding, and which characters forced
-  UCS-2, so they can shorten it. No sentence, such as a pesticide safety line, is ever dropped to make it fit.
-- For scale, the farmer text limit is 600 characters (`farmer_reply.MAX_CHARS`). That's 4 parts in GSM-7 but 9 in
-  UCS-2, so a 600-character text with one "ɛ" in it is refused at the default limit. The acknowledgement is 1 part,
-  the consent prompt 2 and the opt-out confirmation 1.
+- `SMS_MAX_SEGMENTS` (default 4) is the most parts one message may use. Nothing is ever cut or dropped to fit; a
+  pesticide safety line stays, and the officer decides what to shorten. The length is checked at four points:
+  1. **When an SMS case is filed.** The farmer draft carries `sms_limit`, which the officer sees on every SMS case,
+     e.g. "SMS limit for this farmer: 4 parts, which is 612 characters of standard text, or 268 if the text has any
+     Twi, Ga, Ewe or Dagbani letter (ɛ ɔ ŋ ɣ), curly quote or emoji". If the proposed text won't fit, an approval
+     prompt is added next to "sources differ" and the season check:
+     "too long for SMS: this text needs 10 parts (Unicode because of ɛ); the limit is 4. Shorten it to 268
+     characters or fewer before approving (it is 609 now). Nothing is cut automatically."
+  2. **On Re-propose.** The prompt is worked out again for the new text.
+  3. **While the officer edits.** `POST /officer/cases/{id}/sms-check` (read-only) returns the parts, the limit, the
+     encoding, which characters forced Unicode, and the same prompt. The officer screen shows it under the farmer
+     text.
+  4. **At approval.** Approving a text that won't fit is refused with a 400 carrying the same prompt. Nothing is
+     saved and the case stays open for editing. Otherwise the case would be released but could never reach the
+     farmer.
+- The send-time check stays as a backstop. If something over the limit still reaches `send()`, nothing is sent and
+  the delivery is recorded as "not sent, nothing was cut: too long for SMS: ..." in the same wording.
+- For scale, AgriReach's offline farmer text for "When should I plant maize in Ejura?" is 574 characters, which is 4
+  standard parts. The same text with one curly apostrophe (’), or with the farmer's Twi question quoted above it,
+  needs 9 or 10 parts. Twi, Ga, Ewe and Dagbani replies need to be about 268 characters at the default limit.
 - Each part is billed as a separate SMS.
 
 ## Configuration (nothing is mounted or sent unless `SMS_ENABLED=1`)

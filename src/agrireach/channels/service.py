@@ -8,6 +8,7 @@ ones the /ask API already returns to a farmer.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import uuid
@@ -169,6 +170,8 @@ async def _file(con, msg: InboundMessage, channel, question, extra, audio_path, 
     case_id = out["case_id"]
     db.save_contact(con, case_id, channel=msg.channel, sender_id=msg.sender_id, audio_path=audio_path,
                     transcript=transcript_text, stt=stt_info)
+    if msg.channel == "sms":
+        _add_sms_review(con, case_id)
     db.log(con, f"channel:{msg.channel}", "inbound_message",
            {"from": mask_sender(msg.sender_id), "voice_note": bool(audio_path),
             "transcript_chars": len(transcript_text or "")},
@@ -183,6 +186,27 @@ async def _file(con, msg: InboundMessage, channel, question, extra, audio_path, 
     return {"case_id": case_id, "status": out["status"], "priority": out["priority"], "message": reply,
             "transcript": transcript_text, "urgent_reasons": out["urgent_reasons"], "question": question,
             "sent": sent}
+
+
+def sms_review(fd: dict) -> dict:
+    """Add the SMS limit (a fact for the officer) and, if the proposed text won't fit, an approval prompt."""
+    from agrireach.channels import sms
+
+    fd = dict(fd)
+    fd["sms_limit"] = sms.limit_fact()
+    prompt = sms.length_prompt(fd.get("text") or "")
+    if prompt:
+        fd["problems"] = list(fd.get("problems") or []) + [prompt]
+    return fd
+
+
+def _add_sms_review(con, case_id: int) -> None:
+    row = db.get_case(con, case_id)
+    if row is None or not row["farmer_draft"] or row["status"] not in ("draft", "pending_review"):
+        return
+    fd = sms_review(json.loads(row["farmer_draft"]))
+    con.execute("UPDATE cases SET farmer_draft=? WHERE id=?", (json.dumps(fd, ensure_ascii=False), case_id))
+    con.commit()
 
 
 def deliver(con, case_id: int, channels: dict[str, Channel]) -> dict | None:
