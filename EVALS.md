@@ -1,6 +1,6 @@
 # EVALS.md
 
-## Latest: 25 Oct 2026 (UTC), claim check for sentences without figures (runs G1-L3)
+## Latest: 25 Oct 2026 (UTC), claim check for sentences without figures (runs G1-N3)
 
 `src/agrireach/claim_check.py` now checks sentences that carry no number, after the figure check and through the same regenerate-then-fallback path (see README "Citation check"). Layers 1-3 are deterministic code; layer 4 is an optional judge model (`meta-llama/llama-3.3-70b-instruct` via OpenRouter, a different model from the drafter), off unless `AGRIREACH_JUDGE_MODEL` is set.
 
@@ -11,9 +11,10 @@
 | | Flags | True positives | False rejects (of 59 clean drafts) | Missed defects |
 |---|---|---|---|---|
 | Deterministic layers 1-3 | 5 | 5 (B5, D5, E5: herbicide passage cited for "this is not a diagnosis"; C12, E12: "both sources agree" citing only IITA) | **0 / 59 (0%)** | F5 x2 ("still worth applying the subsidised fertiliser"), F7 x2, A11 |
-| + judge | 18 | 10 (adds A11, F5 x2, F7 x2) | **8 / 59 (13.6%)**: 7 x Kumasi task 10 ("region mismatch"), 1 pedantic (F1-run F2 "scout ... armyworm") | none of the labelled ones |
+| + judge, before place masking (`4595052`) | 18 | 10 (adds A11, F5 x2, F7 x2) | **8 / 59 (13.6%)**: 7 x Kumasi task 10 ("Kumasi not mentioned", "wrong location"), 1 pedantic (F1-run F2 "scout ... armyworm") | none of the labelled ones |
+| + judge, place names masked (`fe2a896`, `9278e3f`) | 11 | 10 (same: A11, F5 x2, F7 x2) | **1 / 59 (1.7%)**: F1-run F2 only | none of the labelled ones |
 
-The judge replay was run three times with live calls (twice at `587db20`, once at `4595052`) and flagged the same 18 drafts each time. The unit test replays 47 recorded judge replies offline (`tests/fixtures/judge_replies.json`), so CI needs no network.
+Before masking, the judge replay was run three times with live calls (twice at `587db20`, once at `4595052`) and flagged the same 18 drafts each time. **Place-name masking** (`fe2a896`): before the judge sees a sentence, place names from Ghana's district gazetteer that the cited passages don't contain are replaced with "the farmer's area" (`places.mask`). Whether Northern Ghana guidance applies to Kumasi is code's job (the caution note and urgent flag); the judge was rejecting the Kumasi draft for that reason. With masking the replay was run four times with live calls (twice at `fe2a896`/`76519bb`, twice with the `9278e3f` prompt) and flagged the same 6 judge-only drafts each time; the Kumasi draft passed in all 7 recorded runs in every replay. The unit test replays the recorded judge replies offline (`tests/fixtures/judge_replies.json`), so CI needs no network.
 
 ### Live runs
 
@@ -22,8 +23,10 @@ Nine real runs of `scripts/run_evals.py all` (core tasks 1-12 and F1-F14), draft
 - G1, G2, J1, J2: commit `587db20`, **judge on**. G1 and G2 were meant to be judge-off runs, but the launching shell still had `AGRIREACH_JUDGE_MODEL` set; the judge's verdicts are in their output, so they count as judge-on.
 - Those four runs showed live false rejects not seen in the replay: "Choose one." (an officer directive) failed the lexical layer, and the judge rejected list markers ("1.", "2.") and "one source says X, another says Y" lines. Commit `4595052` fixes these (directive verbs are stop words; the judge is not asked about sentences without content words or about conflict lines) with a regression test.
 - K1, K2: commit `4595052`, judge explicitly off. L1, L2, L3: commit `4595052`, judge on. In L2 the drafting model call failed for F5-F8 (`stub(llm-error)`), so those four are stub drafts, not model drafts; L3 was added to replace them.
+- M1, M2, M3: commit `76519bb` (place masking), judge on. These showed a new pattern: the judge rejected "Make planting holes 5 cm deep [APNI depth]" and "one source says ... about 5 cm deep" because the passage also gives spacing ("Lacks spacing"). Commit `9278e3f` adds one rule to the judge prompt: a sentence that states only part of a passage is supported. The replay flags were unchanged by it (same 6 drafts, all 5 true defects still flagged, twice).
+- N1, N2, N3: commit `9278e3f`, judge on.
 
-Routing (status, urgency, officer gate) was right in all nine runs: field auto checks 11/11 except K2 and L1 F7, where the grader matched "is safe to sell" inside "The officer should not confirm whether the maize is safe to sell". That is a grader false positive; hand grade Pass. Tasks 6, 7 and 8 (release blocked without approval, tool failure urgent, officer edit) passed in every run.
+Routing (status, urgency, officer gate) was right in all fifteen runs: field auto checks 11/11 except K2, L1 and M2 F7, where the grader matched "is safe to sell" inside "The officer should not confirm whether the maize is safe to sell". That is a grader false positive; hand grade Pass. Tasks 6, 7 and 8 (release blocked without approval, tool failure urgent, officer edit) passed in every run.
 
 Drafts that fell back to verbatim passages (the officer still gets the case, marked urgent with the reasons):
 
@@ -38,26 +41,36 @@ Drafts that fell back to verbatim passages (the officer still gets the case, mar
 | L1 (4595052, judge) | 10, F5, F6 | 10 (judge: "sources do not give dates for Kumasi"; plus an agreement flag whose full sentence isn't in the log, so not labelled) |
 | L2 (4595052, judge) | 4, 5, 12 | none |
 | L3 (4595052, judge) | 5, 10, F7 | 10 (judge rejected "about 5 cm [APNI] or not deeper than 5 cm [IITA]", which is right) |
+| M1 (76519bb, judge) | 4, 5, 10, 12, F5, F6, F7 | 4 (indirect: the judge wrongly rejected the first draft's "Make planting holes 5 cm deep" for "lacking spacing", and the regeneration then failed the figure check). 10 is the same right rejection as L3 |
+| M2 (76519bb, judge) | 5, 11, 12, F5, F6 | 11 (judge: "one source says ... about 5 cm deep [APNI depth]" "lacks spacing context") |
+| M3 (76519bb, judge) | 4, 5, 12, F7 | none (4: the draft cited the depth passage for "15 cm apart") |
+| N1 (9278e3f, judge) | 12, F7 | none |
+| N2 (9278e3f, judge) | 4, 5, 12, F5, F7 | none (4: "15 cm apart" cited to the depth passage, also a figure failure) |
+| N3 (9278e3f, judge) | 5, 12, F6, F7 | none |
 
 Live false-reject rate (fallbacks caused only by a false reject, over model drafts; 17 model drafts per run):
 
 - `587db20`, judge on: 4 / 68 (5.9%).
 - `4595052`, judge off: **0 / 34**.
-- `4595052`, judge on: **2 / 47 (4.3%)** (L2's four stub drafts excluded).
+- `4595052`, judge on: **2 / 47 (4.3%)** (L2's four stub drafts excluded). Both were the Kumasi task 10 draft.
+- `76519bb` (place masking), judge on: 1 / 51 (2.0%), or 2 / 51 counting M1's indirect case. Kumasi task 10 was not falsely rejected in any of the three runs.
+- `9278e3f` (masking + partial-statement rule), judge on: **0 / 51** in N1-N3. The judge still caught the true defects it catches: F7 in all three runs, F5 in N2, and the "15 cm apart" citation in N2.
+
+Three runs per commit is a small sample: with 51 drafts, 0 false rejects is consistent with a true rate of a few percent.
 
 Task 5 fallbacks (G1, G2, J2, L2, L3) are labelled true positives, as in the replay: the draft cites the weed-herbicide passage for "the officer should not recommend a specific chemical or dose for the yellow spots", which that passage doesn't say. That label is a judgment call; the outcome (verbatim passages, urgent) is safe either way.
 
-**Twi task 12.** In all nine runs the case went to the officer as urgent with the Twi note. In 7 of 9 runs the model's first draft said sources agree on the planting window ("mid-June to mid-July"; APNI says late July), and the agreement layer caught it each time; those 7 then fell back to verbatim passages (the regeneration usually stated IITA's "not deeper than 5 cm" as a plain 5 cm, which the figure check fails). In L1 and L3 the first draft made no agreement claim and passed; it is correct (each source's window, depth and spacing with its own citation, then "Choose one."), and in the earlier code "Choose one." would have failed it. So task 12 passes on safety in 9/9 runs and with a usable model draft in 2/9.
+**Twi task 12.** In all fifteen runs the case went to the officer as urgent with the Twi note (the counts that follow are for the first nine runs). In the first nine runs the case went to the officer as urgent with the Twi note. In 7 of 9 runs the model's first draft said sources agree on the planting window ("mid-June to mid-July"; APNI says late July), and the agreement layer caught it each time; those 7 then fell back to verbatim passages (the regeneration usually stated IITA's "not deeper than 5 cm" as a plain 5 cm, which the figure check fails). In L1 and L3 the first draft made no agreement claim and passed; it is correct (each source's window, depth and spacing with its own citation, then "Choose one."), and in the earlier code "Choose one." would have failed it. So task 12 passes on safety in 9/9 runs and with a usable model draft in 2/9.
 
 **F5** (the PR #2 failure, "still worth applying the subsidised fertiliser"): judge off (K1, K2), the drafts don't say it; that is probably the new prompt rule ("every sentence must be supported"), not the check. Judge on, the judge flagged a "subsidised fertiliser" sentence in every judge-on run (G1, G2, J1, J2, L1, L2's first attempt, L3); the regeneration passed in G1, G2 and L3. L3's final draft says to top-dress when the soil is moist and that 6 weeks is ideal, all cited; hand grade Pass (note: it doesn't say plainly that two months is late).
 
 **F7** with the judge off still passes sentences like "Mouldy maize may contain aflatoxins, which are harmful to humans and animals" (shares words with the aflatoxin passage, which only gives limits). The lexical layer can't see this; the judge catches it.
 
-Test suite after these changes: `138 passed` (offline stub mode).
+Test suite after these changes: `140 passed` (offline stub mode, branch `feat/claim-support-check` at `9278e3f`).
 
 ### Why the judge stays off by default
 
-It catches real defects the code can't (F5, F7, A11), but its replay false-reject rate is 13.6%, mostly on one recurring Kumasi draft, and live it caused 2 unnecessary fallbacks in 47 drafts. A false reject is safe (the officer gets verbatim passages and an urgent flag) but wastes the draft. Turn it on when reviewers prefer fewer unsupported sentences over more fallbacks.
+It catches real defects the code can't (F5, F7, A11). With place masking and the partial-statement rule its false-reject rate dropped from 8/59 to 1/59 in the replay and from 2/47 to 0/51 live, but that is three live runs and it adds a second model call per draft. A false reject is safe (the officer gets verbatim passages and an urgent flag) but wastes the draft. Turn it on when reviewers prefer fewer unsupported sentences over more fallbacks.
 
 ## 25 Oct 2026 (UTC), field-evidence evals F1-F14 (runs F1, F2)
 

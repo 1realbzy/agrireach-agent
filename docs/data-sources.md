@@ -11,6 +11,13 @@
 
 Coverage: Northern Ghana soybean; Northern Ghana maize (planting window, fertilizer timing, fall armyworm, drying and storage); the national maize aflatoxin limit. No other crops, no prices, no contact details. The two sources genuinely differ on the planting window end (late July vs mid-July), within-row spacing (15 cm vs 10 cm), seed rate (50-60 vs 40-45 kg/ha) and planting depth. AgriReach surfaces these differences to the officer instead of picking one.
 
+## Place names (25 Oct 2026)
+
+`data/gazetteer.json`: Ghana's 16 regions and 261 districts with their capitals, parsed from Wikipedia's "Districts of
+Ghana" (revision 1359154973, 13 June 2026), CC BY-SA 4.0; attribution is in the file's `_source` field. Used only to
+recognise place names (to keep them out of the judge's input, and on the voice branch to recognise the farmer's
+location), never as agricultural evidence.
+
 ## Selection criteria
 
 - Prefer Ghanaian public agricultural institutions, recognised research bodies, and qualified extension material.
