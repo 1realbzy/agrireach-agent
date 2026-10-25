@@ -250,8 +250,8 @@ def ensure_safety_line(text: str, passages: list[dict] | None, caveat: dict | No
     and before the advice. It is never reworded or shortened.
     fit=False (model text): nothing is dropped; dropping trailing model sentences can leave half a piece of advice, so
     a model text that no longer fits is rejected by check() and the rule path is used.
-    fit=True (rule text, which is built sentence by sentence): advice sentences are dropped whole from the end until
-    the text fits MAX_CHARS and the approval endpoint's SMS limit (sms_length_problem); the caveat, the safety line
+    fit=True (rule text, which is built sentence by sentence): each advice sentence is kept, in order, if it still
+    fits MAX_CHARS and the approval endpoint's SMS limit (sms_length_problem), else skipped whole; the caveat, the safety line
     and the sources-differ sentence are never dropped, and every dropped sentence is named in the officer note. If it
     still can't fit, the text is "" with a note: no SMS is proposed and the officer writes it.
     The rainfall record is never a source. Returns (text, notes for the officer); `audit`, if given, gets the
@@ -285,8 +285,13 @@ def ensure_safety_line(text: str, passages: list[dict] | None, caveat: dict | No
     join = lambda b: " ".join([*head, *([line] if line else []), *b, *tail])  # noqa: E731
     fits = lambda t: len(t) <= MAX_CHARS and not sms_length_problem(t)  # noqa: E731
     dropped: list[str] = []
-    while fit and body and not fits(join(body)):
-        dropped.insert(0, body.pop())
+    if fit and not fits(join(body)):
+        # Why one at a time: cutting the whole tail after one long sentence also lost short ones that fit (run 5,
+        # Techiman lost "Rotate maize with non-host plants..."). Keep each sentence, in order, if it still fits.
+        kept: list[str] = []
+        for s in body:
+            (kept if fits(join([*kept, s])) else dropped).append(s)
+        body = kept
     out, notes = join(body), []
     if audit is not None:
         audit["dropped"] = list(dropped)
