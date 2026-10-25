@@ -2,6 +2,7 @@
 LLM_BASE_URL and LLM_MODEL are set; otherwise a deterministic OFFLINE STUB (no model)."""
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import os
 
@@ -51,6 +52,31 @@ def create(role: str, model: str, client, **kw):
         raise
     record_usage(role, model, r)
     return r
+
+
+def log_usage(case_id, calls: list, actor: str = "agent", path: str | None = None) -> dict:
+    """Tokens and provider-reported cost of these model calls, logged on the case as a model_usage row."""
+    summary = usage_summary(calls)
+    if calls and case_id:
+        from agrireach import db
+        cost = "unknown" if summary["cost_usd"] is None else f"${summary['cost_usd']}"
+        db.log(db.connect(), actor, "model_usage", summary | ({"path": path} if path else {}),
+               f"{summary['calls']} of {summary['attempted']} model calls succeeded, cost {cost}",
+               ok=not summary["failed"], case_id=case_id)
+    return summary
+
+
+@contextlib.contextmanager
+def usage_logged(case_id, actor: str, path: str):
+    """Record and log the model calls made inside the block (officer re-propose, approval-time source check). Live
+    run 6: only the agent run logged model_usage, so these calls were missing from the app's cost figure."""
+    calls: list = []
+    token = _usage.set(calls)
+    try:
+        yield calls
+    finally:
+        _usage.reset(token)
+        log_usage(case_id, calls, actor=actor, path=path)
 
 
 def usage_summary(calls: list) -> dict:

@@ -9,8 +9,10 @@ ones the /ask API already returns to a farmer.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
+import traceback
 import uuid
 from pathlib import Path
 
@@ -19,6 +21,8 @@ from agrireach.channels import location, stt, tts
 from agrireach.channels.base import Channel, InboundMessage, OutboundMessage, SendResult, mask_sender  # noqa: F401
 
 ACK = "Thank you. Your question was sent to an extension officer for review. You will get the answer here."
+RESEND = "Sorry, AgriReach could not take your question just now. Please send it again."
+logger = logging.getLogger(__name__)
 
 
 def media_dir() -> Path:
@@ -165,13 +169,47 @@ async def _location_reply(msg: InboundMessage, channel, transcriber, con) -> dic
     return out
 
 
+def _leaves(e: BaseException):
+    if isinstance(e, BaseExceptionGroup):
+        for x in e.exceptions:
+            yield from _leaves(x)
+    else:
+        yield e
+
+
+def log_failure(con, msg: InboundMessage, e: BaseException) -> None:
+    """Log every sub-exception of a failed run with its own traceback: an anyio TaskGroup (MCP stdio client) wraps
+    the real error in ExceptionGroup, and run 5's log said only 'FAILED: ExceptionGroup'."""
+    leaves = list(_leaves(e))
+    for i, x in enumerate(leaves, 1):
+        tb = "".join(traceback.format_exception(x)).replace(msg.sender_id, mask_sender(msg.sender_id))
+        logger.error("inbound %s from %s failed (%d of %d): %s", msg.channel, mask_sender(msg.sender_id), i,
+                     len(leaves), tb)
+        db.log(con, f"channel:{msg.channel}", "inbound_error",
+               {"from": mask_sender(msg.sender_id), "exception": type(x).__name__, "n": i, "of": len(leaves),
+                "group": type(e).__name__}, tb if len(tb) <= 1900 else f"{tb[:100]}...\n{tb[-1790:]}", ok=False)
+
+
 async def _file(con, msg: InboundMessage, channel, question, extra, audio_path, transcript_text, stt_info) -> dict:
-    out = await agent.run(question, extra_urgent_reasons=extra)
+    try:
+        # queue=False: the case is filed as a draft and only queued below, together with its contact.
+        out = await agent.run(question, extra_urgent_reasons=extra, queue=False)
+    except Exception as e:
+        # The case (if one was saved) stays a draft, out of the officer queue: nobody could send its answer. The
+        # farmer is asked to send the question again, every sub-exception is logged, and the error is re-raised.
+        log_failure(con, msg, e)
+        _system_send(con, channel, msg, RESEND, "resend")
+        raise
     case_id = out["case_id"]
-    db.save_contact(con, case_id, channel=msg.channel, sender_id=msg.sender_id, audio_path=audio_path,
-                    transcript=transcript_text, stt=stt_info)
     if msg.channel == "sms":
         _add_sms_review(con, case_id)
+    contact = dict(channel=msg.channel, sender_id=msg.sender_id, audio_path=audio_path, transcript=transcript_text,
+                   stt=stt_info)
+    if out["status"] == "draft" and not out["clarification"]:
+        db.queue_with_contact(con, case_id, **contact)  # contact + pending_review in one transaction
+        out["status"] = "pending_review"
+    else:
+        db.save_contact(con, case_id, **contact)  # a clarifying question: the case waits for the farmer
     db.log(con, f"channel:{msg.channel}", "inbound_message",
            {"from": mask_sender(msg.sender_id), "voice_note": bool(audio_path),
             "transcript_chars": len(transcript_text or "")},

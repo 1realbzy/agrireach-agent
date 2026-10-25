@@ -123,13 +123,17 @@ def decide(case_id: int, d: Decision, officer: str = Depends(current_officer)):
         # Officer-written or kept text is warned about and logged, never blocked: the officer is the authority.
         if current:
             ps = [knowledge.reference(i) for i in json.loads(current["sources"] or "[]")]
-            warnings += [f"farmer text not backed by the case's sources: {p}"
-                         for p in farmer_reply.sms_claims(d.farmer_text, ps, caveat=caveat)]
+            with llm.usage_logged(case_id, f"officer:{officer}", "approval_check"):
+                warnings += [f"farmer text not backed by the case's sources: {p}"
+                             for p in farmer_reply.sms_claims(d.farmer_text, ps, caveat=caveat)]
             # The proposal carries the source's pesticide line (farmer_reply.ensure_safety_line); an officer who takes
             # it out is warned and logged, and the line is never put back: what is approved is what is sent.
-            warnings += [f"approved farmer text {p}" for p in farmer_reply.check(d.farmer_text,
-                                                                                  d.edited_text or current["draft"] or "")
-                         if "pesticide safety line" in p]
+            # Whether a line is needed comes from the case's passages and original proposal, never from the officer's
+            # (editable) draft: in live runs 5 and 6 (F1-b) the officer removed it from both texts and got no warning.
+            proposal = (json.loads(current["farmer_draft"] or "null") or {}).get("text") or ""
+            if farmer_reply.drops_safety_line(d.farmer_text, ps, proposal):
+                warnings.append("approved farmer text drops the pesticide safety line: the case's sources (or the "
+                                "proposed text) carry one on pesticides or spraying; keep it")
     try:
         row = db.officer_decide(con, case_id, officer=officer, decision=d.decision, edited_text=d.edited_text,
                                 note=d.note, farmer_text=d.farmer_text)
@@ -156,8 +160,12 @@ def farmer_draft(case_id: int, body: OfficerText, officer: str = Depends(current
     stored = json.loads(row["farmer_draft"] or "null") or {}
     conflicts = any(str(n).startswith("sources differ") for n in stored.get("problems", []))
     ps = [knowledge.reference(i) for i in json.loads(row["sources"] or "[]")]
-    fd = asdict(farmer_reply.propose(body.officer_text, row["question"], stored.get("language", "en"),
-                                     conflicts=conflicts, zone_caveat=stored.get("zone_caveat"), passages=ps))
+    with llm.usage_logged(case_id, f"officer:{officer}", "farmer_draft"):
+        proposal = farmer_reply.propose(body.officer_text, row["question"], stored.get("language", "en"),
+                                        conflicts=conflicts, zone_caveat=stored.get("zone_caveat"), passages=ps)
+    db.log(db.connect(), f"officer:{officer}", "farmer_text_proposal", *farmer_reply.audit_entry(proposal),
+           case_id=case_id)
+    fd = asdict(proposal)
     if stored.get("season_prompt"):  # received date outside every cited window: keep prompting the officer
         fd["problems"] = fd["problems"] + [stored["season_prompt"]]
     contact = db.get_contact(db.connect(), case_id)

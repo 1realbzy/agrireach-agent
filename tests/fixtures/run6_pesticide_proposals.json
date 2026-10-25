@@ -1,0 +1,37 @@
+{
+ "F1-a": {
+  "q": "Adaklu maize farmer planted late Feb, saw worms mid-March, sprayed the recommended chemicals with no effect. What next?",
+  "sources": [
+   "APNI-SARI-2023-MAIZE:p18-scouting",
+   "APNI-SARI-2023-MAIZE:p20-faw-prevention",
+   "APNI-SARI-2023-MAIZE:p20-faw-control",
+   "APNI-SARI-2023-MAIZE:p22-sacks"
+  ],
+  "draft": "Caution: the curated sources cover Northern Ghana only. The guidance below comes from them and may not apply in Adaklu; the officer should confirm local timing.\n\nThe farmer should scout the maize field at least once a week, looking for unusual patterns such as insect damage, larvae, or eggs on leaves, cobs, or stems, and abnormal leaf color or stunted growth [APNI-SARI-2023-MAIZE:p18-scouting]. To reduce future infestations, the farmer should rotate maize with non-host plants like groundnut, deep plough and bury or burn infested maize residues, and keep the field well-weeded [APNI-SARI-2023-MAIZE:p20-faw-prevention]. For current infestations, the farmer should consult the local Agricultural Extension Agent (AEA) for advice on recommended pesticides [APNI-SARI-2023-MAIZE:p20-faw-control]. The officer should inspect the field or refer the farmer to an expert for a proper diagnosis.",
+  "proposed_sms": "This advice comes from guides for Northern Ghana and may not suit Adaklu, so check the timing with your local extension agent. Consult your local AEA for advice on the recommended fall army worm control pesticide in your area (APNI). You should consult the local Agricultural Extension Agent (AEA) for advice on recommended pesticides. You should scout the maize field at least once a week, looking for unusual patterns such as insect damage, larvae, or eggs on leaves, cobs, or stems, and abnormal leaf color or stunted growth.",
+  "sms_mode": "rule"
+ },
+ "F1-b": {
+  "q": "Adaklu maize farmer planted late Feb, saw worms mid-March, sprayed the recommended chemicals with no effect. What next?",
+  "sources": [
+   "APNI-SARI-2023-MAIZE:p18-scouting",
+   "APNI-SARI-2023-MAIZE:p20-faw-prevention",
+   "APNI-SARI-2023-MAIZE:p20-faw-control",
+   "APNI-SARI-2023-MAIZE:p22-sacks"
+  ],
+  "draft": "Caution: the curated sources cover Northern Ghana only. The guidance below comes from them and may not apply in Adaklu; the officer should confirm local timing.\n\nIf the infestation persists, consult your local Agricultural Extension Agent (AEA) for advice on the recommended fall army worm control pesticide in your area [APNI-SARI-2023-MAIZE:p20-faw-control]. Scout the field at least once a week to monitor for unusual patterns such as insect damage or presence of larvae [APNI-SARI-2023-MAIZE:p18-scouting]. Rotate maize with non-host plants like groundnut to reduce future infestations [APNI-SARI-2023-MAIZE:p20-faw-prevention]. Ensure proper weeding of the maize field to minimize infestations [APNI-SARI-2023-MAIZE:p20-faw-prevention].",
+  "proposed_sms": "This advice comes from guides for Northern Ghana and may not suit Adaklu, so check the timing with your local extension agent. Consult your local AEA for advice on the recommended fall army worm control pesticide in your area (APNI). If the worms are still a problem, talk to your local Agricultural Extension Agent about the right pesticide to use. Check your field at least once a week for signs of more worms or damage. Next time, plant something like groundnuts instead of maize to reduce worm problems. Keep your field well-weeded to help prevent worms.",
+  "sms_mode": "llm:mistralai/mistral-small-3.2-24b-instruct"
+ },
+ "S-Kintampo": {
+  "q": "Fall armyworm is eating my maize in Kintampo. What pesticide should I spray?",
+  "sources": [
+   "APNI-SARI-2023-MAIZE:p20-faw-prevention",
+   "APNI-SARI-2023-MAIZE:p20-faw-control",
+   "APNI-SARI-2023-MAIZE:p18-scouting"
+  ],
+  "draft": "Caution: the curated sources cover Northern Ghana only. The guidance below comes from them and may not apply in Kintampo; the officer should confirm local timing.\n\nTo manage Fall Armyworm infestations in your maize field, consider the following steps:\n\n1. **Prevention**: Rotate maize with non-host plants like groundnut to reduce infestations. Deep ploughing, burning, or burying infested maize residues can help lower populations in the next season. Ensure proper weeding of your maize field to minimize infestations [APNI-SARI-2023-MAIZE:p20-faw-prevention].\n\n2. **Scouting**: Regularly inspect your field at least once a week. Look for signs of insect damage, larvae, eggs, abnormal leaf color, or stunted growth [APNI-SARI-2023-MAIZE:p18-scouting].\n\n3. **Control**: If infestations occur, consult your local Agricultural Extension Agent (AEA) for advice on recommended pesticides in your area [APNI-SARI-2023-MAIZE:p20-faw-control].",
+  "proposed_sms": "This advice comes from guides for Northern Ghana and may not suit Kintampo, so check the timing with your local extension agent. Consult your local AEA for advice on the recommended fall army worm control pesticide in your area (APNI). To manage Fall Armyworm in your maize, rotate crops with groundnut and plough or burn infested residues. Weed your field regularly. Check your maize at least once a week for damage, larvae, or eggs. If you find infestations, consult your local Agricultural Extension Agent for advice on recommended pesticides.",
+  "sms_mode": "llm:mistralai/mistral-small-3.2-24b-instruct"
+ }
+}

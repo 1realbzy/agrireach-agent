@@ -1,0 +1,18 @@
+[OFFLINE STUB DRAFT - no language model was used; text is assembled from retrieved passages]
+What the curated sources say:
+- "It is recommended to plant after three good rains within the planting window to ensure enough soil moisture to support germination and early growth." [IITA-MAIZE-2025:p15-three-good-rains]
+- "Major season | Transition | Mid-March-end of April" [MOFA-MAIZE:p11-transition-major]
+- "Major cropping season | Transition | End of March - End of April" [IITA-MAIZE-2025:p16-transition-major]
+- "Minor season | Transition | Mid July through August-early Sept." [MOFA-MAIZE:p12-transition-minor]
+- "Planting time or periods differ according to agro-ecology, season and maturity group of the variety. Sow after the rains have stabilized to avoid wilting. Planting time should be informed by local weather information." [MOFA-MAIZE:p10-when-to-plant]
+- "Minor cropping season | Transition | Mid of July - Early September" [IITA-MAIZE-2025:p16-transition-minor]
+- "Rainfall record (Open-Meteo (model-based estimate, forecast API past days); CC BY 4.0) for Ejura/Sekyedumase district (point: Ejura (district capital), 7.3856, -1.3562), 2026-09-25 to 2026-10-24: 24 of 30 days with at least 1 mm; total 185.5 mm. Retrieved 2026-10-25T17:39:06+00:00. This is a model estimate for one point in the district, not a rain gauge reading; estimates can differ a lot from a local gauge and from other providers. The guides give no rainfall amount that marks onset; AgriReach does not say whether onset has been reached. The officer decides." [RAINFALL-OPEN-METEO:ejura:2026-10-25]
+Note: Ejura is near the edge of the transition zone (AgriReach's approximate zone map): officer should confirm which zone's timing applies.
+Note: Sources give different figures for maize planting window major season; officer should choose.
+Note: Sources give different figures for maize planting window minor season; officer should choose.
+Note: A rainfall record is attached for the officer. The guides give no rainfall amount that marks onset, so AgriReach does not say whether the guides' condition is met; the officer decides.
+Note: The model draft failed the citation check, so the verbatim passages are shown instead.
+
+Note: (officer only) Question received 25 Oct 2026. Windows cited: MoFA major season, transition: Mid-March-end of April; IITA major season, transition: End of March - End of April; MoFA minor season, transition: Mid July through August-early Sept.; IITA minor season, transition: Mid of July - Early September. The date is outside the cited windows.
+Note: (officer only) District Ejura/Sekyedumase taken from the question text.
+Note: (officer only) Rainfall record [RAINFALL-OPEN-METEO:ejura:2026-10-25] for Ejura/Sekyedumase, 2026-09-25 to 2026-10-24: 24 rain days (at least 1 mm), 185.5 mm in total, 0 days missing (Open-Meteo (model-based estimate, forecast API past days)). This is a model estimate for one point in the district, not a rain gauge reading; estimates can differ a lot from a local gauge and from other providers. The guides give no rainfall amount that marks onset; AgriReach does not say whether onset has been reached. The officer decides.

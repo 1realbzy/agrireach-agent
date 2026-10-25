@@ -1,0 +1,11 @@
+To plant maize in Ejura, consider the following:
+
+1. **Planting Window**: The major season transition period is either from mid-March to end of April [MOFA-MAIZE:p11-transition-major] or from end of March to end of April [IITA-MAIZE-2025:p16-transition-major]. The minor season transition period is either from mid-July through August to early September [MOFA-MAIZE:p12-transition-minor] or from mid-July to early September [IITA-MAIZE-2025:p16-transition-minor]. The officer should choose which applies.
+
+2. **Planting Time**: Plant after three good rains within the planting window to ensure enough soil moisture [IITA-MAIZE-2025:p15-three-good-rains]. Sow after the rains have stabilized to avoid wilting [MOFA-MAIZE:p10-when-to-plant].
+
+3. **Rainfall Record**: From 2026-09-25 to 2026-10-24, there were 24 of 30 days with at least 1 mm of rain, totaling 185.5 mm [RAINFALL-OPEN-METEO:ejura:2026-10-25]. The officer should decide if this meets the guides' conditions.
+
+Note: (officer only) Question received 25 Oct 2026. Windows cited: MoFA major season, transition: Mid-March-end of April; IITA major season, transition: End of March - End of April; MoFA minor season, transition: Mid July through August-early Sept.; IITA minor season, transition: Mid of July - Early September. The date is outside the cited windows.
+Note: (officer only) District Ejura/Sekyedumase taken from the question text.
+Note: (officer only) Rainfall record [RAINFALL-OPEN-METEO:ejura:2026-10-25] for Ejura/Sekyedumase, 2026-09-25 to 2026-10-24: 24 rain days (at least 1 mm), 185.5 mm in total, 0 days missing (Open-Meteo (model-based estimate, forecast API past days)). This is a model estimate for one point in the district, not a rain gauge reading; estimates can differ a lot from a local gauge and from other providers. The guides give no rainfall amount that marks onset; AgriReach does not say whether onset has been reached. The officer decides.

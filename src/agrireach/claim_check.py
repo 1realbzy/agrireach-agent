@@ -319,7 +319,7 @@ def _run_judge(to_judge: list[tuple[Sentence, list[dict]]], judge_call) -> tuple
         err = judged["error"]
         problems.append("source check couldn't run: no judge model is configured (set LLM_BASE_URL and LLM_API_KEY)"
                         if "LLM_BASE_URL" in err else f"source check couldn't run: the judge model gave no verdict "
-                                                        f"({err[:120]})")
+                                                        f"({err[:300]})")
     for v, (s, _c) in zip(judged.get("verdicts", []), to_judge):
         if v["sentence"] != s.text:
             v["sent_to_judge"], v["sentence"] = v["sentence"], s.text

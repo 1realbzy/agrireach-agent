@@ -2,7 +2,89 @@
 
 **All hand grades in this file are self-graded by the AgriReach authors. A re-grade by an extension officer is pending; until then, treat "Pass" as the authors' judgement, not an agronomic sign-off.**
 
-## Latest: 25 Oct 2026 (UTC), live runs on `cc7cf4c` (runs B1, B2, EJC1-EJC5, C2)
+## Latest: 25 Oct 2026 (UTC), run 6 on `fb923be`: full officer approval path through the HTTP API
+
+Full write-up and raw output: [docs/live-eval-2026-10-25-run6-approval.md](docs/live-eval-2026-10-25-run6-approval.md). All grades are self-graded.
+
+**Setup:** same as run 5: real FastAPI server, SMS webhook, officer endpoints, farmer view, and a mock SMS gateway. The server wrapper prints full tracebacks. The 9 cases were:
+- F1 ×3 (approve; delete the safety line from both texts; delete it as the officer UI does);
+- B1: the recorded run 4 draft replayed through `/farmer-draft`;
+- Kintampo, Ejura, F5 and F9;
+- a Twi question with an officer-written Twi reply.
+
+**Calls and cost:**
+- App log: $0.006333, 64/64 calls succeeded (graded cases $0.004140, 30/30).
+- **Key counter: $0.007595.** No 402.
+- The $0.001262 gap is the approval-time and `/farmer-draft` model calls, which the app doesn't log.
+
+**What passed:**
+- The safety line is in the queue SMS before approval.
+- Delivery is byte-identical, 9/9.
+- API gate: 401, 400, 409, 404.
+- Order is caveat, safety line, advice.
+- F1 line in the proposal 4/4.
+- Dropped sentences are always quoted to the officer.
+- No proposal got a 400 at approval.
+- Twi limits: 268 OK, 269 → prompt and 400.
+- **B1: 505 chars, as Developer expected**: caveat, APNI line, scouting, rotation; the storage sentence was dropped and quoted.
+- **The officer-deletes-safety-line warning works on the UI path**: returned, logged, and the line is not put back.
+
+**Gaps and bugs:**
+- No warning when the officer also removes the pesticide sentence from the officer draft.
+- Unicode rule path over-drops: the probe kept caveat + safety line only, with no advice, although advice would have fit once the Unicode sentence was gone.
+- Proposal and rejection reasons are still not in the audit log.
+- Approval-time and farmer-draft calls are missing from the app cost log.
+- The "(MoFA) ." spurious approval warning is back (Ejura).
+- Duplicate safety sentence in 3/5 pesticide proposals.
+
+**Run 5 items rechecked:**
+- Concurrent-inbound failure: not reproduced in 7 pairs, no traceback.
+- Judge `KeyError: 'n'`: not seen.
+
+**False rejects:** 12% (3/25, self-graded, run 4) is still the accepted documented limit. No more judge shapes.
+
+### Known limit: F1's model SMS and the length limit (branch `fix/run5-findings`, offline tests only, not yet live-tested)
+- A model SMS is never trimmed. The source's pesticide sentence goes in word for word after the caveat. If the result is over 600 characters or 4 SMS parts, the model SMS is rejected and the rule text is used.
+- On `fb923be`, F1's faithful model SMS was **always** rejected for length. The model's own AEA/pesticide sentence plus the inserted source line took it over 600: 678 in run 6 F1-a, 683 and 830 for B1, and 723 in run 4. So F1 always got the rule text.
+- **That is safe.** The rule text always carries the source's pesticide sentence. Any sentence dropped to fit is quoted to the officer. Every F1 run in runs 5 and 6 had the line.
+- On `fix/run5-findings`, the model's own copy of the referral is removed as a repeat and named for the officer, so the two F1 model SMS recorded on `a5e9192` (A1, A2) now fit (485 and 532 characters) and are proposed. Longer ones are still rejected and use the rule text, for example the B1 SMS at 631 characters after the copy is removed. Either way the line is there.
+
+## Earlier: 25 Oct 2026 (UTC), run 5 on `ccc609a`: full officer approval path through the HTTP API
+
+Full write-up and raw output: [docs/live-eval-2026-10-25-run5-approval.md](docs/live-eval-2026-10-25-run5-approval.md). All grades are self-graded.
+
+**Setup:**
+- Real FastAPI server, SMS webhook inbound, officer queue, approve/edit-approve and the farmer view.
+- SMS goes to a local mock gateway. The simulator is on only in the throwaway env, plus a second server with it off.
+- Cases: F1 ×2 (Adaklu), Kintampo fall armyworm, Ejura planting, F5, F9.
+- Same models as below.
+
+**Calls and cost:**
+- 28/28 model calls succeeded, $0.004089 app-logged.
+- The whole of run 5, including a failed first attempt and a concurrency retry, was $0.012377 by the key counter. No 402.
+
+**What passed:**
+- The safety line is in the queue SMS before approval: 3/3 pesticide cases.
+- Phone == farmer view == recorded text, byte-identical: 6/6.
+- API gate: 401 (no token or bad token), 400 (unconfirmed), 409 (second decision), 404 (simulator off), 400 with a shorten prompt for over-length officer text.
+- Length: within 612 GSM-7 / 268 UCS-2, and cut at sentence boundaries.
+- The southern caveat comes first, then the safety line.
+- **F1 safety line kept 2/2** (it was 1/2 on `cc7cf4c`).
+
+**Failures:**
+- **An officer edit that deletes the safety line is approved with no warning logged.** The line is correctly not re-inserted.
+- Proposal-time SMS rejection reasons are only in `farmer_draft.problems`, not in the audit log.
+- **Two concurrent SMS inbounds once produced `FAILED: ExceptionGroup`.** One farmer got no contact and no ack. This is not reproduced in a 2-way retry and there is no traceback yet.
+- The judge's output failed to parse once at approval (`KeyError: 'n'`, F5). It failed closed and was logged.
+
+**Notes:**
+- One redundant duplicate pesticide sentence (Kintampo). Safe.
+- The Ejura SMS was the heading-label rule text with double spaces.
+- No "(MoFA) ." warning, but that case was not exercised. No empty fallback.
+
+**False rejects:** 12% (3/25, self-graded, run 4) is **accepted as a documented limit; no more judge sentence shapes will be added.**
+
+## Earlier: 25 Oct 2026 (UTC), live runs on `cc7cf4c` (runs B1, B2, EJC1-EJC5, C2)
 
 Full write-up and raw output: [docs/live-eval-2026-10-25-run4.md](docs/live-eval-2026-10-25-run4.md).
 

@@ -64,8 +64,10 @@ def test_ensure_never_drops_model_sentences():
 
 def test_unicode_text_uses_the_268_character_sms_limit_on_the_rule_path():
     # One Twi letter (ɔ) makes the whole SMS Unicode: 4 parts is 268 characters, not 612.
+    # Since fix/run5-findings (run 6 bug 1) an advice sentence with the ɔ is dropped when the GSM-7 text keeps more
+    # advice, so the ɔ is in the zone caveat here (always kept), which makes the Unicode limit unavoidable.
     draft = llm.stub_draft(KINTAMPO, PS, []).replace("once they occur.", "once they occur in Kɔforidua.")
-    fd = fr.propose(draft, KINTAMPO, passages=PS)
+    fd = fr.propose(draft, KINTAMPO, zone_caveat=fr.zone_caveat("Kɔforidua"), passages=PS)
     m = sms.measure(fd.text)
     assert m.encoding == "UCS-2" and m.units <= 268 < 600, (m, fd.text)
     assert sms.length_prompt(fd.text) is None
