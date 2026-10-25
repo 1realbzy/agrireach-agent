@@ -13,9 +13,10 @@ Runs after the figure check in citation_check.py, in code, before a draft reache
    for "this is not a confirmed diagnosis"); it can NOT tell a paraphrase from a contradiction.
 
 Optional layer 4: a model judge (agrireach.judge), separate from the drafting model, asked whether each cited
-sentence is supported. Off unless AGRIREACH_JUDGE_MODEL is set. Officer-facing lines, restatements of the question,
-"the sources differ / one source says X, another Y" lines (conflicts are detected and their figures checked in code)
-and sentences with no content words (list markers like "1.") are not sent to it. See judge.py.
+sentence is supported. Always on (judge.enabled()). Only sentences that are WHOLLY one of the no-advice shapes in
+NOT_JUDGED_RE (an officer inspect/visit/refer line, restating the question, "we do not know X", "the sources differ",
+"one source says X, another Y" with measurement words only) and sentences with no content words (list markers like
+"1.") are not sent to it; anything added to a shape is judged. See judge.py.
 
 Sentences attach to citations the same way figures do in citation_check: a sentence takes the citations inside
 it, or else the next citation in the same paragraph. Sentences after a paragraph's last citation are uncited and
@@ -37,30 +38,74 @@ AGREE_RE = re.compile(
     r"|\bboth\s+(?:recommend|say|state|suggest|advise|give|note|mention)\b", re.I)
 # Officer-facing instructions and AgriReach policy lines ("The officer should not recommend a chemical...").
 META_RE = re.compile(r"\b(?:officer|officers|agrireach|aea)\b", re.I)
-# Lines the judge is not asked about: officer-facing instructions, restating the question, and saying the sources
-# differ (conflicts are detected by code and their figures are checked by citation_check).
 # Uncited lines exempt from the lexical layer (still judged): notes and lines about the reply's language.
 UNCITED_META_RE = re.compile(r"^\W*note\b|\b(?:twi|dagbani|wali|ewe|hausa|language|respond|reply)\b", re.I)
-# Officer-addressed lines ARE judged: "the officer should tell the farmer it is safe to sell" is still advice.
-NOT_JUDGED_RE = re.compile(r"\bfarmer\s+(?:asks|is\s+asking|wants\s+to\s+know)\b"
-                           # A pure choice instruction to the officer ("The officer should choose which limit to advise
-                           # the farmer to follow.") gives no advice; the judge rejected it live on 25 Oct.
-                           r"|^\W*(?:the\s+)?(?:extension\s+)?officer\s+(?:should|must|can|may)\s+(?:choose|decide|confirm)"
-                           r"\s+which\b[^0-9]*$"
-                           # Shapes the judge rejected live on a6222d1 (docs/live-eval-2026-10-25-run2.md), each with no
-                           # figure and no claim tacked on ("because", "but", "so", a comma): an officer action that
-                           # gives no advice, choosing between the cited options, and saying the sources don't know.
-                           r"|^\W*(?:the\s+)?(?:extension\s+)?officer\s+(?:should|must|can|may)\s+(?:also\s+)?"
-                           r"(?:inspect|visit|refer)\b(?:(?!\b(?:because|since|as|so|which|that)\b)[^0-9])*$"
-                           r"|^\W*(?:choose|pick|select)\s+the\s+(?:appropriate|right|correct|suitable)\s+"
-                           r"(?:window|option|limit|figure)\b(?:(?!\b(?:from|between)\b)[^0-9])*$"
-                           r"|^\W*(?:we|i|agrireach)\s+(?:do\s+not|don't|cannot|can't)\s+(?:know|say)\b"
-                           r"(?:(?!,|;|\bbut\b)[^0-9])*$"
-                           r"|^\W*the\s+(?:curated\s+)?(?:passages|sources)\s+do\s+not\s+(?:mention|cover|say|address|describe)"
-                           r"\b(?:(?!,|;|\bbut\b|\bso\b)[^0-9])*$"
-                           r"|\bvar(?:y|ies)\s+(?:by|between|across)\s+sources?\b"
-                           r"|\bsources?\b[^.]*\b(?:disagree|differ)|\bdisagree|\bdisput|\bone\s+source\b[^.]*\banother\b",
-                           re.I)
+# Lines the judge is not asked about. Officer-addressed lines ARE judged in general ("the officer should tell the
+# farmer it is safe to sell" is still advice); only the whole-sentence shapes below are exempt. Each shape must match
+# the ENTIRE sentence (citations already removed; list markers, bold markers and a final full stop allowed), so a
+# claim tacked on with "and", "so", "because", a comma, ";" or ":" makes the sentence longer than its shape and it is
+# judged. Bare "disagree"/"disputed"/"differ" anywhere no longer exempts (review of ae53dc3, 25 Oct). The shapes come
+# from live false rejects (docs/live-eval-2026-10-25-run2.md) and the existing tests; see tests/test_not_judged_anchored.py.
+# One plain word that is not a joining word or a modal (so a word run can never carry a second clause or an order).
+_W = (r"(?!(?:and|or|so|but|because|since|as|which|that|then|while|if|whether|though|although|unless|should|must"
+      r"|need|needs|always|never)\b)[a-z][a-z'-]*")
+_WORDS = lambda lo, hi: rf"{_W}(?:\s+{_W}){{{lo - 1},{hi - 1}}}"  # noqa: E731 - lo..hi plain words
+_DET = r"(?:the|this|that|these|their|your|his|her|its|a|an)"
+_OFFICER = r"(?:the\s+)?(?:extension\s+)?officer\s+(?:should|must|can|may)\s+(?:also\s+)?"
+# Officer actions that give the farmer no advice: look at the crop, or send the case to a named person or office.
+_THING = (r"(?:field|fields|farm|crop|crops|plants?|maize|soybeans?|cowpeas?|leaves|cobs|grain|store|storage|"
+          r"sample|samples)")
+_PERSON = (r"(?:(?:a|an|the|your|their)\s+)?(?:local\s+|nearest\s+|district\s+)?(?:aea|aeas|agricultural\s+extension"
+           r"\s+(?:agent|officer)|extension\s+(?:agent|officer)|expert|specialist|plant\s+clinic|mofa\s+office"
+           r"|district\s+agricultural\s+office|agricultural\s+office)")
+_ACT = (rf"(?:inspect|visit|examine)\s+{_DET}\s+(?:affected\s+)?{_THING}"
+        rf"|refer\s+(?:the\s+farmer|them|the\s+case|this\s+case)\s+to\s+{_PERSON}"
+        r"(?:\s+for\s+(?:a\s+)?(?:proper\s+|closer\s+|full\s+)?(?:diagnosis|inspection|advice))?"
+        r"|confirm\s+(?:it|this|the\s+(?:window|option|choice))\s+with\s+the\s+farmer")
+# A figure-free measurement phrase for "one source says X, another says Y": only measurement words, so advice
+# ("to avoid loss of seed vigor") falls outside the shape. The figures themselves are checked by citation_check.
+_MONTH = (r"(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar"
+          r"|apr|jun|jul|aug|sep|sept|oct|nov|dec)")
+_MTOK = (rf"(?:\d+(?:[.,]\d+)?(?:-\d+(?:[.,]\d+)?)?|(?:early|mid|late|end|start)-{_MONTH}|{_MONTH}|cm|mm|m|kg|g|ha"
+         r"|acre|acres|ppb|weeks?|days?|%|between|and|to|of|about|around|a|the|depth|deep|rows?|plants?|in|within"
+         r"|spacing|row-to-row|plant-to-plant|not|deeper|more|than|exceeding|holes|making|planting|plant|apart|per"
+         r"|hill|seeds?|stand|early|mid|late|end|start|from|until|after|before)")
+_MEASURE = rf"{_MTOK}(?:(?:\s+|\s*,\s*(?=not\b)){_MTOK})*"
+_SAYS = r"(?:says|said|suggests|recommends|advises|gives|states)"
+_TOPIC = rf"(?:(?:for|on|regarding)\s+(?:the\s+)?{_WORDS(1, 3)}\s*,\s*)?"
+_SHAPES = [
+    # Restating the question: "The farmer asks when to plant soybeans in Tamale."
+    rf"the\s+farmer\s+(?:asks|is\s+asking|wants\s+to\s+know)\s+{_WORDS(1, 12)}",
+    # An officer action, or two joined by "and"/"or": "The officer should inspect the field or refer the farmer to
+    # an expert." / imperative "Refer the farmer to your local AEA."
+    rf"(?:{_OFFICER})?(?:{_ACT})(?:\s+(?:and|or)\s+(?:{_ACT}))?",
+    # A pure choice instruction to the officer: "The officer should choose which limit to advise the farmer to follow."
+    rf"{_OFFICER}(?:choose|decide|confirm)\s+which\s+(?:of\s+the\s+(?:two|cited)\s+)?(?:limit|spacing|window|option"
+    r"|figure|depth|rate|source|guide|one)s?(?:\s+to\s+(?:recommend|use|follow|advise(?:\s+the\s+farmer\s+to\s+follow)?))?",
+    # Choosing between the cited options: "Choose the appropriate window and confirm it with the farmer."
+    rf"(?:{_OFFICER})?(?:choose|pick|select)\s+the\s+(?:appropriate|right|correct|suitable)\s+(?:window|option|limit"
+    r"|figure)(?:\s+based\s+on\s+local\s+conditions)?(?:\s+and\s+confirm\s+(?:it|this)\s+with\s+the\s+farmer)?",
+    # Saying what is not known: "We do not know the variety." / "We do not know if this method is effective."
+    rf"(?:we|i|agrireach)\s+(?:do\s+not|don't|cannot|can't)\s+(?:know|say)\s+(?:(?:if|whether)\s+{_WORDS(1, 12)}"
+    rf"|{_WORDS(1, 5)})",
+    # "The curated sources do not cover this pest."
+    rf"the\s+(?:curated\s+)?(?:passages|sources)\s+do\s+not\s+(?:mention|cover|say|address|describe)\s+{_WORDS(1, 5)}",
+    # "The planting window varies by source." / "Plant spacing is disputed."
+    rf"(?:the\s+)?{_WORDS(1, 3)}\s+(?:var(?:y|ies)|differs?)\s+(?:by|between|across)\s+(?:the\s+)?sources?",
+    rf"(?:the\s+)?{_WORDS(1, 3)}\s+is\s+disputed",
+    # "Sources disagree on the planting window." / "For plant spacing, sources disagree."
+    rf"{_TOPIC}(?:the\s+)?sources\s+(?:also\s+)?(?:disagree|differ)(?:\s+(?:on|about)\s+(?:the\s+)?{_WORDS(1, 3)})?",
+    # Two attributions and nothing else: "One source says 5 cm, another says 3 cm, not deeper than 5 cm."
+    rf"{_TOPIC}one\s+source\s+{_SAYS}\s+(?:to\s+plant\s+)?{_MEASURE}\s*,\s*(?:while\s+|and\s+)?another\s+(?:source\s+)?"
+    rf"(?:{_SAYS}\s+)?(?:to\s+plant\s+)?{_MEASURE}",
+]
+NOT_JUDGED_RE = re.compile(r"^[\s*#>\-•]*(?:\d+[.)]\s+)?(?:\*\*|__)?\s*(?:" + "|".join(_SHAPES)
+                           + r")\s*(?:\*\*|__)?\s*[.!]?[\s*]*$", re.I)
+
+
+def not_judged(bare: str) -> bool:
+    """True only if the WHOLE sentence (citations removed) is one of the no-advice shapes in NOT_JUDGED_RE."""
+    return bool(NOT_JUDGED_RE.fullmatch(re.sub(r"\s+", " ", bare).strip()))
 NEGATED_AGREE = re.compile(r"\b(?:not|n't|never|dis)\s*agree|\bdo\s+not\s+agree|\bdiffer|\bdisagree", re.I)
 # Words that carry no claim of their own: function words, advisory verbs and officer-facing meta talk.
 STOP = set("""a an the is are was were be been being am of to in on at by for from with without as and or but nor so
@@ -194,7 +239,7 @@ def _check_uncited(s: Sentence, bare: str, all_cited: list[dict]) -> tuple[bool,
     Returns (counted as checked, problem or None, send to the judge)."""
     words = content_words(bare)
     plain = re.sub(r"\*\*|__|`", "", bare).strip()
-    if not all_cited or not words or plain.endswith(":") or NOT_JUDGED_RE.search(bare):
+    if not all_cited or not words or plain.endswith(":") or not_judged(bare):
         return False, None, False
     if not META_RE.search(bare) and not UNCITED_META_RE.search(plain) and \
             not words & content_words(" ".join(p["text"] for p in all_cited)):
@@ -289,7 +334,7 @@ def check_claims(draft: str, passages: list[dict], conflicts: dict | None = None
                             "(no shared content words)")
             continue
         # The judge is only asked about sentences with content words (not list markers like "1.").
-        if words and not NOT_JUDGED_RE.search(bare):
+        if words and not not_judged(bare):
             to_judge.append((s, cited))
     judged = None
     if (judge if judge is not None else judge_mod.enabled()) and to_judge:
