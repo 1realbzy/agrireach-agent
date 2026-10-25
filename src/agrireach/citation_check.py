@@ -234,6 +234,9 @@ def segments(draft: str) -> tuple[list[tuple[str, list[str]]], str]:
     return out, draft[pos:]
 
 
+LIST_MARKER_RE = re.compile(r"^(\s*)\d{1,2}[.)][ \t]+", re.M)
+
+
 def check_draft(draft: str, passages: list[dict], conflicts: dict[str, list[dict]] | None = None,
                 ignore_prefixes: tuple[str, ...] = ()) -> CheckResult:
     """Check `draft` against the retrieved `passages` (dicts with 'id' and 'text').
@@ -244,6 +247,8 @@ def check_draft(draft: str, passages: list[dict], conflicts: dict[str, list[dict
     """
     if ignore_prefixes:
         draft = "\n".join(l for l in draft.splitlines() if not l.strip().startswith(ignore_prefixes))
+    # Numbered-list markers ("1. ", "2) ") at the start of a line are layout, not figures.
+    draft = LIST_MARKER_RE.sub(r"\1", draft)
     by_id = {p["id"]: p for p in passages}
     figs_of = {pid: extract_figures(p["text"]) for pid, p in by_id.items()}
     problems: list[str] = []

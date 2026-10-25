@@ -131,12 +131,20 @@ class ClaimResult:
     judge_failed: bool = False  # the judge was required but could not give a verdict (the check then fails)
 
 
+RECORD_COMMON_WORDS = {"rainfall", "open"}
+
+
 def source_aliases(passages: list[dict]) -> dict[str, set[str]]:
     """alias -> source ids. Aliases are the alphabetic parts of a source id ("APNI-SARI-2023" -> apni, sari)."""
     crops = {p.get("crop", "") for p in passages}
     out: dict[str, set[str]] = {}
     for p in passages:
-        for tok in re.findall(r"[A-Za-z]{3,}", p["source_id"]):
+        toks = re.findall(r"[A-Za-z]{3,}", p["source_id"])
+        if p.get("kind") == "record":
+            # A data record (RAINFALL-OPEN-METEO): "rainfall" and "open" are ordinary words, so only the provider
+            # name counts as naming it. A "**Rainfall**:" heading over a guide sentence is not a citation claim.
+            toks = [t for t in toks if t.lower() not in RECORD_COMMON_WORDS]
+        for tok in toks:
             tok = tok.lower()
             if tok not in crops:
                 out.setdefault(tok, set()).add(p["source_id"])
