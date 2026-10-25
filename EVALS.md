@@ -2,7 +2,48 @@
 
 **All hand grades in this file are self-graded by the AgriReach authors. A re-grade by an extension officer is pending; until then, treat "Pass" as the authors' judgement, not an agronomic sign-off.**
 
-## Latest: 25 Oct 2026 (UTC), run 5 on `ccc609a`: full officer approval path through the HTTP API
+## Latest: 25 Oct 2026 (UTC), run 6 on `fb923be`: full officer approval path through the HTTP API
+
+Full write-up and raw output: [docs/live-eval-2026-10-25-run6-approval.md](docs/live-eval-2026-10-25-run6-approval.md). All grades are self-graded.
+
+**Setup:** same as run 5: real FastAPI server, SMS webhook, officer endpoints, farmer view, and a mock SMS gateway. The server wrapper prints full tracebacks. The 9 cases were:
+- F1 ×3 (approve; delete the safety line from both texts; delete it as the officer UI does);
+- B1: the recorded run 4 draft replayed through `/farmer-draft`;
+- Kintampo, Ejura, F5 and F9;
+- a Twi question with an officer-written Twi reply.
+
+**Calls and cost:**
+- App log: $0.006333, 64/64 calls succeeded (graded cases $0.004140, 30/30).
+- **Key counter: $0.007595.** No 402.
+- The $0.001262 gap is the approval-time and `/farmer-draft` model calls, which the app doesn't log.
+
+**What passed:**
+- The safety line is in the queue SMS before approval.
+- Delivery is byte-identical, 9/9.
+- API gate: 401, 400, 409, 404.
+- Order is caveat, safety line, advice.
+- F1 line in the proposal 4/4.
+- Dropped sentences are always quoted to the officer.
+- No proposal got a 400 at approval.
+- Twi limits: 268 OK, 269 → prompt and 400.
+- **B1: 505 chars, as Developer expected**: caveat, APNI line, scouting, rotation; the storage sentence was dropped and quoted.
+- **The officer-deletes-safety-line warning works on the UI path**: returned, logged, and the line is not put back.
+
+**Gaps and bugs:**
+- No warning when the officer also removes the pesticide sentence from the officer draft.
+- Unicode rule path over-drops: the probe kept caveat + safety line only, with no advice, although advice would have fit once the Unicode sentence was gone.
+- Proposal and rejection reasons are still not in the audit log.
+- Approval-time and farmer-draft calls are missing from the app cost log.
+- The "(MoFA) ." spurious approval warning is back (Ejura).
+- Duplicate safety sentence in 3/5 pesticide proposals.
+
+**Run 5 items rechecked:**
+- Concurrent-inbound failure: not reproduced in 7 pairs, no traceback.
+- Judge `KeyError: 'n'`: not seen.
+
+**False rejects:** 12% (3/25, self-graded, run 4) is still the accepted documented limit. No more judge shapes.
+
+## Earlier: 25 Oct 2026 (UTC), run 5 on `ccc609a`: full officer approval path through the HTTP API
 
 Full write-up and raw output: [docs/live-eval-2026-10-25-run5-approval.md](docs/live-eval-2026-10-25-run5-approval.md). All grades are self-graded.
 
