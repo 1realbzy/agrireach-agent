@@ -61,6 +61,12 @@ NOT_JUDGED_RE = re.compile(r"\bfarmer\s+(?:asks|is\s+asking|wants\s+to\s+know)\b
                            r"|\bvar(?:y|ies)\s+(?:by|between|across)\s+sources?\b"
                            r"|\bsources?\b[^.]*\b(?:disagree|differ)|\bdisagree|\bdisput|\bone\s+source\b[^.]*\banother\b",
                            re.I)
+# "It is still worth applying / not too late" answers a late-timing question. The judge accepted it live (F5) from
+# passages that only give the ideal time, so code requires a cited passage that itself speaks about late timing.
+LATE_CLAIM_RE = re.compile(r"\b(?:can|could|may|is|are)\s+still\b|\bstill\s+(?:worth|ok|okay|fine|possible|useful|"
+                           r"help|apply|plant|sow)\b|\bnot\s+too\s+late\b", re.I)
+# "can be planted up to end of July" speaks about late timing; "delay ... until some rains" (moisture) does not.
+LATE_SUPPORT_RE = re.compile(r"\b(?:late|later|still|missed|up\s+to)\b", re.I)
 NEGATED_AGREE = re.compile(r"\b(?:not|n't|never|dis)\s*agree|\bdo\s+not\s+agree|\bdiffer|\bdisagree", re.I)
 # Words that carry no claim of their own: function words, advisory verbs and officer-facing meta talk.
 STOP = set("""a an the is are was were be been being am of to in on at by for from with without as and or but nor so
@@ -247,6 +253,18 @@ def _run_judge(to_judge: list[tuple[Sentence, list[dict]]], judge_call) -> tuple
     return judged, problems
 
 
+def _late_timing_problems(to_judge: list) -> tuple[list, list[str]]:
+    """Split off sentences that say it is not too late when none of their passages mentions late timing."""
+    keep, problems = [], []
+    for s, ps in to_judge:
+        bare = CITE_RE.sub(" ", s.text)
+        if LATE_CLAIM_RE.search(bare) and not any(LATE_SUPPORT_RE.search(p["text"]) for p in ps):
+            problems.append(f"'{_short(s.text)}' says it is not too late, but no cited passage speaks about late timing")
+        else:
+            keep.append((s, ps))
+    return keep, problems
+
+
 def check_claims(draft: str, passages: list[dict], conflicts: dict | None = None, judge: bool | None = None,
                  ignore_prefixes: tuple[str, ...] = (), judge_call=None) -> ClaimResult:
     """Sentence-level claim check, in layers: named sources, uncited sentences, agreement claims, lexical support,
@@ -291,6 +309,8 @@ def check_claims(draft: str, passages: list[dict], conflicts: dict | None = None
         # The judge is only asked about sentences with content words (not list markers like "1.").
         if words and not NOT_JUDGED_RE.search(bare):
             to_judge.append((s, cited))
+    to_judge, late = _late_timing_problems(to_judge)
+    problems += late
     judged = None
     if (judge if judge is not None else judge_mod.enabled()) and to_judge:
         judged, judge_problems = _run_judge(to_judge, judge_call)

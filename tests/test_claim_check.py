@@ -85,7 +85,10 @@ def test_sentence_splitting_attaches_next_citation_within_paragraph_only():
 
 
 # --- Recorded real drafts: what the deterministic layers flag (hand-labelled in EVALS.md) ----------------------
-KNOWN_DEFECTS = {("B", "5"), ("D", "5"), ("E", "5"), ("C", "12"), ("E", "12")}
+KNOWN_DEFECTS = {("B", "5"), ("D", "5"), ("E", "5"), ("C", "12"), ("E", "12"),
+                 # "It is still worth applying the subsidised fertiliser": labelled a real defect in JUDGE_LABELS
+                 # below; since 25 Oct the late-timing layer catches it without the judge.
+                 ("F1", "F5"), ("F2", "F5")}
 
 
 def _flags(**kw):

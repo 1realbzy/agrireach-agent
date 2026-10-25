@@ -22,7 +22,7 @@ PROMPT = (
     "is judged on what the farmer would be told; a sentence that states only part of what a passage says is supported, so don't reject it for "
     "leaving other details out). Answer 'not_supported' if the sentence adds a claim, conclusion, recommendation or "
     "reassurance the passages do not make, says sources agree when they don't, or cites a passage about "
-    "something else. The passages come from Northern Ghana guides: do not judge whether they apply to the farmer's "
+    "something else. A passage giving the ideal time does not support saying it is still worth doing later. The passages come from Northern Ghana guides: do not judge whether they apply to the farmer's "
     "location (code adds that caveat separately), and naming the farmer's own crop, pest or place from the question "
     "is fine when the action itself is in the passage. Reply with JSON only: {\"verdicts\": [{\"n\": 1, \"verdict\": \"supported\" or "
     "\"not_supported\", \"why\": \"<10 words\"}]}"
