@@ -73,6 +73,14 @@ with officer:
             farmer_txt = st.text_area("Farmer text: exactly what the farmer will receive (approve covers this text)",
                                       fd.get("text", ""), key=f"f{c['id']}", height=140)
             st.caption(f"{len(farmer_txt)} characters (aim for under 600)")
+            if fd.get("sms_limit"):  # SMS case: show the limit, and check the text as it stands now
+                st.caption(fd["sms_limit"])
+                chk = httpx.post(f"{API}/officer/cases/{c['id']}/sms-check", json={"farmer_text": farmer_txt},
+                                 headers=H, timeout=10).json()
+                if chk.get("prompt"):
+                    st.warning(f"Farmer text: {chk['prompt']}")
+                else:
+                    st.caption(f"Fits: {chk.get('parts')} of {chk.get('limit')} SMS parts ({chk.get('encoding')})")
             confirmed = st.checkbox("I checked every advice line in the farmer text against the cited sources",
                                     key=f"ok{c['id']}")
             cols = st.columns(3)

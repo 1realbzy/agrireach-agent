@@ -16,6 +16,9 @@ from agrireach.channels.base import OutboundMessage, mask_sender
 CFG = sms.Config(username="sandbox", api_key="at-key-abc", webhook_token="tok-0123456789abcdef0123",
                  sender_id=None, sandbox=True, max_segments=4)
 FARMER = "+233000000017"
+# The Twi Ejura question from tests/test_search_variants.py (the repo has no Twi farmer reply: Twi replies are
+# officer-written, and the Twi eval case in evals/field_evidence.json is a placeholder awaiting a native speaker).
+TWI_QUESTION = "Me te Ejura, mɛdua aburo bere bɛn?"
 
 
 # --- length and encoding ----------------------------------------------------------------------------------------
@@ -35,7 +38,7 @@ def test_gsm7_extension_characters_count_double():
 
 
 def test_twi_and_dagbani_letters_force_ucs2():
-    m = sms.measure("Wo bɛtumi adua aburo.")
+    m = sms.measure(TWI_QUESTION)
     assert m.encoding == "UCS-2" and "ɛ" in m.non_gsm
     assert sms.measure("ɔ" * 70).segments == 1
     assert sms.measure("ɔ" * 71).segments == 2               # multipart UCS-2: 67 per part
@@ -51,15 +54,16 @@ def test_over_max_segments_is_refused_not_truncated():
     seen = []
     ch = sms.SmsChannel(CFG, httpx.Client(transport=httpx.MockTransport(lambda r: seen.append(r) or httpx.Response(500))))
     r = ch.send(FARMER, OutboundMessage(text=text))
-    assert not r.ok and "segments" in r.detail and "max 4" in r.detail and "shorten" in r.detail
+    assert not r.ok and "too long for SMS: this text needs 5 parts" in r.detail and "the limit is 4" in r.detail
+    assert "nothing was cut" in r.detail
     assert seen == []                                         # nothing sent, nothing cut
 
 
 def test_ucs2_refusal_names_the_characters_that_forced_it():
-    text = "Wo bɛtumi " + "a" * 300
+    text = TWI_QUESTION + " " + "a" * 300
     ch = sms.SmsChannel(CFG, httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(500))))
     r = ch.send(FARMER, OutboundMessage(text=text))
-    assert not r.ok and "UCS-2" in r.detail and "ɛ" in r.detail
+    assert not r.ok and "(Unicode because of ɛ)" in r.detail and "268 characters or fewer" in r.detail
 
 
 # --- config -----------------------------------------------------------------------------------------------------
@@ -120,14 +124,14 @@ class FakeAT:
 def test_send_posts_documented_form_fields_with_apikey_header():
     at = FakeAT()
     ch = sms.SmsChannel(CFG, httpx.Client(transport=httpx.MockTransport(at)))
-    r = ch.send(FARMER, OutboundMessage(text="Wo bɛtumi adua.", audio_path="/tmp/ignored.wav"))
+    r = ch.send(FARMER, OutboundMessage(text=TWI_QUESTION, audio_path="/tmp/ignored.wav"))
     assert r.ok and "1 segment" in r.detail and "UCS-2" in r.detail and FARMER not in r.detail
     req = at.requests[0]
     assert str(req.url) == "https://api.sandbox.africastalking.com/version1/messaging"
     assert req.headers["apikey"] == "at-key-abc" and req.headers["accept"] == "application/json"
     assert req.headers["content-type"] == "application/x-www-form-urlencoded"
     form = parse_qs(req.content.decode())
-    assert form == {"username": ["sandbox"], "to": [FARMER], "message": ["Wo bɛtumi adua."]}  # no 'from' unless set
+    assert form == {"username": ["sandbox"], "to": [FARMER], "message": [TWI_QUESTION]}  # no 'from' unless set
 
 
 def test_sender_id_is_sent_as_from_when_configured():
@@ -227,7 +231,7 @@ def test_overlong_approved_answer_is_recorded_as_failed_not_cut():
     db.officer_decide(con, cid, officer="Ama Mensah", decision="edit_approve", edited_text=long_text)
     db.release_to_farmer(con, cid)
     out = service.deliver(con, cid, {"sms": ch})
-    assert out["ok"] is False and "segments" in out["detail"]
+    assert out["ok"] is False and out["detail"].startswith("not sent, nothing was cut: too long for SMS")
     assert len(at.requests) == 1                                                         # only the ack went out
 
 

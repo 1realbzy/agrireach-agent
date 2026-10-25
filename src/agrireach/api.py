@@ -97,6 +97,10 @@ def decide(case_id: int, d: Decision, officer: str = Depends(current_officer)):
         raise HTTPException(400, "confirm that you checked the farmer text against the cited sources before approving")
     warnings = []
     if d.decision in ("approve", "edit_approve"):
+        contact = db.get_contact(con, case_id)
+        if contact is not None and contact["channel"] == "sms" and (p := sms.length_prompt(d.farmer_text)):
+            # The text could never be sent; approving would release a case that can't reach the farmer.
+            raise HTTPException(400, p)
         current = db.get_case(con, case_id)
         caveat = (json.loads(current["farmer_draft"] or "null") or {}).get("zone_caveat") if current else None
         if not farmer_reply.caveat_kept(d.farmer_text, caveat):
@@ -136,7 +140,26 @@ def farmer_draft(case_id: int, body: OfficerText, officer: str = Depends(current
                                      conflicts=conflicts, zone_caveat=stored.get("zone_caveat"), passages=ps))
     if stored.get("season_prompt"):  # received date outside every cited window: keep prompting the officer
         fd["problems"] = fd["problems"] + [stored["season_prompt"]]
+    contact = db.get_contact(db.connect(), case_id)
+    if contact is not None and contact["channel"] == "sms":
+        fd = service.sms_review(fd)
     return fd
+
+
+class FarmerText(BaseModel):
+    farmer_text: str
+
+
+@app.post("/officer/cases/{case_id}/sms-check")
+def sms_check(case_id: int, body: FarmerText, officer: str = Depends(current_officer)):
+    """Length check of the officer's current farmer text, for SMS cases. Read-only; nothing is changed or sent."""
+    con = db.connect()
+    if not db.get_case(con, case_id):
+        raise HTTPException(404, "not found")
+    contact = db.get_contact(con, case_id)
+    if contact is None or contact["channel"] != "sms":
+        return {"channel": contact["channel"] if contact else None, "prompt": None}
+    return {"channel": "sms", **sms.check(body.farmer_text)}
 
 
 @app.post("/cases/{case_id}/release")

@@ -70,6 +70,50 @@ def _parts(n: int) -> str:
     return f"{n} segment" + ("" if n == 1 else "s")
 
 
+def max_parts() -> int:
+    """SMS_MAX_SEGMENTS for officer prompts (default 4). Config.from_env() rejects a bad value at startup."""
+    try:
+        n = int(os.getenv("SMS_MAX_SEGMENTS", "4"))
+    except ValueError:
+        return 4
+    return n if n >= 1 else 4
+
+
+def _cap(limit: int, unicode: bool) -> int:
+    single, multi = (70, 67) if unicode else (160, 153)
+    return single if limit == 1 else multi * limit
+
+
+def limit_fact(limit: int | None = None) -> str:
+    """The SMS limit in plain words, shown to the officer on every SMS case."""
+    n = limit or max_parts()
+    return (f"SMS limit for this farmer: {n} parts, which is {_cap(n, False)} characters of standard text, or "
+            f"{_cap(n, True)} if the text has any Twi, Ga, Ewe or Dagbani letter (ɛ ɔ ŋ ɣ), curly quote or emoji")
+
+
+def _too_long(text: str, limit: int) -> tuple[str, int] | None:
+    m = measure(text)
+    if m.segments <= limit:
+        return None
+    why = f"Unicode because of {', '.join(m.non_gsm[:8])}" if m.encoding == "UCS-2" else "standard SMS characters"
+    return (f"too long for SMS: this text needs {m.segments} parts ({why}); the limit is {limit}. "
+            f"Shorten it to {_cap(limit, m.encoding == 'UCS-2')} characters or fewer"), m.units
+
+
+def length_prompt(text: str, limit: int | None = None) -> str | None:
+    """Approval prompt for an SMS case whose farmer text won't fit; None if it fits. Never shortens anything."""
+    hit = _too_long(text, limit or max_parts())
+    return None if hit is None else f"{hit[0]} before approving (it is {hit[1]} now). Nothing is cut automatically."
+
+
+def check(text: str, limit: int | None = None) -> dict:
+    """Length facts for the officer's current farmer text (the /sms-check route)."""
+    m, n = measure(text), limit or max_parts()
+    return {"parts": m.segments, "limit": n, "encoding": "Unicode" if m.encoding == "UCS-2" else "standard",
+            "characters": m.units, "max_characters": _cap(n, m.encoding == "UCS-2"),
+            "unicode_because_of": list(m.non_gsm[:8]), "prompt": length_prompt(text, n)}
+
+
 @dataclass(frozen=True)
 class Config:
     username: str
@@ -125,11 +169,9 @@ class SmsChannel:
         if not PHONE_RE.match(recipient_id or ""):
             return SendResult(False, "recipient is not an international number (+ and country code)")
         m = measure(message.text)
-        if m.segments > self.cfg.max_segments:
-            why = f"; UCS-2 because of: {' '.join(m.non_gsm[:10])}" if m.encoding == "UCS-2" else ""
-            return SendResult(False, f"text is {_parts(m.segments)} in {m.encoding} ({m.units} units), over max "
-                                     f"{self.cfg.max_segments} (SMS_MAX_SEGMENTS){why}. Nothing was sent and nothing "
-                                     "was cut: the officer should shorten it")
+        hit = _too_long(message.text, self.cfg.max_segments)
+        if hit:  # backstop: the officer is prompted, and approval refused, before it gets here
+            return SendResult(False, f"not sent, nothing was cut: {hit[0]} (it is {hit[1]} now)")
         form = {"username": self.cfg.username, "to": recipient_id, "message": message.text}
         if self.cfg.sender_id:
             form["from"] = self.cfg.sender_id
