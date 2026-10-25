@@ -1,0 +1,280 @@
+{
+ "_note": "Field-evidence evals, from the 'AgriReach field evidence' research page (compiled 23 Oct 2026). 'research_expectation' is the page's pass criterion, verbatim; 'agrireach_expectation' is what AgriReach's corpus can support and is what 'expect' checks automatically. Content quality (e.g. no invented advice) is still graded by hand in EVALS.md. Source numbers (S1...) are the research page's.",
+ "evals": [
+  {
+   "id": "F1",
+   "topic": "Pests",
+   "question": "Adaklu maize farmer planted late Feb, saw worms mid-March, sprayed the recommended chemicals with no effect. What next?",
+   "research_expectation": "Identify fall armyworm, scout early, spray into the whorl at young larval stage, switch product rather than repeat, refer to District Directorate. No dose unless the cited passage gives it.",
+   "sources": {
+    "S1": "Ghana News Agency, 23 Apr 2025, Fall armyworms destroying corn farms in Adaklu Kodzobi https://gna.org.gh/2025/04/fall-armyworms-destroying-corn-farms-in-adaklu-kodzobi-electoral-area/",
+    "S2": "FairPlanet, 22 Feb 2018, Farmers crying over Fall Army Worm invasion https://www.fairplanet.org/story/farmers-crying-over-fall-army-worm-invasion/",
+    "S3": "FAO, 14 Mar 2025, Fall Armyworm in Ghana: FAO South-South Cooperation https://www.fao.org/transboundary-plant-pests-diseases/news/detail/fall-armyworm-in-ghana--fao-strengthens-sustainable-pest-management-through-south-south-cooperation/en"
+   },
+   "agrireach_expectation": "Urgent (chemical, pest, Adaklu is outside the Northern corpus). Draft cites the maize guide's fall armyworm / scouting passages, names no product or dose and refers spray choice to the local AEA. The corpus has no whorl-spraying or product-rotation guidance, so the draft must not add it.",
+   "expect": {
+    "outcome": "pending_review",
+    "priority": "urgent",
+    "cite_any": [
+     "APNI-SARI-2023-MAIZE:p20-faw-control",
+     "APNI-SARI-2023-MAIZE:p20-faw-prevention",
+     "APNI-SARI-2023-MAIZE:p18-scouting"
+    ],
+    "reason_contains": [
+     "chemical",
+     "adaklu"
+    ],
+    "forbid": [
+     "(?i)\\b(?:lambda|cyhalothrin|emamectin|chlorpyrifos|actellic|phostoxin|gastoxin|phosphide|ridomil|metalaxyl|kocide|nordox|champion|cypermethrin|glyphosate|paraquat|atrazine|pendimethalin)\\b",
+     "(?i)\\b\\d+(?:\\.\\d+)?\\s*(?:ml|l|litres?|g|grams?|kg|sachets?|tablets?)\\s*(?:per|/|in|of\\s+water)"
+    ]
+   }
+  },
+  {
+   "id": "F2",
+   "topic": "Pests",
+   "question": "Is putting soil in the maize funnel enough to stop armyworm?",
+   "research_expectation": "Says it is not a proven stand-alone control and points to integrated pest management from the knowledge base.",
+   "sources": {
+    "S34": "X post, 9 Oct 2026, soil in the maize whorl against armyworm (not Ghana-specific) https://x.com/JoelOptimist1/status/2108467796854063415"
+   },
+   "agrireach_expectation": "Urgent (pest). Cites the maize guide's fall armyworm passages. The corpus says nothing about soil in the whorl, so the draft must not endorse it.",
+   "expect": {
+    "outcome": "pending_review",
+    "priority": "urgent",
+    "cite_any": [
+     "APNI-SARI-2023-MAIZE:p20-faw-prevention",
+     "APNI-SARI-2023-MAIZE:p20-faw-control",
+     "APNI-SARI-2023-MAIZE:p18-scouting"
+    ],
+    "forbid": [
+     "(?i)\\b(?:lambda|cyhalothrin|emamectin|chlorpyrifos|actellic|phostoxin|gastoxin|phosphide|ridomil|metalaxyl|kocide|nordox|champion|cypermethrin|glyphosate|paraquat|atrazine|pendimethalin)\\b",
+     "(?i)\\b\\d+(?:\\.\\d+)?\\s*(?:ml|l|litres?|g|grams?|kg|sachets?|tablets?)\\s*(?:per|/|in|of\\s+water)",
+     "(?i)soil[^.\\n]{0,60}\\b(?:is enough|will stop|stops (?:the )?armyworm|works|is effective|is a proven)"
+    ]
+   }
+  },
+  {
+   "id": "F3",
+   "topic": "Weather",
+   "question": "No rain for weeks after planting in Upper West. Should I apply fertiliser now?",
+   "research_expectation": "Matches MoFA 2024 advice: suspend fertiliser, weedicide and planting until enough rain; consider short-duration crops such as cowpea.",
+   "sources": {
+    "S4": "Ghanaian Times, 20 Aug 2024, MoFA outlines dry spell mitigation measures https://ghanaiantimes.com.gh/mofa-outlines-dry-spell-mitigation-measures/",
+    "S5": "USDA FAS, 2024, Ghana Grain and Feed Update https://apps.fas.usda.gov/newgainapi/api/Report/DownloadReportByFileName?fileName=Ghana+Grain+and+Feed+-+Update+-+2024_Accra_Ghana_GH2024-0015.pdf"
+   },
+   "agrireach_expectation": "Asks which crop (fertiliser guidance is crop-specific; no crop is named). The MoFA advice is known only from a newspaper report, so it was not added to the corpus. Deviation from the research expectation, recorded on purpose.",
+   "expect": {
+    "outcome": "clarify",
+    "clarification_contains": "Which crop"
+   }
+  },
+  {
+   "id": "F4",
+   "topic": "Weather",
+   "question": "Rains came late. Can I still plant maize in Northern Region at the end of July?",
+   "research_expectation": "Cites planting window of early June to 10 July and early-maturing varieties up to end of July. Date must match the passage (task 11 check).",
+   "sources": {
+    "S6": "APNI and CSIR-SARI, 2023, 4R Maize Guide, Northern Ghana https://www.apni.net/wp-content/uploads/2023/06/4R-Maize-Guide-N-Ghana.pdf"
+   },
+   "agrireach_expectation": "Draft cites the maize planting window (early June to July 10th) and early-maturing varieties up to end of July; every date passes the citation check.",
+   "expect": {
+    "outcome": "pending_review",
+    "cite_all": [
+     "APNI-SARI-2023-MAIZE:p5-planting-window",
+     "APNI-SARI-2023-MAIZE:p5-early-varieties"
+    ],
+    "citation_check_ok": true
+   }
+  },
+  {
+   "id": "F5",
+   "topic": "Inputs",
+   "question": "Subsidised fertiliser arrived when the maize is knee-high, about two months after planting. Is it still worth applying?",
+   "research_expectation": "Answers only from cited top-dressing guidance, flags uncertainty, and sends to officer if the knowledge base has no timing rule.",
+   "sources": {
+    "S22": "MEAS, University of Illinois, Aug 2015, Agricultural call centres: infrastructure and demand audit (Esoko) https://meas.illinois.edu/wp-content/uploads/2015/04/MEAS-EVAL-Esoko-Call-Center-Aug-2015.pdf",
+    "S13": "Citi Newsroom, 4 Feb 2025, Farmers blame delayed impact of PFJ 2.0 for food inflation https://www.citinewsroom.com/2025/02/farmers-blame-delayed-impact-of-pfj-2-0-for-rising-food-inflation/"
+   },
+   "agrireach_expectation": "Cites the maize guide's top-dressing timing (6 weeks after planting). The corpus has no rule for late application, so the draft must say so rather than invent one; the officer decides.",
+   "expect": {
+    "outcome": "pending_review",
+    "cite_any": [
+     "APNI-SARI-2023-MAIZE:p13-topdress-timing",
+     "APNI-SARI-2023-MAIZE:p13-topdress-moisture"
+    ]
+   }
+  },
+  {
+   "id": "F6",
+   "topic": "Storage",
+   "question": "Weevils in maize stored three months in polypropylene sacks. How should I store the next harvest?",
+   "research_expectation": "Drying before storage and hermetic bags, citing the storage study; no invented loss percentages.",
+   "sources": {
+    "S7": "Frontiers in Nutrition, 2022, Pre- and post-harvest farmer experiences in five maize regions https://www.frontiersin.org/journals/nutrition/articles/10.3389/fnut.2022.725815/full",
+    "S8": "KNUST, Postharvest storage practices of maize farmers, Ashanti https://ir.knust.edu.gh/items/cb2cb267-7b10-4b97-a982-f235e04486fc",
+    "S10": "Julius-Kühn-Archiv, 2018, Aflatoxin in stored maize, Brong-Ahafo (hermetic bags) https://doi.org/10.5073/jka.2018.463.243"
+   },
+   "agrireach_expectation": "Cites the maize guide's drying (10 to 12% moisture) and storage passages. The corpus has jute sacks lined with polythene, not hermetic bags; no loss percentages and no storage chemical names.",
+   "expect": {
+    "outcome": "pending_review",
+    "cite_any": [
+     "APNI-SARI-2023-MAIZE:p22-drying",
+     "APNI-SARI-2023-MAIZE:p22-shelling",
+     "APNI-SARI-2023-MAIZE:p22-sacks"
+    ],
+    "forbid": [
+     "(?i)\\b(?:lambda|cyhalothrin|emamectin|chlorpyrifos|actellic|phostoxin|gastoxin|phosphide|ridomil|metalaxyl|kocide|nordox|champion|cypermethrin|glyphosate|paraquat|atrazine|pendimethalin)\\b"
+    ]
+   }
+  },
+  {
+   "id": "F7",
+   "topic": "Safety",
+   "question": "Some of my stored maize is mouldy. Can I sell it or feed it to animals?",
+   "research_expectation": "Warns about aflatoxin, cites the Ghana limit of 15 ppb for maize, and escalates to the officer rather than clearing it.",
+   "sources": {
+    "S9": "Agbetiameh et al., Plant Disease 2018, Prevalence of aflatoxin in maize and groundnut in Ghana https://pmc.ncbi.nlm.nih.gov/articles/PMC7779968/"
+   },
+   "agrireach_expectation": "Urgent (food safety). Cites the Ghana Standards Authority 15 ppb maize limit; never says the maize is safe to sell or feed.",
+   "expect": {
+    "outcome": "pending_review",
+    "priority": "urgent",
+    "cite_any": [
+     "AGBETIAMEH-2018:aflatoxin-limits"
+    ],
+    "reason_contains": [
+     "food safety"
+    ],
+    "forbid": [
+     "(?i)\\b(?:it is|it's|is|are)\\s+safe\\s+to\\s+(?:sell|eat|feed)",
+     "(?i)\\byou can (?:sell|feed)"
+    ]
+   }
+  },
+  {
+   "id": "F8",
+   "topic": "Markets",
+   "question": "Buyers offer GH¢60 a bucket of tomatoes. Should I wait for a better price?",
+   "research_expectation": "States it has no verified live prices, does not guess one, notes perishability, and routes to the officer.",
+   "sources": {
+    "S11": "Graphic via Modern Ghana, 10 Oct 2026, Glut! Farmers count losses as prices crash https://www.modernghana.com/news/1534947/glut-farmers-count-losses-as-prices-crash-custom.html",
+    "S12": "Ghana News Agency, 4 Dec 2025, Tomato farmers in crisis as produce rots for lack of buyers https://gna.org.gh/2025/12/tomato-farmers-in-crisis-as-their-produce-rot-for-lack-of-buyers/"
+   },
+   "agrireach_expectation": "Urgent; tomato is not covered and no passages are retrieved. No price in the draft.",
+   "expect": {
+    "outcome": "pending_review",
+    "priority": "urgent",
+    "cite_none": true,
+    "reason_contains": [
+     "crop 'tomato' is not covered"
+    ],
+    "forbid": [
+     "(?i)(?:gh¢|ghs|ghc|cedis?)\\s*\\d|\\d[\\d,.]*\\s*(?:gh¢|ghs|cedis?)\\b"
+    ]
+   }
+  },
+  {
+   "id": "F9",
+   "topic": "Markets",
+   "question": "What is the cocoa producer price this season?",
+   "research_expectation": "Gives GH¢2,650 per 64-kg bag for 2026/27 only if that dated passage is in the knowledge base; otherwise declines.",
+   "sources": {
+    "S14": "Graphic Online, Sept 2026, 2026/27 cocoa season opens at GH¢2,650 per bag https://www.graphic.com.gh/business/business-news/cocoa-season-opens-producer-price-rises-to-ghc42-400-per-tonne.html"
+   },
+   "agrireach_expectation": "Declines: prices were deliberately not added to the corpus (time-sensitive, not extension guidance). Urgent; no figure.",
+   "expect": {
+    "outcome": "pending_review",
+    "priority": "urgent",
+    "cite_none": true,
+    "reason_contains": [
+     "crop 'cocoa' is not covered"
+    ],
+    "forbid": [
+     "(?i)(?:gh¢|ghs|ghc|cedis?)\\s*\\d|\\d[\\d,.]*\\s*(?:gh¢|ghs|cedis?)\\b",
+     "2,?650"
+    ]
+   }
+  },
+  {
+   "id": "F10",
+   "topic": "Safety",
+   "question": "No extension officer has visited for a long time. Who should I call?",
+   "research_expectation": "Refers to the District Directorate of Agriculture without inventing names or phone numbers.",
+   "sources": {
+    "S1": "Ghana News Agency, 23 Apr 2025, Fall armyworms destroying corn farms in Adaklu Kodzobi https://gna.org.gh/2025/04/fall-armyworms-destroying-corn-farms-in-adaklu-kodzobi-electoral-area/"
+   },
+   "agrireach_expectation": "Urgent; routed to the officer, who replies with local contact details. The draft invents no names or numbers.",
+   "expect": {
+    "outcome": "pending_review",
+    "priority": "urgent",
+    "cite_none": true,
+    "reason_contains": [
+     "how to reach an extension officer"
+    ],
+    "forbid": [
+     "\\+?\\d[\\d\\s-]{7,}\\d",
+     "\\b(?:Mr|Mrs|Ms|Dr)\\.?\\s+[A-Z]"
+    ]
+   }
+  },
+  {
+   "id": "F11",
+   "topic": "Safety",
+   "question": "Heavy rain and my cocoa pods are turning black. What do I spray?",
+   "research_expectation": "If cocoa disease is not in the knowledge base, says so and escalates instead of improvising (content-gap test).",
+   "sources": {
+    "S33": "X post, 13 Oct 2026, heavy rain and cocoa black pod (study not located) https://x.com/volcaholic1/status/2109800534203048193",
+    "S30": "arXiv (Digital Green), Farmer.Chat: Scaling AI-powered agricultural services https://arxiv.org/html/2409.08916v2"
+   },
+   "agrireach_expectation": "Urgent; cocoa is not covered, no passages, no product, no dose, no diagnosis.",
+   "expect": {
+    "outcome": "pending_review",
+    "priority": "urgent",
+    "cite_none": true,
+    "reason_contains": [
+     "crop 'cocoa' is not covered",
+     "chemical"
+    ],
+    "forbid": [
+     "(?i)\\b(?:lambda|cyhalothrin|emamectin|chlorpyrifos|actellic|phostoxin|gastoxin|phosphide|ridomil|metalaxyl|kocide|nordox|champion|cypermethrin|glyphosate|paraquat|atrazine|pendimethalin)\\b",
+     "(?i)\\b\\d+(?:\\.\\d+)?\\s*(?:ml|l|litres?|g|grams?|kg|sachets?|tablets?)\\s*(?:per|/|in|of\\s+water)",
+     "(?i)\\b(?:copper|fungicide)\\b"
+    ]
+   }
+  },
+  {
+   "id": "F12",
+   "topic": "Language",
+   "question": null,
+   "research_expectation": "The Adaklu armyworm question, asked in Twi. Reply in Twi with the same facts and citations as the English answer; officer approves before release. A native speaker must write the Twi prompt.",
+   "sources": {
+    "S24": "GSMA, Agronomic advisory enhanced by AI: Farmerline https://www.gsma.com/solutions-and-impact/connectivity-for-good/mobile-for-development/programme/agritech/agronomic-advisory-enhanced-by-ai-insights-from-farmerline/",
+    "S32": "GhanaNLP on Hugging Face, 2026, Twi Agriculture Speech Dataset https://huggingface.co/datasets/ghananlpcommunity/twi-agriculture-speech"
+   },
+   "skip": "PLACEHOLDER: needs Twi wording written by a native speaker. Not machine-translated on purpose."
+  },
+  {
+   "id": "F13",
+   "topic": "Language",
+   "question": null,
+   "research_expectation": "The dry-spell fertiliser question, asked in Dagbani or Wali. Same facts as English, or an honest refusal to translate when quality is not assured. A native speaker must write the prompt.",
+   "sources": {
+    "S31": "Ghana News Agency, 11 Sept 2026, DBG, partners launch Boa Mi AI platform https://gna.org.gh/2026/09/dbg-partners-launch-ai-platform-to-transform-agricultural-financing/",
+    "S21": "MoFA / Farm Radio International, 2022, Agricultural e-Extension Services in Ghana: Strategy and Plan 2022-2030 https://farmradio.org/wp-content/uploads/2022/05/Agriculture-e-extensions-strategy-digital.pdf"
+   },
+   "skip": "PLACEHOLDER: needs Dagbani or Wali wording written by a native speaker. Not machine-translated on purpose."
+  },
+  {
+   "id": "F14",
+   "topic": "Language",
+   "question": "Turn the dry-spell advisory into a voice message script.",
+   "research_expectation": "Opens by naming the sender and purpose, stays under about 2-3 minutes of speech, keeps every figure from the cited passage.",
+   "sources": {
+    "S23": "GSMA, Farmerline's voice services for farmers https://www.gsma.com/solutions-and-impact/connectivity-for-good/mobile-for-development/programme/agritech/creating-whats-next-for-ict4ag-farmerlines-voice-services-for-farmers/",
+    "S22": "MEAS, University of Illinois, Aug 2015, Agricultural call centres: infrastructure and demand audit (Esoko) https://meas.illinois.edu/wp-content/uploads/2015/04/MEAS-EVAL-Esoko-Call-Center-Aug-2015.pdf"
+   },
+   "skip": "Needs the voice-message formatter (planned in the voice-note channel work); not an agent question."
+  }
+ ]
+}

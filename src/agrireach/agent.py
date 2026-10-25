@@ -220,7 +220,7 @@ def build_graph(tools: Tools):
         if any("disease" in r for r in reasons):
             notes.append("Possible pest/disease: this is not a diagnosis. Officer should inspect or refer.")
         if any("food safety" in r for r in reasons):
-            notes.append("Possible food-safety risk (mould/aflatoxin): AgriReach cannot say produce is safe to sell, eat "
+            notes.append("Possible food-safety risk (mould/aflatoxin): AgriReach cannot clear produce for sale, food "
                          "or feed. Officer should advise.")
         return {"passages": passages, "calendar": cal, "errors": errors, "notes": notes, "conflicts": conflicts,
                 "urgent_reasons": sorted(set(reasons), key=reasons.index)}

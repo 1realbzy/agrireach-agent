@@ -1,9 +1,14 @@
 """Run the EVALS.md task set against the real agent + MCP servers and print results.
-Uses whatever draft mode is configured (offline stub unless LLM_BASE_URL/LLM_MODEL are set)."""
+Uses whatever draft mode is configured (offline stub unless LLM_BASE_URL/LLM_MODEL are set).
+
+  python scripts/run_evals.py            # core tasks 1-12 and the field-evidence set F1-F14
+  python scripts/run_evals.py core       # core tasks only
+  python scripts/run_evals.py field      # field-evidence set only (evals/field_evidence.json)
+"""
 import asyncio, json, os, sys, tempfile
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{tempfile.mkdtemp()}/evals.db")
-from agrireach import agent, db, llm, knowledge
+from agrireach import agent, db, llm, knowledge, evalset
 
 TASKS = [
     ("1 routine, region given", "When should I harvest my soybean? I farm near Tamale."),
@@ -17,8 +22,39 @@ TASKS = [
 ]
 
 
+def _record(o: dict) -> dict:
+    return {"status": o["status"], "priority": o["priority"], "clarification": o["clarification"],
+            "urgent_reasons": o["urgent_reasons"], "sources": o["sources"],
+            "source_checks": [(c["source_id"], c["reachable"]) for c in o["source_checks"] or []],
+            "errors": o["errors"], "draft_mode": o["draft_mode"], "language": o["language"],
+            "citation_check": o["citation_check"], "draft": o["draft"]}
+
+
+async def field():
+    """Field-evidence evals: automatic routing checks; advice quality is graded by hand in EVALS.md."""
+    passed = failed = 0
+    for e in evalset.load():
+        if e.get("skip"):
+            print(json.dumps({"task": e["id"], "skipped": e["skip"]}, ensure_ascii=False))
+            continue
+        o = await agent.run(e["question"])
+        problems = evalset.grade(e, o)
+        passed, failed = passed + (not problems), failed + bool(problems)
+        print(json.dumps({"task": e["id"], "q": e["question"], "auto": "pass" if not problems else "FAIL",
+                          "auto_problems": problems} | _record(o), ensure_ascii=False))
+    print(json.dumps({"field_summary": {"auto_pass": passed, "auto_fail": failed}}))
+
+
 async def main():
     print("draft mode:", llm.mode())
+    which = sys.argv[1] if len(sys.argv) > 1 else "all"
+    if which in ("all", "core"):
+        await core()
+    if which in ("all", "field"):
+        await field()
+
+
+async def core():
     for name, q in TASKS:
         o = await agent.run(q)
         print(json.dumps({"task": name, "q": q, "status": o["status"], "priority": o["priority"],

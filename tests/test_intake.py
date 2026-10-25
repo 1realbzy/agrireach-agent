@@ -62,7 +62,7 @@ def test_mouldy_maize_is_urgent_food_safety_with_aflatoxin_limit():
     out = run("Some of my stored maize is mouldy. Can I sell it or feed it to animals?")
     assert out["priority"] == "urgent" and any("food safety" in r for r in out["urgent_reasons"])
     assert "AGBETIAMEH-2018:aflatoxin-limits" in out["sources"]
-    assert "cannot say produce is safe" in out["draft"]
+    assert "cannot clear produce" in out["draft"]
 
 
 def test_adaklu_is_outside_the_northern_corpus():
