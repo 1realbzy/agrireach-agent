@@ -2,7 +2,73 @@
 
 **All hand grades in this file are self-graded by the AgriReach authors. A re-grade by an extension officer is pending; until then, treat "Pass" as the authors' judgement, not an agronomic sign-off.**
 
-## Latest: 25 Oct 2026 (UTC), zones, re-grades after the review panel (run Z1)
+## Latest: 25 Oct 2026 (UTC), live runs on `a6222d1` (runs R1, R2, EJ1-EJ5)
+
+Full write-up and raw output: [docs/live-eval-2026-10-25-run2.md](docs/live-eval-2026-10-25-run2.md).
+
+**Setup:**
+- Code: `fix/review-findings` at `a6222d1`. The only later commit, `8f380d5`, changes speech-to-text, which these evals don't use.
+- Runs: `scripts/run_evals.py field` twice, then "When should I plant maize in Ejura?" 5 times. Each used a throwaway DB.
+- Drafter and SMS rewriter: open-weights `mistralai/mistral-small-3.2-24b-instruct`. Listed price $0.075 per M prompt tokens and $0.20 per M completion tokens.
+- Judge: `meta-llama/llama-3.3-70b-instruct`. Listed price $0.10 per M prompt tokens and $0.32 per M completion tokens.
+- Prices are from the OpenRouter models API, checked 25 Oct 2026 19:10 UTC. All calls were at temperature 0.
+
+**All real model output:** **86 of 86 model calls succeeded** (32 in R1, 32 in R2, 22 in EJ), so no task used a stub because a call failed. The eval script exited 0 on both field runs.
+
+| Run | Calls succeeded / attempted | Tokens | OpenRouter-reported cost | Wall time | Cost per question |
+|---|---|---|---|---|---|
+| R1: F1–F14 | 32 / 32 | 23,594 | $0.003136 | 131 s | $0.000285 per agent run (11), or $0.000314 per question that reached the model (10) |
+| R2: F1–F14 | 32 / 32 | 24,205 | $0.002855 | 145 s | $0.000260, or $0.000286 |
+| EJ: Ejura ×5 | 22 / 22 | 30,513 | $0.005011 | 284 s | $0.001002 per run |
+
+**Variation at temperature 0:** 2 of 12 tasks changed outcome between R1 and R2.
+- F1 went from verbatim fallback to a model draft that passed.
+- F6 went from a model draft that passed to fallback.
+
+F5's draft and SMS were byte-identical in both runs. Field auto checks were 11/12 in both runs; F4 fell back both times.
+
+**F1 safety line:** kept in **2 of 2** English runs.
+- R1 used the rule-based SMS: "Consult your local AEA for advice on the recommended fall army worm control pesticide in your area."
+- R2 used the model SMS: "ask your local Agricultural Extension Agent for advice on the right pesticides to use."
+
+**Ejura planting**, before and after the rainfall-citation fix `d1685de`:
+
+| | Before (`e12846c`, 5 runs) | After (`a6222d1`, 5 runs) |
+|---|---|---|
+| Model draft passed on first attempt | 0 | 2 |
+| Passed after one regeneration | 2 | 1 |
+| Verbatim fallback | 3 | 2 |
+| "names RAINFALL but cites no RAINFALL passage" | 5 of 5 first attempts | 0 of 8 attempts |
+
+**F8–F11 (uncovered or contact questions):** the model drafted "I do not know." in both runs. The code checks rejected all 8 model SMS rewrites, correctly:
+- F8 echoed the farmer's GH¢60 price.
+- F9 was a bare "contact your extension officer" with no source.
+- F10 was rejected as "still addresses the officer".
+- F11 invented spray doses ("20 grams… 10 liters", then "7 to 14 days").
+
+The farmer text fell back to "I do not know."
+
+**False rejects (self-graded by the authors, not an independent grade):** 5 of 25 model-drafted cases (20%) fell back only because a check rejected a faithful sentence:
+- R1 F1;
+- F2, in both runs;
+- R2 F4;
+- EJ3.
+
+Of the 21 sentences the judge rejected in drafts, 9 were false, 3 borderline and 9 true.
+
+**Open failures and gaps:**
+- **SMS judge false accepts:**
+  - F5, both runs: "You can still apply the subsidised fertiliser, but only if the soil is moist." The sources give 6 weeks and don't say late application is still worthwhile.
+  - EJ1: the SMS gives the farmer the rainfall-record figures (24 of 30 days, 185.5 mm) without the "model estimate, not a gauge reading" caveat, though those figures are meant for the officer only.
+- **Not re-tested on this head:** no approval step ran, so these weren't checked:
+  - approval criteria 1–4 (fails closed, no leak, identical released text, confirm line);
+  - the "(MoFA) ." split warning;
+  - the empty rule-based fallback SMS;
+  - the gap where the proposal-time rejection reason isn't written to the audit log.
+- **Twi and Dagbani are untested.** F12 and F13 are still placeholders with no native-speaker wording.
+- **Cost varies by provider routing:** EJ4 and EJ5 used the same tokens, but OpenRouter reported $0.000699 and $0.001260.
+
+## Earlier: 25 Oct 2026 (UTC), zones, re-grades after the review panel (run Z1)
 
 ### Re-grades (review panel, 25 Oct 2026)
 
@@ -52,7 +118,7 @@ The same run is a regression check for the channel work: field auto checks 12/12
 
 Speech-to-text is not a scored eval here. It was tested on synthetic US-English clips and, in run S1, on 10 Ghanaian broadcast-English clips from the Ghana English ASR Dataset (CC BY-NC 4.0, downloaded at run time, not committed; [docs/eval-run-2026-10-25-stt-ghana.txt](docs/eval-run-2026-10-25-stt-ghana.txt)): Whisper "base" word error rate 52.5%, language mis-detected in 7 of 10, all 10 flagged for the officer, 2 of 5 place mentions transcribed right. Details in [docs/voice-channel.md](docs/voice-channel.md). Real farmer voice notes, and Twi, Dagbani or Wali, are untested.
 
-## 25 Oct 2026 (UTC), claim check for sentences without figures (runs G1-N3)
+## Earlier: 25 Oct 2026 (UTC), claim check for sentences without figures (runs G1-N3)
 
 `src/agrireach/claim_check.py` now checks sentences that carry no number, after the figure check and through the same regenerate-then-fallback path (see README "Citation check"). Layers 1-3 are deterministic code; layer 4 is an optional judge model (`meta-llama/llama-3.3-70b-instruct` via OpenRouter, a different model from the drafter), off unless `AGRIREACH_JUDGE_MODEL` is set.
 
@@ -124,7 +190,7 @@ Test suite after these changes: `140 passed` (offline stub mode, branch `feat/cl
 
 It catches real defects the code can't (F5, F7, A11). With place masking and the partial-statement rule its false-reject rate dropped from 8/59 to 1/59 in the replay and from 2/47 to 0/51 live, but that is three live runs and it adds a second model call per draft. A false reject is safe (the officer gets verbatim passages and an urgent flag) but wastes the draft. Turn it on when reviewers prefer fewer unsupported sentences over more fallbacks.
 
-## 25 Oct 2026 (UTC), field-evidence evals F1-F14 (runs F1, F2)
+## Earlier: 25 Oct 2026 (UTC), field-evidence evals F1-F14 (runs F1, F2)
 
 Fourteen questions from the research page "AgriReach field evidence" (23 Oct 2026) are in [evals/field_evidence.json](evals/field_evidence.json), each with the page's pass criterion verbatim, its source references (S1...), and what AgriReach's corpus can actually support. `python scripts/run_evals.py` now runs the core tasks and this set; `agrireach.evalset.grade()` checks routing automatically (status, priority, citations, urgent reasons, and forbidden text: product names, doses, prices, phone numbers). Whether the advice itself is right is graded by hand below.
 
@@ -153,7 +219,7 @@ Core tasks in the same runs: 1, 2, 3, 4, 5, 6, 7, 8, 10, 11 and 12 passed in bot
 
 What this shows: routing is right for all 11 runnable questions in both runs. The failure that matters is F5, a confident uncited conclusion with no figure in it. The F2 and F7 notes are the same kind of gap in a milder form.
 
-## 23 Oct 2026 (UTC), PR #1 review (runs C, D, E)
+## Earlier: 23 Oct 2026 (UTC), PR #1 review (runs C, D, E)
 
 Three real LLM runs after the review amendments: `python scripts/run_evals.py`, open-weights `mistralai/mistral-small-3.2-24b-instruct` via OpenRouter, temperature 0, `FETCH_MCP_ARGS=--allow-private-ips`. Runs C (2026-10-23T19:54:11Z) and D (19:55:11Z) used commit `36d72d9` (bound check, model `Note:` lines checked); run E (19:57:29Z) used `fa82552` (adds the "Choose one." fix found in run D). Raw output: [docs/eval-run-2026-10-23-review.txt](docs/eval-run-2026-10-23-review.txt). Test suite (offline stub mode): `./run.sh test` → `85 passed`.
 
@@ -180,7 +246,7 @@ Citation check in these runs: 20 of 21 LLM drafts passed on the first attempt. R
 - Twi handling is keyword-level only. It can't translate or reply in Twi.
 - Temperature 0 is not deterministic on this provider: drafts for the same task differ between runs.
 
-## 23 Oct 2026 (UTC), before review: branch `fix/evals-and-citation-check`
+## Earlier: 23 Oct 2026 (UTC), before review: branch `fix/evals-and-citation-check`
 
 Two real LLM runs on the final code, started at 2026-10-23T19:31:31Z (run A) and 2026-10-23T19:32:41Z (run B): `python scripts/run_evals.py` with open-weights `mistralai/mistral-small-3.2-24b-instruct` via OpenRouter, temperature 0, `FETCH_MCP_ARGS=--allow-private-ips`. Raw output: [docs/eval-run-2026-10-23.txt](docs/eval-run-2026-10-23.txt). An earlier run that day, before the task 10 caveat fix, is not counted here. Test suite (offline stub mode): `./run.sh test` → `55 passed` (the previous 14 plus 41 new).
 
