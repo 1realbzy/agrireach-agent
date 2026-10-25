@@ -89,7 +89,9 @@ def create_or_update_case(status: str, question: str = "", case_id: int = 0, cro
     db.log(con, "agent", "create_or_update_case",
            {"status": status, "priority": priority, "urgent_reasons": urgent_reasons, "sources": source_ids},
            f"case {cid} -> {status}", case_id=cid)
-    return json.dumps({"case_id": cid, "status": status, "priority": priority})
+    # created_at: when the question was received; the agent puts it next to the cited planting windows.
+    return json.dumps({"case_id": cid, "status": status, "priority": priority,
+                       "created_at": db.get_case(con, cid)["created_at"]})
 
 
 def main():

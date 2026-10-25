@@ -36,7 +36,7 @@ def test_task11_bad_draft_is_regenerated_with_feedback(monkeypatch):
     out = run("When should I plant soybean at Wa?")
     assert len(calls) == 2 and calls[1]["feedback"]
     assert "planting_window" in calls[0]["conflicts"]
-    assert out["draft"] == GOOD_WA and out["citation_check"]["ok"]
+    assert out["draft"].split("\n\n" + agent.OFFICER_FACT)[0] == GOOD_WA and out["citation_check"]["ok"]
     assert out["citation_check"]["attempts"][0]["ok"] is False
     assert out["status"] == "pending_review"  # still needs the officer
 
@@ -97,7 +97,7 @@ def test_flipped_depth_bound_is_regenerated(monkeypatch):
     out = run("When should I plant soybean at Wa?")
     assert len(calls) == 2 and any("upper limit" in f for f in calls[1]["feedback"])
     assert out["citation_check"]["attempts"][0]["ok"] is False and out["citation_check"]["ok"]
-    assert out["draft"] == GOOD_WA and out["status"] == "pending_review"
+    assert out["draft"].split("\n\n" + agent.OFFICER_FACT)[0] == GOOD_WA and out["status"] == "pending_review"
 
 
 def test_model_cannot_hide_a_figure_behind_a_note_line(monkeypatch):

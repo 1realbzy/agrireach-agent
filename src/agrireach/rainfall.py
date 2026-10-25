@@ -41,6 +41,13 @@ ONSET_CLAIM = re.compile(r"\bonset\b[^.;,]{0,40}?\b(?:has|have|is|was)\s+(?:now\
                          r"(?:reached|started|begun|arrived|come|set\s+in|established)\b"
                          r"|\bthe\s+rains\s+(?:have|has)\s+(?:now\s+)?(?:stabili[sz]ed|started|set\s+in|established)\b"
                          r"|\bonset\s+(?:reached|confirmed)\b", re.I)
+# "Rains are good, plant now": a go-ahead the guides never give from a rainfall figure.
+GO_AHEAD = re.compile(r"\b(?:the\s+)?rains?\s+(?:are|is|has\s+been|have\s+been|look|looks)\s+(?:now\s+)?"
+                      r"(?:good|enough|sufficient|adequate|fine|reliable|steady|okay|ok)\b"
+                      r"|\benough\s+rain\s+(?:has|have)\s+(?:now\s+)?(?:fallen|come)\b"
+                      r"|\b(?:plant|sow)(?:ing)?\s+(?:your\s+\w+\s+)?(?:now|today|immediately|right\s+away|this\s+week)\b"
+                      r"|\b(?:now|this|it)\s+is\s+(?:a\s+|the\s+)?(?:good|right|best|safe)\s+time\s+to\s+(?:plant|sow)\b"
+                      r"|\bgo\s+ahead\s+and\s+(?:plant|sow)\b", re.I)
 # Quoting the guide's condition or denying the claim is fine: "sow after the rains have stabilized", "does not say
 # whether onset has been reached".
 _NOT_A_CLAIM = re.compile(r"\b(?:after|once|when|until|whether|if|not|no|never|before)\b[^.]{0,25}$", re.I)
@@ -224,9 +231,16 @@ def as_passage(r: dict, zone: str | None) -> dict:
 
 
 def draft_problems(text: str) -> list[str]:
-    """A draft must not say onset has been reached: the guides give no rainfall amount for it."""
+    """A draft must not say onset has been reached or that the rains are good enough to plant now: the guides give
+    no rainfall amount for either."""
     text = text or ""
-    m = next((m for m in ONSET_CLAIM.finditer(text) if not _NOT_A_CLAIM.search(text[max(0, m.start() - 40):m.start()])),
-             None)
-    return [f"draft says '{m.group(0)}': the guides give no rainfall amount for onset, so AgriReach must not say "
-            "whether onset has been reached; show the rainfall record and let the officer decide"] if m else []
+    claim = lambda rx: next((m for m in rx.finditer(text)
+                             if not _NOT_A_CLAIM.search(text[max(0, m.start() - 40):m.start()])), None)
+    out = []
+    if m := claim(ONSET_CLAIM):
+        out.append(f"draft says '{m.group(0)}': the guides give no rainfall amount for onset, so AgriReach must not "
+                   "say whether onset has been reached; show the rainfall record and let the officer decide")
+    if m := claim(GO_AHEAD):
+        out.append(f"draft says '{m.group(0)}': that reads as 'rains are good, plant now'; AgriReach must not judge "
+                   "the rains or tell the farmer to plant now; the officer decides")
+    return out
