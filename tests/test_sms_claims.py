@@ -110,3 +110,43 @@ def test_proposed_text_uses_plain_punctuation_so_sms_stays_gsm7(monkeypatch):
     fd = fr.propose(officer, "When do I plant soybean?", passages=PS)
     assert fd.mode == "llm:fake" and fd.text == "Plant when the rains are well established - that's when the soil is moist..."
     assert all(ord(ch) < 128 for ch in fd.text)
+
+
+def test_abbreviation_before_source_name_is_not_split():
+    # 6 of 6 window approvals in the live run warned on a split-off "(MoFA)." fragment
+    assert fr._sentences("Plant from late June to early Sept. (MoFA). Weed after two weeks.") == [
+        "Plant from late June to early Sept. (MoFA).", "Weed after two weeks."]
+    assert fr._sentences("Harvest in Oct. Dry the pods first.") == ["Harvest in Oct.", "Dry the pods first."]
+
+
+def test_saying_i_do_not_know_is_not_an_unsourced_claim():
+    p = [{"id": "P1", "text": "Plant soybean from late June to early September in the Northern Region."}]
+    for s in ("I do not know.", "I don't know.", "I am not sure."):
+        assert fr.sms_claims(s, p) == []
+        assert fr.sms_claims(s, []) == []
+    assert fr.sms_claims("I do not know, but plant in 2019.", []) != []
+
+
+F1_OFFICER = (
+    '- "It is recommended to have a walk through the maize field at least once a week. When scouting, walk through '
+    'the field and look out for unusual patterns such as insect damage on leaves, cobs or stems, presence of insect '
+    'larvae or eggs on maize leaves, abnormal leaf colour, and stunted slow growing plants." [APNI-SARI-2023-MAIZE:p18-scouting]\n'
+    '- "Rotate maize with non-host plants such as groundnut to help reduce Fall Army worm infestations. Deep ploughing '
+    'and burial, or burning of infested maize residues helps to reduce populations in the following season." '
+    '[APNI-SARI-2023-MAIZE:p20-faw-prevention]\n'
+    '- "Application of recommended pesticides can help to control infestations once they occur. Consult your local AEA '
+    'for advice on the recommended fall army worm control pesticide in your area." [APNI-SARI-2023-MAIZE:p20-faw-control]\n'
+    "Note: Chemical use: AgriReach does not recommend products or doses. Refer to the label and the officer.")
+
+
+def test_rule_text_keeps_the_pesticide_line_even_when_space_runs_out():
+    # F1 in the live run: the SMS filled up with scouting advice and dropped "Consult your local AEA ..."
+    text = fr.rule_rewrite(F1_OFFICER, 400)
+    assert "Consult your local AEA" in text and len(text) <= 400
+
+
+def test_model_text_that_drops_the_pesticide_line_is_rejected():
+    text = "Walk through your maize field once a week and look for worms or eggs on the leaves."
+    assert any("pesticide" in p for p in fr.check(text, F1_OFFICER))
+    assert not any("pesticide" in p or "officer" in p for p in fr.check(
+        text + " Ask your local AEA which pesticide to use against fall army worm.", F1_OFFICER))

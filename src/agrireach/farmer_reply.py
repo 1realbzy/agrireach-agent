@@ -23,13 +23,15 @@ MAX_CHARS = 600   # about 100 words: one WhatsApp screen, under a minute spoken
 CITE_RE = citation_check.CITE_RE
 OFFICER_RE = re.compile(r"\b(?:the\s+)?(?:extension\s+)?(?:officer|officers|aea)\b(?!\s*(?:\.|,|$))", re.I)
 ALLOWED_OFFICER = re.compile(r"\b(?:your|an|a|local)\s+(?:local\s+)?(?:agricultural\s+)?extension\s+(?:officer|agent)"
-                             r"(?:\s*\(AEA\))?", re.I)
+                             r"(?:\s*\(AEA\))?|\b(?:your\s+local|your|local)\s+AEA\b", re.I)
+# A pesticide or spraying line in the officer text is a safety line: the farmer text must keep one (F1 dropped it).
+SAFETY_RE = re.compile(r"\b(?:pesticides?|insecticides?|herbicides?|fungicides?|spray(?:s|ing)?)\b", re.I)
 SUPPORTED_LANGUAGES = {"en"}
 PROMPT = (
     "Rewrite this advice for the farmer who asked the question. It was written for an extension officer. "
     "Write directly to the farmer ('you'), in simple English, at most 80 words, no citations or brackets, no "
     "markdown, no lists. Keep every instruction and every number and date exactly as written; add nothing new and do "
-    "not add reassurance. Leave out notes meant only for the officer. Only if the user message says SOURCES DIFFER: "
+    "not add reassurance. Always keep any line about pesticides or spraying. Leave out notes meant only for the officer. Only if the user message says SOURCES DIFFER: "
     "yes, give each option and end with 'Your extension officer will confirm which to follow.'; otherwise never "
     "write that sentence. Reply with the message only."
 )
@@ -96,6 +98,9 @@ def check(text: str, officer_text: str) -> list[str]:
         out.append("still addresses the officer")
     if LIMIT_RE.search(text):
         out.append("quotes a regulatory limit (ppb) a farmer can't measure: keep it in the officer notes")
+    if not SAFETY_RE.search(text) and any(SAFETY_RE.search(l) for l in officer_text.splitlines()
+                                          if not l.strip().startswith(("Note:", "Caution:"))):
+        out.append("drops the pesticide safety line: keep the officer text's line on pesticides or spraying")
     if len(text) > MAX_CHARS:
         out.append(f"{len(text)} characters, over {MAX_CHARS}")
     pool = citation_check.extract_figures(CITE_RE.sub(" ", officer_text))
@@ -114,8 +119,23 @@ _OPENERS = [
 ]
 
 
+# A full stop after one of these, or one followed by "(Source)", does not end a sentence: "early Sept. (MoFA)."
+_ABBREV = r"(?:Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|approx|e\.g|i\.e|No|St|Dr)\."
+
+
 def _sentences(text: str) -> list[str]:
-    return [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+    parts = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+    out: list[str] = []
+    for s in parts:
+        if out and (s.startswith("(") or (re.search(rf"\b{_ABBREV}$", out[-1]) and not s[:1].isupper())):
+            out[-1] += " " + s
+        else:
+            out.append(s)
+    return out
+
+
+# Saying the system doesn't know is not a claim that needs a source.
+NO_CLAIM_RE = re.compile(r"^(?:i\s+(?:do\s+not|don't|don\u2019t)\s+know|i\s+am\s+not\s+sure|i'm\s+not\s+sure)\s*[.!]?$", re.I)
 
 
 def rule_rewrite(officer_text: str, max_chars: int = MAX_CHARS) -> str:
@@ -156,6 +176,8 @@ def rule_rewrite(officer_text: str, max_chars: int = MAX_CHARS) -> str:
                 continue  # an instruction to the officer, not advice for the farmer
             if s not in keep:
                 keep.append(s)
+    # Safety lines (pesticides, spraying) go right after the planting rows so the length limit never cuts them.
+    keep = [s for s in keep if SAFETY_RE.search(s)] + [s for s in keep if not SAFETY_RE.search(s)]
     out = ""
     for s in rows + keep:
         if len(out) + len(s) + 1 > max_chars:
@@ -203,7 +225,7 @@ def sms_claims(text: str, passages: list[dict], judge_call=None, caveat: dict | 
     from agrireach import claim_check
 
     fixed = {CONFIRM} | ({caveat["sentence"]} if caveat else set())
-    sents = [s for s in _sentences(text) if s not in fixed and re.search(r"[A-Za-z]{3}", s)]
+    sents = [s for s in _sentences(text) if s not in fixed and re.search(r"[A-Za-z]{3}", s) and not NO_CLAIM_RE.match(s)]
     if not sents:
         return []
     passages = [p for p in passages if p and p.get("text")]
