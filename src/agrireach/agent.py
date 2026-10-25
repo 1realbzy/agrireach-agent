@@ -485,7 +485,8 @@ async def file_case(s: S, tools: Tools) -> S:
         farmer_reply.propose, officer_text, s["question"], s.get("language", "en"), conflicts=conflicts,
         zone_caveat=caveat, passages=s.get("passages") or [])
     from agrireach import db
-    db.log(db.connect(), "agent", "farmer_text_proposal", *farmer_reply.audit_entry(fd), case_id=s["case_id"])
+    db.log(db.connect(), "agent", "farmer_text_proposal",
+           *farmer_reply.audit_entry(fd, draft_mode=s.get("draft_mode") or ""), case_id=s["case_id"])
     if fd.text and (go := rainfall.draft_problems(fd.text)):
         # Never "rains are good, plant now" in the SMS: withhold it and let the officer write it.
         fd.text, fd.needs_officer_text = "", True
