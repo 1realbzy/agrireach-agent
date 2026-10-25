@@ -107,6 +107,23 @@ def test_clarifying_question_goes_back_through_the_channel():
     assert outbox()[-1]["text"].startswith("Which district or region")
 
 
+def test_api_simulator_flow_and_officer_decision_delivers(monkeypatch):
+    monkeypatch.setattr(stt, "default", lambda: FakeTranscriber("When should I harvest my soybean? I farm near Tamale."))
+    c = TestClient(api.app)
+    assert c.post("/channels/simulator/inbound", data={"sender": "+233000000000", "text": "hi"}).status_code == 400
+    with open(CLIP, "rb") as f:
+        r = c.post("/channels/simulator/inbound", data={"sender": SENDER}, files={"audio": ("q.wav", f, "audio/wav")})
+    assert r.status_code == 200
+    cid = r.json()["case_id"]
+    v = c.get(f"/officer/cases/{cid}/voice").json()
+    assert v["sender"] == mask_sender(SENDER) and v["has_audio"] and "soybean" in v["transcript"]
+    assert c.get(f"/officer/cases/{cid}/audio").status_code == 200
+    assert c.post(f"/cases/{cid}/release").status_code == 409  # gate unchanged
+    d = c.post(f"/officer/cases/{cid}/decision", json={"officer": "Ama Mensah", "decision": "approve"}).json()
+    assert d["status"] == "released" and d["delivery"]["ok"]
+    assert [m["text"] for m in c.get("/channels/simulator/outbox", params={"sender": SENDER}).json()][-1] == d["final_text"]
+
+
 def test_optional_tts_attaches_audio_to_the_approved_answer(monkeypatch, tmp_path):
     monkeypatch.setenv("AGRIREACH_TTS", "piper")
     spoken = {}

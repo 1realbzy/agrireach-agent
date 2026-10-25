@@ -11,7 +11,7 @@ mode = httpx.get(f"{API}/health", timeout=10).json()["draft_mode"]
 if mode == "stub":
     st.warning("OFFLINE STUB MODE: no language model configured. Drafts are assembled from retrieved passages.")
 
-farmer, officer = st.tabs(["Farmer", "Extension officer"])
+farmer, voice, officer = st.tabs(["Farmer", "Voice note (simulator)", "Extension officer"])
 with farmer:
     q = st.text_area("Your question", "When should I plant soybean in Tamale?")
     if st.button("Send"):
@@ -24,6 +24,23 @@ with farmer:
         if r.get("approved_by"):
             st.caption(f"Approved by {r['approved_by']} at {r['approved_at']} UTC")
 
+with voice:
+    st.caption("Simulates a farmer's phone on this computer. Nothing is sent to WhatsApp or any outside service. "
+               "Speech-to-text runs locally and has only been tested on synthetic English speech.")
+    sender = st.text_input("Simulated sender id", "sim:farmer-1", help="Must look like sim:name. Never a real number.")
+    clip = st.file_uploader("Voice note", type=["wav", "ogg", "mp3", "m4a"])
+    typed = st.text_input("Or type a question (optional)", "")
+    if st.button("Send to AgriReach"):
+        files = {"audio": (clip.name, clip.getvalue())} if clip else None
+        r = httpx.post(f"{API}/channels/simulator/inbound", data={"sender": sender, "text": typed}, files=files,
+                       timeout=300)
+        st.write(r.json())
+    if st.button("Show messages sent to this phone"):
+        for m in httpx.get(f"{API}/channels/simulator/outbox", params={"sender": sender}, timeout=10).json():
+            st.info(f"{m['ts']} UTC\n\n{m['text']}")
+            if m.get("audio"):
+                st.audio(m["audio"])
+
 with officer:
     name = st.text_input("Officer name (required to decide)")
     for c in httpx.get(f"{API}/officer/queue", timeout=10).json():
@@ -31,6 +48,13 @@ with officer:
         with st.expander(f"[{tag}] Case {c['id']}: {c['question']}"):
             for reason in c["urgent_reasons"]:
                 st.error(reason)
+            v = httpx.get(f"{API}/officer/cases/{c['id']}/voice", timeout=10)
+            if v.status_code == 200:
+                v = v.json()
+                st.caption(f"Arrived via {v['channel']} from {v['sender']}")
+                if v["has_audio"]:
+                    st.audio(httpx.get(f"{API}/officer/cases/{c['id']}/audio", timeout=30).content)
+                    st.write(f"Machine transcript (check against the audio): {v['transcript']!r}")
             text = st.text_area("Draft (edit before approving if needed)", c["draft"], key=f"d{c['id']}", height=220)
             st.caption("Sources: " + ", ".join(c["sources"]))
             cols = st.columns(3)
