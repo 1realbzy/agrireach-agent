@@ -2,7 +2,7 @@
 
 ## Latest: 25 Oct 2026 (UTC), voice-note channel and F14 (run V1)
 
-F14 ("dry-spell advisory as a voice script") is now a code-only eval: `voice_script.build()` turns an approved advisory into a script that opens by naming AgriReach and the approving extension officer, keeps every sentence and figure, drops citation brackets, and must fit 150 s at 130 words per minute. No model is involved. It passed in run V1 (commit `b8995ce`, judge off, started 2026-10-25T14:02:09Z; raw output [docs/eval-run-2026-10-25-voice.txt](docs/eval-run-2026-10-25-voice.txt)). F12 and F13 are still placeholders.
+F14 ("dry-spell advisory as a voice script") is now a code-only eval: `voice_script.build()` turns an approved advisory into a script that opens by naming AgriReach and the approving extension officer, keeps every sentence and figure, drops citation brackets, and must fit 150 s at 130 words per minute. No model is involved. It passed in run V1 (commit `b8995ce`, judge off, started 2026-10-25T14:02:09Z; raw output [docs/eval-run-2026-10-25-voice.txt](docs/eval-run-2026-10-25-voice.txt)). F12 and F13 are still placeholders. Run V2 (commit `f8ca83b`, after the farmer-reply, location-check and consent changes, judge off, started 2026-10-25T15:00:23Z, same file) repeated it: field auto checks 12/12, F14 pass, tasks 6, 7 and 8 pass; fallbacks 4 (figure), 5 (herbicide citation) and 12 (agreement claim, then the "5 cm" bound).
 
 The same run is a regression check for the channel work: field auto checks 12/12; core tasks 6, 7 and 8 passed; every case was routed to the officer as before. Fallbacks: task 5 (the herbicide-citation flag, as in the claim-check runs), task 12 (agreement claim, then the "5 cm" bound) and F6 (a figure problem). One run only.
 
