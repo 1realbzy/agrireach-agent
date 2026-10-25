@@ -12,7 +12,14 @@ TWI_MARKERS = {"bere", "berɛ", "ɛberɛ", "ben", "bɛn", "sɛn", "sen", "deɛn"
 # Keyword gloss -> English query words (covers the corpus topics only).
 GLOSS = [
     (r"\b(?:bere|berɛ|ɛberɛ)\s+(?:ben|bɛn)\b|\bda\s+(?:ben|bɛn)\b", "when"),
-    (r"(?:dua|gu\s+aba|nua)\b", "plant"),
+    (r"(?<!\ba)dua\b|gu\s+aba\b|nua\b", "plant"),  # not 'adua' (pea/bean), which is a crop, not the verb
+    # Twi crop names, verified 25 Oct 2026 (Wikidata Q11575 Akan label 'aburo'; Wiktionary 'aburoo', 'bankye',
+    # 'bayerɛ', 'ɛmo', 'borɔdeɛ'). Not added: 'nkateɛ' (groundnut, unconfirmed); 'adua' means pea, not cowpea.
+    (r"\baburo+\b", "maize"),
+    (r"\bbankye\b", "cassava"),
+    (r"\bbayer[ɛe]\b", "yam"),
+    (r"(?<![a-zɛɔ])ɛmo\b", "rice"),
+    (r"\bbor[ɔo]de[ɛe]\b", "plantain"),
     (r"\b\w*twa\b", "harvest"),
     (r"\b(?:soya|soja|soyabean)\b", "soybean"),
     (r"\b(?:ntam|kwan\s+ntam)\b", "spacing"),
@@ -24,18 +31,18 @@ CROP_WORDS = r"soy(?:a)?bean|\bsoya\b|\bsoja\b"
 # the corpus (knowledge.crops_covered()), and a recognised but uncovered crop goes to the officer.
 CROPS = {
     "soybean": CROP_WORDS,
-    "maize": r"\bmaize\b|\bcorn\b",
+    "maize": r"\bmaize\b|\bcorn\b|\baburo+\b",
     "cocoa": r"\bcocoa\b",
     "tomato": r"\btomato(?:es)?\b",
-    "rice": r"\brice\b",
-    "cassava": r"\bcassava\b",
-    "yam": r"\byams?\b",
+    "rice": r"\brice\b|(?<![a-zɛɔ])ɛmo\b",
+    "cassava": r"\bcassava\b|\bbankye\b",
+    "yam": r"\byams?\b|\bbayer[ɛe]\b",
     "groundnut": r"\bgroundnuts?\b|\bpeanuts?\b",
     "cowpea": r"\bcowpeas?\b",
     "pepper": r"\bpeppers?\b",
     "sorghum": r"\bsorghum\b",
     "millet": r"\bmillet\b",
-    "plantain": r"\bplantains?\b",
+    "plantain": r"\bplantains?\b|\bbor[ɔo]de[ɛe]\b",
     "cashew": r"\bcashews?\b",
     "onion": r"\bonions?\b",
 }

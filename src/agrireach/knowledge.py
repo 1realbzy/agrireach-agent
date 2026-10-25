@@ -28,6 +28,10 @@ SYNONYMS = {
     "weevil": "storage", "sacks": "storage", "sack": "storage", "bags": "storage", "drying": "storage",
     "mould": "aflatoxin", "mouldy": "aflatoxin", "mold": "aflatoxin", "moldy": "aflatoxin", "aflatoxin": "aflatoxin",
 }
+# Farmer wording variants of one corpus term, joined before tokenising ("top dress", "top-dressing" -> "topdress").
+# "two months after planting" dates an event; it is not a planting question (same rule as the agent's intake).
+VARIANTS = [(re.compile(r"\btop[\s-]*dress(?:ing|ed|es)?\b", re.I), "topdress"),
+            (re.compile(r"\b(?:after|since)\s+(?:planting|sowing)\b", re.I), " ")]
 STOP = set("a an the is are of to in on for my i we do how what should can and or with at be it".split())
 
 
@@ -40,6 +44,28 @@ def tokens(s: str) -> list[str]:
     return [t for t in re.findall(r"[a-z]+", s.lower()) if t not in STOP]
 
 
+def _normalise(s: str) -> str:
+    for pat, rep in VARIANTS:
+        s = pat.sub(rep, s)
+    return s
+
+
+def stem(t: str) -> str:
+    """Very small suffix stripper so plurals and -ing/-ed forms meet: 'herbicides' -> 'herbicide',
+    'spraying' -> 'spray'. Applied the same way to query and passage words."""
+    for suf in ("ing", "ed", "s"):
+        if t.endswith(suf) and len(t) - len(suf) >= 3 and not t.endswith("ss"):
+            # Not the plant family: "plants" and "planted" usually describe the crop or date an event ("planted
+            # late Feb"), and matching them to "planting" pulled planting windows into spacing and pest questions.
+            return t if t[: -len(suf)] == "plant" else t[: -len(suf)]
+    return t
+
+
+def _topic(t: str) -> str | None:
+    """Topic for a query word, also through its stem ('herbicides', 'spraying')."""
+    return SYNONYMS.get(t) or SYNONYMS.get(stem(t))
+
+
 def _in_scope(p: dict, crop: str | None, region: str | None) -> bool:
     """Crop/region filter shared by ranked hits and conflict-completion hits."""
     return (not crop or p["crop"] == crop.lower()) and (not region or p["region"] in region.lower())
@@ -47,14 +73,15 @@ def _in_scope(p: dict, crop: str | None, region: str | None) -> bool:
 
 def search(query: str, crop: str | None = None, region: str | None = None, limit: int = 4) -> list[dict]:
     kb = load()
-    q = tokens(query)
-    topics = {SYNONYMS[t] for t in q if t in SYNONYMS}
+    q = tokens(_normalise(query))
+    topics = {_topic(t) for t in q} - {None}
+    q_stems = {stem(t) for t in q if len(t) > 3}
     out = []
     for p in kb["passages"]:
         if not _in_scope(p, crop, region):
             continue
-        words = set(tokens(p["text"]))
-        score = 3 * (p["topic"] in topics) + sum(t in words for t in q if len(t) > 3)
+        stems = {stem(w) for w in tokens(_normalise(p["text"]))}
+        score = 3 * (p["topic"] in topics) + len(q_stems & stems)
         if score >= 3:
             out.append({**p, "score": score, "source": kb["sources"][p["source_id"]]})
     out.sort(key=lambda r: -r["score"])
