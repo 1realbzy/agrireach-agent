@@ -52,6 +52,15 @@ def connect(path: str | None = None) -> sqlite3.Connection:
           id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL,
           case_id INTEGER, actor TEXT NOT NULL, tool TEXT NOT NULL,
           args TEXT, result_summary TEXT, ok INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS channel_contacts (
+          case_id INTEGER PRIMARY KEY REFERENCES cases(id),
+          channel TEXT NOT NULL, sender_id TEXT NOT NULL,
+          audio_path TEXT, transcript TEXT, stt TEXT, created_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS channel_deliveries (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, case_id INTEGER NOT NULL REFERENCES cases(id),
+          channel TEXT NOT NULL, kind TEXT NOT NULL, ok INTEGER NOT NULL, detail TEXT, ts TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS channel_inbound_seen (
+          channel TEXT NOT NULL, message_id TEXT NOT NULL, ts TEXT NOT NULL, PRIMARY KEY (channel, message_id));
         """
     )
     return con
@@ -155,3 +164,41 @@ def list_cases(con, status: str | None = None) -> list[dict]:
 
 def case_log(con, case_id: int) -> list[dict]:
     return [dict(r) for r in con.execute("SELECT * FROM tool_log WHERE case_id=? ORDER BY id", (case_id,))]
+
+
+# --- Channel contacts (voice notes, WhatsApp). sender_id is personal data: it is stored only so the approved answer
+# can be sent back, and is never written to tool_log or shown unmasked (see channels.base.mask_sender).
+
+def save_contact(con, case_id: int, *, channel: str, sender_id: str, audio_path: str | None = None,
+                 transcript: str | None = None, stt: dict | None = None):
+    con.execute("INSERT OR REPLACE INTO channel_contacts(case_id,channel,sender_id,audio_path,transcript,stt,created_at)"
+                " VALUES (?,?,?,?,?,?,?)", (case_id, channel, sender_id, audio_path, transcript,
+                                             json.dumps(stt or {}), now()))
+    con.commit()
+
+
+def get_contact(con, case_id: int):
+    return con.execute("SELECT * FROM channel_contacts WHERE case_id=?", (case_id,)).fetchone()
+
+
+def record_delivery(con, case_id: int, channel: str, kind: str, ok: bool, detail: str):
+    """kind: 'ack' or 'clarification' (fixed system messages) or 'answer' (officer-approved text)."""
+    con.execute("INSERT INTO channel_deliveries(case_id,channel,kind,ok,detail,ts) VALUES (?,?,?,?,?,?)",
+                (case_id, channel, kind, int(ok), detail[:500], now()))
+    con.commit()
+
+
+def answer_delivered(con, case_id: int) -> bool:
+    return con.execute("SELECT 1 FROM channel_deliveries WHERE case_id=? AND kind='answer' AND ok=1",
+                       (case_id,)).fetchone() is not None
+
+
+def first_time_seen(con, channel: str, message_id: str) -> bool:
+    """True the first time a (channel, message id) arrives; webhook retries can deliver the same message twice."""
+    try:
+        con.execute("INSERT INTO channel_inbound_seen(channel,message_id,ts) VALUES (?,?,?)", (channel, message_id, now()))
+        con.commit()
+        return True
+    except sqlite3.IntegrityError:
+        con.rollback()  # the failed INSERT opened a transaction; release its write lock
+        return False
