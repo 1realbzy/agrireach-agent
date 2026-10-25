@@ -370,8 +370,8 @@ def zone_caveat(region: str, where: str = "") -> dict:
     for ("" means the Northern Ghana guides). Plain words, no figures, and it doesn't address the officer."""
     src = f"the {where} zone" if where else "Northern Ghana"
     return {"region": region.title(), "sources_for": src,
-            "sentence": f"This advice comes from guides for {src} and may not suit {region.title()}, so check the "
-                        "timing with your local extension agent."}
+            "sentence": f"This advice comes from guides for {src} and may not suit {region.title()}, so check this "
+                        "advice with your local extension agent."}
 
 
 def caveat_kept(text: str, caveat: dict | None) -> bool:

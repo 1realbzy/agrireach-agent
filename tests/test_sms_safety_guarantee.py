@@ -60,7 +60,12 @@ def assert_line_first(text):
 
 
 def test_recorded_b1_model_sms_is_723_characters_with_the_caveat():
-    assert len(f"{CAVEAT['sentence']} {SMS_B1}") == 723
+    # Measured with the caveat as worded in run 4; since fix/run5-findings (item 5c) it ends "check this advice"
+    # instead of "check the timing", one character longer.
+    run4_caveat = ("This advice comes from guides for Northern Ghana and may not suit Adaklu, so check the timing with "
+                   "your local extension agent.")
+    assert len(f"{run4_caveat} {SMS_B1}") == 723
+    assert len(f"{CAVEAT['sentence']} {SMS_B1}") == 724
 
 
 def line_for(ps):
