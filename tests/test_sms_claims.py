@@ -78,3 +78,9 @@ def test_officer_approving_an_unsourced_sms_is_warned_and_logged_not_blocked(mon
     assert any("Dispose" in w for w in r.json()["warnings"])
     log = c.get(f"/officer/cases/{cid}", headers=h).json()["log"]
     assert any(e.get("tool") == "approval_warning" and "Dispose" in str(e) for e in log)
+
+
+def test_unconfigured_judge_reads_plainly(monkeypatch):
+    monkeypatch.setattr(judge, "_call", lambda _u: {}["LLM_BASE_URL"])
+    p = fr.sms_claims("Plant when the rains are well established.", PS)
+    assert p == ["source check couldn't run: no judge model is configured (set LLM_BASE_URL and LLM_API_KEY)"]

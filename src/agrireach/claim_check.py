@@ -236,7 +236,10 @@ def check_claims(draft: str, passages: list[dict], conflicts: dict | None = None
         items = [(places.mask(s.text, keep=" ".join(p["text"] for p in cited)), cited) for s, cited in to_judge]
         judged = judge_mod.judge(items, call=judge_call)
         if judged.get("error"):
-            problems.append(f"source check couldn't run: the judge model gave no verdict ({judged['error'][:120]})")
+            err = judged["error"]
+            problems.append("source check couldn't run: no judge model is configured (set LLM_BASE_URL and LLM_API_KEY)"
+                            if "LLM_BASE_URL" in err else f"source check couldn't run: the judge model gave no verdict "
+                                                            f"({err[:120]})")
         for v, (s, _c) in zip(judged.get("verdicts", []), to_judge):
             if v["sentence"] != s.text:
                 v["sent_to_judge"], v["sentence"] = v["sentence"], s.text
