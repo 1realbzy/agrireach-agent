@@ -88,6 +88,9 @@ class FarmerDraft:
     needs_officer_text: bool = False
     language: str = "en"
     zone_caveat: dict | None = None  # set when the guidance is for another zone; see zone_caveat()
+    # How the proposal was made, for the audit log (tool_log 'farmer_text_proposal', see audit_entry()): path
+    # model | rule | officer, model SMS rejection reasons or error, sentences dropped to fit, safety line source.
+    audit: dict = field(default_factory=dict)
 
 
 def sms_length_problem(text: str) -> str | None:
@@ -200,7 +203,7 @@ def rule_rewrite(officer_text: str, max_chars: int = MAX_CHARS) -> str:
 
 
 def ensure_safety_line(text: str, passages: list[dict] | None, caveat: dict | None = None,
-                       fit: bool = False) -> tuple[str, list[str]]:
+                       fit: bool = False, audit: dict | None = None) -> tuple[str, list[str]]:
     """The pesticide safety guarantee, applied when the farmer text is proposed (never at approval or send: the
     officer approves, and may edit, the exact text that is sent).
 
@@ -219,7 +222,8 @@ def ensure_safety_line(text: str, passages: list[dict] | None, caveat: dict | No
     the text fits MAX_CHARS and the approval endpoint's SMS limit (sms_length_problem); the caveat, the safety line
     and the sources-differ sentence are never dropped, and every dropped sentence is named in the officer note. If it
     still can't fit, the text is "" with a note: no SMS is proposed and the officer writes it.
-    The rainfall record is never a source. Returns (text, notes for the officer)."""
+    The rainfall record is never a source. Returns (text, notes for the officer); `audit`, if given, gets the
+    dropped sentences and the safety line's source."""
     line = src = None
     for p in passages or []:
         pid = str(p.get("id", "")) if p else ""
@@ -232,6 +236,8 @@ def ensure_safety_line(text: str, passages: list[dict] | None, caveat: dict | No
             src = SOURCE_NAMES.get(pid.split("-")[0], pid.split(":")[0])
             line = f"{re.sub(r'[.!?]+$', '', cands[0])} ({src})."
             break
+    if audit is not None:
+        audit.update(dropped=[], safety_line=src)
     if not text or (not line and not fit):
         return text, []  # no proposal (the officer writes the text), or nothing to guarantee or fit
     head = [caveat["sentence"]] if caveat and text.startswith(caveat["sentence"]) else []
@@ -247,6 +253,8 @@ def ensure_safety_line(text: str, passages: list[dict] | None, caveat: dict | No
     while fit and body and not fits(join(body)):
         dropped.insert(0, body.pop())
     out, notes = join(body), []
+    if audit is not None:
+        audit["dropped"] = list(dropped)
     if fit and (not fits(out) or not (body or line)):  # caveat + safety line alone is still worth proposing
         why = (f"the cited source's pesticide sentence ({src}) does not fit" if line else "no advice sentence fits")
         return "", [f"{why} within the length limit ({MAX_CHARS} characters, and the approval part limit) with the caveat; "
@@ -325,14 +333,33 @@ def propose(officer_text: str, question: str = "", language: str = "en", conflic
             zone_caveat: dict | None = None, passages: list[dict] | None = None) -> FarmerDraft:
     """passages: the case's sources. When given, a model-written SMS must pass sms_claims or it is replaced by the
     rule-based version (fail closed)."""
-    fd = _propose(officer_text, question, language, conflicts, zone_caveat, passages)
+    audit: dict = {"model_rejected": [], "model_error": None, "dropped": [], "safety_line": None}
+    fd = _propose(officer_text, question, language, conflicts, zone_caveat, passages, audit)
     fd.zone_caveat = zone_caveat
     fd.text = plain_punctuation(fd.text)
+    fd.audit = audit | {"mode": fd.mode, "path": "officer" if not fd.text else
+                        "model" if fd.mode.startswith("llm") else "rule", "chars": len(fd.text)}
     return fd
 
 
+def audit_entry(fd: FarmerDraft) -> tuple[dict, str]:
+    """(args, summary) for the tool_log 'farmer_text_proposal' entry: why the farmer text is what it is (run 5: an
+    auditor reading only the log couldn't see why a model SMS was replaced by the rule text)."""
+    a = fd.audit
+    why = []
+    if a.get("model_rejected"):
+        why.append("model SMS rejected: " + "; ".join(a["model_rejected"]))
+    if a.get("model_error"):
+        why.append(f"model SMS failed: {a['model_error']}")
+    if a.get("dropped"):
+        why.append(f"{len(a['dropped'])} sentence(s) dropped to fit: " + "; ".join(f"'{d}'" for d in a["dropped"]))
+    head = {"model": "model SMS proposed", "rule": "rule-based text proposed",
+            "officer": "no text proposed: the officer must write it"}[a.get("path", "officer")]
+    return a, ". ".join([head] + why)
+
+
 def _propose(officer_text: str, question: str, language: str, conflicts: bool, caveat: dict | None,
-             passages: list[dict] | None = None) -> FarmerDraft:
+             passages: list[dict] | None, audit: dict) -> FarmerDraft:
     if language not in SUPPORTED_LANGUAGES:
         return FarmerDraft("", "none", [f"the farmer wrote in {language}; AgriReach can't write farmer text in that "
                                         "language, so the officer must write it"], needs_officer_text=True,
@@ -357,16 +384,18 @@ def _propose(officer_text: str, question: str, language: str, conflicts: bool, c
             text = lead + text if text and caveat and not caveat_kept(text, caveat) else text
             if conflicts and text and CONFIRM not in text:
                 text = f"{text} {CONFIRM}"  # same as the rule-based path: never present the options as agreeing
-            # Before the checks, so an over-length faithful SMS is trimmed (not discarded) and the trimmed text is
-            # what the checks pass.
-            text, safety = ensure_safety_line(text, passages, caveat)
+            # Before the checks: a model SMS is never trimmed, so if it no longer fits with the line, check() rejects
+            # it and the rule path is used.
+            text, safety = ensure_safety_line(text, passages, caveat, audit=audit)
             problems = check(text, officer_text) if text else safety
             if not problems and passages is not None:
                 problems = sms_claims(text, passages, caveat=caveat)
             if not problems:
                 return FarmerDraft(text, mode, notes + safety)
+            audit["model_rejected"] = list(problems)
             notes.append(f"model rewrite rejected ({'; '.join(problems)}); rule-based version shown")
         except Exception as e:
+            audit["model_error"] = f"{type(e).__name__}: {e}"[:300]
             notes.append(f"model rewrite failed ({type(e).__name__}); rule-based version shown")
     # No length cut here: ensure_safety_line(fit=True) drops whole sentences to fit and names them for the officer.
     text = rule_rewrite(officer_text, sys.maxsize)
@@ -374,7 +403,7 @@ def _propose(officer_text: str, question: str, language: str, conflicts: bool, c
         # The options are listed with their sources; never present them as if they agree.
         text = f"{text} {CONFIRM}"
     text = lead + text if text else text
-    text, safety = ensure_safety_line(text, passages, caveat, fit=True)
+    text, safety = ensure_safety_line(text, passages, caveat, fit=True, audit=audit)
     if not text:
         return FarmerDraft("", "rule", notes + (safety or ["nothing farmer-facing left after removing officer notes; "
                                                            "the officer must write it"]), needs_officer_text=True)

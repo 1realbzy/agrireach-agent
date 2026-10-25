@@ -158,8 +158,11 @@ def farmer_draft(case_id: int, body: OfficerText, officer: str = Depends(current
     stored = json.loads(row["farmer_draft"] or "null") or {}
     conflicts = any(str(n).startswith("sources differ") for n in stored.get("problems", []))
     ps = [knowledge.reference(i) for i in json.loads(row["sources"] or "[]")]
-    fd = asdict(farmer_reply.propose(body.officer_text, row["question"], stored.get("language", "en"),
-                                     conflicts=conflicts, zone_caveat=stored.get("zone_caveat"), passages=ps))
+    proposal = farmer_reply.propose(body.officer_text, row["question"], stored.get("language", "en"),
+                                    conflicts=conflicts, zone_caveat=stored.get("zone_caveat"), passages=ps)
+    db.log(db.connect(), f"officer:{officer}", "farmer_text_proposal", *farmer_reply.audit_entry(proposal),
+           case_id=case_id)
+    fd = asdict(proposal)
     if stored.get("season_prompt"):  # received date outside every cited window: keep prompting the officer
         fd["problems"] = fd["problems"] + [stored["season_prompt"]]
     contact = db.get_contact(db.connect(), case_id)
