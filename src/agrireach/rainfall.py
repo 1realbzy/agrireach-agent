@@ -88,6 +88,40 @@ def locate(place: str) -> dict | None:
     return {"district": d, **coords()[d]} if d else None
 
 
+# District names in free text (an SMS has no place field). Names of 3 letters or fewer (Ho, Wa, La, Osu) and names
+# that are ordinary words (places.AMBIGUOUS: Bole, Sang, Tease, ...) count only straight after "in", "at", "from"
+# or "near"; every other district or capital name matches as a whole word in any case. Region names never match.
+_PREP = re.compile(r"(?:^|[^A-Za-z])(?:in|at|from|near)\s+$", re.I)
+
+
+@lru_cache(maxsize=1)
+def _text_names() -> tuple[re.Pattern, dict[str, str]]:
+    names = dict(_district_index())
+    for k, g in places.gazetteer().items():  # gazetteer spellings of districts and capitals
+        if g["kind"] != "region" and (loc := locate(k)):
+            names.setdefault(re.sub(r"[\s-]+", " ", k), loc["district"])
+    alts = sorted(names, key=lambda n: (-len(n), n))
+    rx = re.compile(r"(?<![A-Za-z0-9])(" + "|".join(re.escape(n).replace(r"\ ", r"[\s-]+") for n in alts) +
+                    r")(?![A-Za-z0-9])", re.I)
+    return rx, names
+
+
+def _guarded(name: str) -> bool:
+    return len(name.replace(" ", "")) <= 3 or name in places.AMBIGUOUS
+
+
+def districts_in_text(text: str) -> list[str]:
+    """Districts (as in data/district_coords.json) named in the text, sorted, each once. See the rule above."""
+    rx, names = _text_names()
+    found = set()
+    for m in rx.finditer(text or ""):
+        key = re.sub(r"[\s-]+", " ", m.group(1).lower())
+        if _guarded(key) and not _PREP.search(text[:m.start()]):
+            continue
+        found.add(names[key])
+    return sorted(found)
+
+
 def _today() -> dt.date:
     t = os.getenv("AGRIREACH_RAINFALL_TODAY")
     return dt.date.fromisoformat(t) if t else dt.datetime.now(dt.timezone.utc).date()
