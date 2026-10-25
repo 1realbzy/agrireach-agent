@@ -110,8 +110,13 @@ def not_judged(bare: str) -> bool:
 
 # "It is still worth applying / not too late" answers a late-timing question. The judge accepted it live (F5) from
 # passages that only give the ideal time, so code requires a cited passage that itself speaks about late timing.
-LATE_CLAIM_RE = re.compile(r"\b(?:can|could|may|is|are)\s+still\b|\bstill\s+(?:worth|ok|okay|fine|possible|useful|"
-                           r"help|apply|plant|sow)\b|\bnot\s+too\s+late\b", re.I)
+# Only claims that a late ACTION is possible or worthwhile match: "can/could/may still <verb>", "is still worth /
+# possible / fine", "still worth", "there is still time", "not too late". A present-tense state ("the worms are still a
+# problem", "the larvae are still present") is not a timing claim (F1 live false reject, run3 on a5e9192).
+LATE_CLAIM_RE = re.compile(r"\b(?:can|could|may|might)\s+still\b"
+                           r"|\bstill\s+(?:worth|ok|okay|fine|possible|useful|in\s+time|time|help|apply|plant|sow"
+                           r"|be\s+(?:applied|planted|sown|done|used))\b"
+                           r"|\b(?:there\s+is|you\s+have)\s+still\s+time\b|\bnot\s+too\s+late\b", re.I)
 # "can be planted up to end of July" speaks about late timing; "delay ... until some rains" (moisture) does not.
 LATE_SUPPORT_RE = re.compile(r"\b(?:late|later|still|missed|up\s+to)\b", re.I)
 NEGATED_AGREE = re.compile(r"\b(?:not|n't|never|dis)\s*agree|\bdo\s+not\s+agree|\bdiffer|\bdisagree", re.I)

@@ -22,7 +22,9 @@ from agrireach import citation_check, llm
 MAX_CHARS = 600   # about 100 words: one WhatsApp screen, under a minute spoken
 CITE_RE = citation_check.CITE_RE
 OFFICER_RE = re.compile(r"\b(?:the\s+)?(?:extension\s+)?(?:officer|officers|aea)\b(?!\s*(?:\.|,|$))", re.I)
-ALLOWED_OFFICER = re.compile(r"\b(?:your|an|a|local)\s+(?:local\s+)?(?:agricultural\s+)?extension\s+(?:officer|agent)"
+# "Agriculture Extension Agent (AEA)" is the same referral as "Agricultural ..." (F1 live, run3: the rule rewrite dropped
+# the pesticide safety line because the leftover "(AEA)" read as an officer instruction).
+ALLOWED_OFFICER = re.compile(r"\b(?:your|an|a|local)\s+(?:local\s+)?(?:agricultur(?:al|e)\s+)?extension\s+(?:officer|agent)"
                              r"(?:\s*\(AEA\))?|\b(?:your\s+local|your|local)\s+AEA\b", re.I)
 # A pesticide or spraying line in the officer text is a safety line: the farmer text must keep one (F1 dropped it).
 SAFETY_RE = re.compile(r"\b(?:pesticides?|insecticides?|herbicides?|fungicides?|spray(?:s|ing)?)\b", re.I)
