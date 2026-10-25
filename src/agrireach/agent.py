@@ -23,8 +23,16 @@ RISK_TERMS = {
     "chemical": ["spray", "herbicide", "pesticide", "insecticide", "fungicide", "chemical", "glyphosate", "paraquat",
                  "atrazine", "dose", "poison"],
     "disease_or_pest": ["disease", "yellow", "spots", "wilting", "dying", "rot", "insects", "pest", "caterpillar",
-                        "worms", "leaves turning"],
+                        "worms", "leaves turning", "armyworm", "army worm", "weevil", "borer", "larvae", "turning black"],
+    "food_safety": ["mould", "mold", "aflatoxin", "fungus"],
 }
+# A farmer asking how to reach an officer: AgriReach holds no contact details, so the officer answers.
+CONTACT_RE = re.compile(r"\bwho\s+(?:should|can|do|could)\s+i\s+(?:call|contact|phone|see|talk\s+to|ask)\b"
+                        r"|\b(?:phone|contact)\s+(?:number|details)\b|\bno\s+extension\s+(?:officer|agent)\b", re.I)
+# "two months after planting" dates an event; it does not ask about planting, so it should not trigger the
+# region clarification. Nor does "when" used as a conjunction ("arrived when the maize is knee-high").
+AFTER_PLANTING = re.compile(r"\b(?:after|since)\s+(?:planting|sowing)\b")
+ASKS_WHEN = re.compile(r"^\W*when\b|\bwhen\s+(?:should|can|could|do|does|is|to|will|must)\b")
 REGION_DEPENDENT = {"planting", "spacing", "seed"}
 NORTHERN = ["northern", "north", "tamale", "savannah", "upper east", "upper west", "north east", "bolgatanga",
             "wa", "yendi", "nyankpala", "damongo", "walewale"]
@@ -34,7 +42,7 @@ MAX_DRAFT_ATTEMPTS = 2
 # (the full list is kept in the result's citation_check.attempts).
 MAX_REASON_CHARS = 600
 OTHER_REGIONS = ["ashanti", "kumasi", "volta", "accra", "greater accra", "eastern", "western", "central", "bono",
-                 "ahafo", "oti", "cape coast", "takoradi", "ho"]
+                 "ahafo", "oti", "cape coast", "takoradi", "ho", "adaklu"]
 
 
 def _place_in_question(place: str, q: str) -> bool:
@@ -50,6 +58,23 @@ def _place_in_question(place: str, q: str) -> bool:
 def _is_northern(region: str) -> bool:
     """True if the region is covered by the Northern Ghana corpus (whole-token match, so 'Kwahu' is not 'Wa')."""
     return any(_place_in_question(n, region.lower()) for n in NORTHERN)
+
+
+def _crops_covered() -> list[str]:
+    """Crops in the corpus. Empty if the corpus can't be read; retrieval then reports the tool error itself."""
+    try:
+        return knowledge.crops_covered()
+    except Exception:
+        return []
+
+
+def _join(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def _crop_pattern(crop: str) -> str:
+    """Regex used to confirm a fetched source page is about the passage's crop."""
+    return r"soy(a)?bean" if crop == "soybean" else re.escape(crop)
 
 
 def _detect_region(q: str) -> str:
@@ -74,6 +99,7 @@ class S(TypedDict, total=False):
     draft_mode: str
     language: str
     search_query: str
+    skip_retrieval: bool
     conflicts: dict
     citation_check: dict
     source_checks: list
@@ -115,17 +141,29 @@ def build_graph(tools: Tools):
             q = f"{gl} {q}"
             reasons.append("question appears to be in Twi: officer must confirm the meaning and reply in Twi "
                            f"(AgriReach keyword gloss, not a translation: '{gl or 'none'}')")
-        crop = s.get("crop") or ("soybean" if re.search(language.CROP_WORDS, q) else "")
+        crop = (s.get("crop") or language.detect_crop(q)).lower()
+        covered = _crops_covered()
         region = s.get("region") or ""
         if not region:
             region = _detect_region(q)
         reasons += [f"{k.replace('_', ' ')} terms in question" for k, terms in RISK_TERMS.items()
                     if any(t in q for t in terms)]
-        topics = {w for w in re.findall(r"[a-z]+", q)}
+        contact = bool(CONTACT_RE.search(q))
+        uncovered = bool(crop and covered and crop not in covered)
+        if uncovered:
+            reasons.append(f"crop '{crop}' is not covered by the curated sources (covered: {_join(covered)}); "
+                           "officer must answer")
+        if contact:
+            reasons.append("farmer asks how to reach an extension officer: officer should reply with local contact "
+                           "details (AgriReach holds none)")
+        topics = {w for w in re.findall(r"[a-z]+", AFTER_PLANTING.sub(" ", q))} - {"when"}
+        if ASKS_WHEN.search(q):
+            topics.add("when")
         clar = ""
-        if not crop:
-            clar = "Which crop is this about? AgriReach currently covers soybean only."
-        elif not region and topics & {"plant", "planting", "sow", "when", "spacing", "seed", "seeds"}:
+        if not crop and not contact:
+            clar = f"Which crop is this about? AgriReach currently covers {_join(covered or ['soybean'])} only."
+        elif crop and not uncovered and not region and topics & {"plant", "planting", "sow", "when", "spacing",
+                                                                   "seed", "seeds"}:
             clar = "Which district or region is your farm in? Planting guidance differs by region."
         if clar and lang == "twi":
             # Never answer a Twi speaker with an English question: route the case to an officer instead.
@@ -134,7 +172,8 @@ def build_graph(tools: Tools):
         case = await tools.call("create_or_update_case", {"status": "draft", "question": s["question"], "crop": crop,
                                                           "region": region})
         return {"crop": crop, "region": region, "urgent_reasons": reasons, "clarification": clar, "language": lang,
-                "search_query": search_query, "case_id": case["case_id"], "notes": [], "errors": []}
+                "search_query": search_query, "case_id": case["case_id"], "notes": [], "errors": [],
+                "skip_retrieval": uncovered or (contact and not crop)}
 
     async def retrieve(s: S) -> S:
         errors, notes, reasons = list(s["errors"]), list(s["notes"]), list(s["urgent_reasons"])
@@ -143,6 +182,11 @@ def build_graph(tools: Tools):
             reasons.append(f"no local reference for region '{region}' (corpus covers Northern Ghana only)")
             notes.append(f"The curated sources are for Northern Ghana; they may not apply in {region}.")
         passages, cal = [], []
+        if s.get("skip_retrieval"):
+            # Uncovered crop or a contact request: searching another crop's guidance would only mislead.
+            reasons.append("no grounded evidence found in corpus")
+            return {"passages": [], "calendar": [], "errors": errors, "notes": notes, "conflicts": {},
+                    "urgent_reasons": sorted(set(reasons), key=reasons.index)}
         try:
             passages = await tools.call("search_guidance", {"query": s.get("search_query") or s["question"],
                                                              "crop": s["crop"] or "soybean", "region": ""})
@@ -175,6 +219,9 @@ def build_graph(tools: Tools):
             notes.append("Chemical use: AgriReach does not recommend products or doses. Refer to the label and the officer.")
         if any("disease" in r for r in reasons):
             notes.append("Possible pest/disease: this is not a diagnosis. Officer should inspect or refer.")
+        if any("food safety" in r for r in reasons):
+            notes.append("Possible food-safety risk (mould/aflatoxin): AgriReach cannot say produce is safe to sell, eat "
+                         "or feed. Officer should advise.")
         return {"passages": passages, "calendar": cal, "errors": errors, "notes": notes, "conflicts": conflicts,
                 "urgent_reasons": sorted(set(reasons), key=reasons.index)}
 
@@ -192,7 +239,7 @@ def build_graph(tools: Tools):
                 r = await asyncio.wait_for(tools.fetch.call_tool("fetch", {"url": src["landing_url"], "max_length": 20000,
                                                                           "raw": True}), timeout=30)
                 body = r.content[0].text if r.content else ""
-                ok = (not r.isError) and bool(re.search(r"soy(a)?bean", body, re.I))
+                ok = (not r.isError) and bool(re.search(_crop_pattern(p.get("crop") or "soybean"), body, re.I))
                 checks.append({"source_id": p["source_id"], "url": src["landing_url"], "reachable": ok,
                                "detail": "" if ok else body[:160]})
             except Exception as e:

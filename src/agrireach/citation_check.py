@@ -34,7 +34,7 @@ UNITS = {"cm": "cm", "centimetre": "cm", "centimetres": "cm", "centimeter": "cm"
          "kg": "kg", "kgs": "kg", "kilogram": "kg", "kilograms": "kg", "g": "g", "grams": "g",
          "ha": "ha", "hectare": "ha", "hectares": "ha", "acre": "acre", "acres": "acre",
          "week": "week", "weeks": "week", "day": "day", "days": "day", "month": "month", "months": "month",
-         "%": "%", "percent": "%", "per cent": "%", "l": "l", "litre": "l", "litres": "l", "liter": "l", "liters": "l"}
+         "%": "%", "ppb": "ppb", "percent": "%", "per cent": "%", "l": "l", "litre": "l", "litres": "l", "liter": "l", "liters": "l"}
 WORD_NUMS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
              "ten": 10, "eleven": 11, "twelve": 12, "fifteen": 15, "twenty": 20, "thirty": 30, "forty": 40,
              "fifty": 50, "sixty": 60, "hundred": 100}

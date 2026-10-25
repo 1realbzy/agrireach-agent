@@ -20,6 +20,13 @@ SYNONYMS = {
     "rotate": "rotation", "rotation": "rotation",
     "plough": "land preparation", "prepare": "land preparation", "preparation": "land preparation",
     "deep": "planting", "depth": "planting",
+    "fertiliser": "fertilizer", "fertilizer": "fertilizer", "topdress": "fertilizer", "basal": "fertilizer",
+    "npk": "fertilizer", "urea": "fertilizer",
+    "armyworm": "pest", "armyworms": "pest", "worms": "pest", "worm": "pest", "pest": "pest", "pests": "pest",
+    "insects": "pest", "larvae": "pest", "scout": "pest", "scouting": "pest", "whorl": "pest", "funnel": "pest",
+    "store": "storage", "storage": "storage", "stored": "storage", "storing": "storage", "weevils": "storage",
+    "weevil": "storage", "sacks": "storage", "sack": "storage", "bags": "storage", "drying": "storage",
+    "mould": "aflatoxin", "mouldy": "aflatoxin", "mold": "aflatoxin", "moldy": "aflatoxin", "aflatoxin": "aflatoxin",
 }
 STOP = set("a an the is are of to in on for my i we do how what should can and or with at be it".split())
 

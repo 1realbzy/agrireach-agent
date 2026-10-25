@@ -20,6 +20,32 @@ GLOSS = [
     (r"\baba\b", "seed"),
 ]
 CROP_WORDS = r"soy(?:a)?bean|\bsoya\b|\bsoja\b"
+# Crops AgriReach can recognise in a question. Recognising a crop is not the same as covering it: coverage comes from
+# the corpus (knowledge.crops_covered()), and a recognised but uncovered crop goes to the officer.
+CROPS = {
+    "soybean": CROP_WORDS,
+    "maize": r"\bmaize\b|\bcorn\b",
+    "cocoa": r"\bcocoa\b",
+    "tomato": r"\btomato(?:es)?\b",
+    "rice": r"\brice\b",
+    "cassava": r"\bcassava\b",
+    "yam": r"\byams?\b",
+    "groundnut": r"\bgroundnuts?\b|\bpeanuts?\b",
+    "cowpea": r"\bcowpeas?\b",
+    "pepper": r"\bpeppers?\b",
+    "sorghum": r"\bsorghum\b",
+    "millet": r"\bmillet\b",
+    "plantain": r"\bplantains?\b",
+    "cashew": r"\bcashews?\b",
+    "onion": r"\bonions?\b",
+}
+
+
+def detect_crop(q: str) -> str:
+    """The first crop named in the question (by position), or "" if none is recognised."""
+    ql = q.lower()
+    found = [(m.start(), crop) for crop, pat in CROPS.items() for m in [re.search(pat, ql)] if m]
+    return min(found)[1] if found else ""
 
 
 def is_twi(q: str) -> bool:
