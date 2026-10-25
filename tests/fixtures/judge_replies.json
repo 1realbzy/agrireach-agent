@@ -1,0 +1,519 @@
+{
+ "_note": "Raw replies from the optional judge model (meta-llama/llama-3.3-70b-instruct via OpenRouter, temperature 0), recorded 25 Oct 2026 by `scripts/replay_drafts.py --judge` over the recorded real-model drafts in docs/eval-run-*.txt. Used to test the judge path offline.",
+ "model": "meta-llama/llama-3.3-70b-instruct",
+ "replies": [
+  {
+   "run": "A",
+   "task": "1 routine, region given",
+   "sentences": [
+    "To determine the optimal harvest time for soybeans near Tamale, look for when 9 out of 10 pods are mature, which means they are brown in color or dry.",
+    "Harvesting too late can cause the pods to become overly dry and shatter.",
+    "To minimize shattering, harvest early in the morning [APNI-SARI-2023:harvest]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Matches passage\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Passage implies\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Direct quote\"}\n]}"
+  },
+  {
+   "run": "A",
+   "task": "4 conflicting sources",
+   "sentences": [
+    "For soybean planting in Tamale, the recommended row-to-row spacing is 50 cm [APNI-SARI-2023:p11-spacing][IITA-SSPING-2022:p17-spacing].",
+    "However, there is a conflict in the recommended spacing between plants within the row.",
+    "One source suggests 15 cm [APNI-SARI-2023:p11-spacing][APNI-SARI-2023:p11-depth], while another recommends 10 cm [IITA-SSPING-2022:p17-spacing].",
+    "Planting holes should be about 5 cm deep [APNI-SARI-2023:p11-depth]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Conflict exists\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Sources differ\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Passage matches\"}\n]}"
+  },
+  {
+   "run": "A",
+   "task": "10 region outside corpus",
+   "sentences": [
+    "For soybean planting in Kumasi, the recommended time is between mid-June and late July, based on the onset of rains and the variety [APNI-SARI-2023:p11-planting-window].",
+    "However, another source suggests mid-June to mid-July [IITA-SSPING-2022:p18-planting-window].",
+    "Planting depth should be about 5 cm [APNI-SARI-2023:p11-depth], but another source recommends 3 cm, not deeper than 5 cm [IITA-SSPING-2022:p18-depth].",
+    "For plant spacing, one source recommends 50 cm between rows and 15 cm between plants [APNI-SARI-2023:p11-spacing], while another suggests 50 cm between rows and 10 cm between plants [IITA-SSPING-2022:p17-spacing]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"not_supported\", \"why\": \"Kumasi not mentioned\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Matches passage\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Matches passages\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Matches passages\"}\n]}"
+  },
+  {
+   "run": "A",
+   "task": "11 Wa (Upper West) town name",
+   "sentences": [
+    "- **Planting Window**: Choose between mid-June and late July [APNI-SARI-2023:p11-planting-window], or mid-June to mid-July [IITA-SSPING-2022:p18-planting-window].",
+    "Ensure rains are well established to avoid dry spells [IITA-SSPING-2022:p18-moisture].",
+    "- **Planting Depth**: Plant seeds at 5 cm deep [APNI-SARI-2023:p11-depth], or up to 5 cm but not deeper than 3 cm [IITA-SSPING-2022:p18-depth].",
+    "- **Plant Spacing**: Use 50 cm between rows and 15 cm between plants [APNI-SARI-2023:p11-spacing], or 50 cm between rows and 10 cm between plants [IITA-SSPING-2022:p17-spacing]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Passage implies\"},\n{\"n\": 3, \"verdict\": \"not_supported\", \"why\": \"Contradictory depths\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Passages match\"}\n]}"
+  },
+  {
+   "run": "A",
+   "task": "12 Twi-language question",
+   "sentences": [
+    "One source says to plant between mid-June and late July [APNI-SARI-2023:p11-planting-window], while another recommends mid-June to mid-July [IITA-SSPING-2022:p18-planting-window].",
+    "The farmer should not plant too early before the rains are well established [IITA-SSPING-2022:p18-moisture].",
+    "One source suggests 5 cm deep [APNI-SARI-2023:p11-depth], while another recommends 3 cm, not deeper than 5 cm [IITA-SSPING-2022:p18-depth].",
+    "One source recommends 50 cm between rows and 15 cm between plants [APNI-SARI-2023:p11-spacing], while another suggests 50 cm between rows and 10 cm between plants [IITA-SSPING-2022:p17-spacing]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Passage matches\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Passages match\"}\n]}"
+  },
+  {
+   "run": "B",
+   "task": "1 routine, region given",
+   "sentences": [
+    "To determine the right time to harvest your soybean, look for when 9 out of 10 pods are mature, which means they are brown in color or dry.",
+    "Harvesting too late can cause the pods to become too dry and shatter.",
+    "To minimize shattering, harvest early in the morning [APNI-SARI-2023:harvest]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Direct quote\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Passage implies\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Direct quote\"}\n]}"
+  },
+  {
+   "run": "B",
+   "task": "4 conflicting sources",
+   "sentences": [
+    "For soybean planting in Tamale, maintain a row-to-row spacing of 50 cm.",
+    "The spacing between plants within the row is a point of conflict: choose either 15 cm [APNI-SARI-2023:p11-spacing] or 10 cm [IITA-SSPING-2022:p17-spacing].",
+    "Planting holes should be 5 cm deep, with 15 cm between holes [APNI-SARI-2023:p11-depth]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Conflict noted\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Matches passage\"}\n]}"
+  },
+  {
+   "run": "B",
+   "task": "10 region outside corpus",
+   "sentences": [
+    "For soybean planting in Kumasi, the recommended time is between mid-June and late July, based on the onset of rains and the variety [APNI-SARI-2023:p11-planting-window].",
+    "However, another source suggests mid-June to mid-July when rains are well established [IITA-SSPING-2022:p18-planting-window].",
+    "Planting depth should be about 5 cm [APNI-SARI-2023:p11-depth], but another source recommends 3 cm, not deeper than 5 cm [IITA-SSPING-2022:p18-depth].",
+    "For plant spacing, one source recommends 50 cm between rows and 15 cm between plants [APNI-SARI-2023:p11-spacing], while another suggests 50 cm between rows and 10 cm between plants [IITA-SSPING-2022:p17-spacing]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"not_supported\", \"why\": \"Wrong region\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Matches sources\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Matches sources\"}\n]}"
+  },
+  {
+   "run": "B",
+   "task": "11 Wa (Upper West) town name",
+   "sentences": [
+    "- **Planting Window**: Choose between mid-June and late July [APNI-SARI-2023:p11-planting-window], or mid-June to mid-July [IITA-SSPING-2022:p18-planting-window].",
+    "Ensure rains are well established to avoid dry spells [IITA-SSPING-2022:p18-moisture].",
+    "- **Planting Depth**: Plant seeds at 5 cm deep [APNI-SARI-2023:p11-depth], or ideally 3 cm, not deeper than 5 cm [IITA-SSPING-2022:p18-depth].",
+    "- **Plant Spacing**: Use 50 cm between rows and 15 cm between plants [APNI-SARI-2023:p11-spacing], or 50 cm between rows and 10 cm between plants [IITA-SSPING-2022:p17-spacing]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Passage implies\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Passages match\"}\n]}"
+  },
+  {
+   "run": "B",
+   "task": "12 Twi-language question",
+   "sentences": [
+    "One source says to plant between mid-June and late July [APNI-SARI-2023:p11-planting-window], while another recommends mid-June to mid-July [IITA-SSPING-2022:p18-planting-window].",
+    "One source suggests 5 cm [APNI-SARI-2023:p11-depth], while another recommends 3 cm, not deeper than 5 cm [IITA-SSPING-2022:p18-depth].",
+    "For plant spacing, one source recommends 50 cm between rows and 15 cm between plants [APNI-SARI-2023:p11-spacing], while another suggests 50 cm between rows and 10 cm between plants [IITA-SSPING-2022:p17-spacing].",
+    "Remind the farmer not to plant too early before the rains are well established to avoid plant death from prolonged dry spells [IITA-SSPING-2022:p18-moisture]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Passage matches\"}\n]}"
+  },
+  {
+   "run": "C",
+   "task": "1 routine, region given",
+   "sentences": [
+    "To determine the right time to harvest your soybean, look for when 9 out of 10 pods are mature, which means they are brown in color or dry.",
+    "Harvesting too late can cause the pods to become too dry and shatter.",
+    "To minimize shattering, harvest early in the morning [APNI-SARI-2023:harvest]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Matches passage\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Passage implies\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Direct quote\"}\n]}"
+  },
+  {
+   "run": "C",
+   "task": "4 conflicting sources",
+   "sentences": [
+    "For soybean planting in Tamale, the recommended row-to-row spacing is 50 cm [APNI-SARI-2023:p11-spacing][IITA-SSPING-2022:p17-spacing].",
+    "However, there is a conflict in the recommended spacing between plants in a row.",
+    "One source suggests 15 cm [APNI-SARI-2023:p11-spacing][APNI-SARI-2023:p11-depth], while another recommends 10 cm [IITA-SSPING-2022:p17-spacing].",
+    "Planting holes should be about 5 cm deep [APNI-SARI-2023:p11-depth]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Conflict exists\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Sources differ\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Passage matches\"}\n]}"
+  },
+  {
+   "run": "C",
+   "task": "10 region outside corpus",
+   "sentences": [
+    "For soybean planting in Kumasi, the recommended time is between mid-June and late July, based on the onset of rains and the variety [APNI-SARI-2023:p11-planting-window].",
+    "However, another source suggests mid-June to mid-July [IITA-SSPING-2022:p18-planting-window].",
+    "Planting depth should be about 5 cm [APNI-SARI-2023:p11-depth], but another source recommends 3 cm, not deeper than 5 cm [IITA-SSPING-2022:p18-depth].",
+    "For plant spacing, one source recommends 50 cm between rows and 15 cm between plants [APNI-SARI-2023:p11-spacing], while another suggests 50 cm between rows and 10 cm between plants [IITA-SSPING-2022:p17-spacing]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"not_supported\", \"why\": \"Kumasi not mentioned\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Matches passage\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Matches passages\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Matches passages\"}\n]}"
+  },
+  {
+   "run": "C",
+   "task": "11 Wa (Upper West) town name",
+   "sentences": [
+    "- **Planting Window**: Choose between mid-June and late July [APNI-SARI-2023:p11-planting-window], or mid-June to mid-July [IITA-SSPING-2022:p18-planting-window].",
+    "Ensure rains are well established to avoid prolonged dry spells [IITA-SSPING-2022:p18-moisture].",
+    "- **Planting Depth**: Plant seeds at a depth of about 5 cm [APNI-SARI-2023:p11-depth], or ideally 3 cm, not deeper than 5 cm [IITA-SSPING-2022:p18-depth].",
+    "- **Plant Spacing**: Space rows 50 cm apart, with 15 cm between plants in a row [APNI-SARI-2023:p11-spacing], or 10 cm between plants within the rows [IITA-SSPING-2022:p17-spacing]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Passage matches\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Passages match\"}\n]}"
+  },
+  {
+   "run": "C",
+   "task": "12 Twi-language question",
+   "sentences": [
+    "- One source suggests planting between mid-June and late July [APNI-SARI-2023:p11-planting-window].",
+    "- Another source recommends planting between mid-June to mid-July [IITA-SSPING-2022:p18-planting-window].",
+    "- One source recommends making planting holes about 5 cm deep [APNI-SARI-2023:p11-depth].",
+    "- Another source suggests a depth of 3 cm, not deeper than 5 cm [IITA-SSPING-2022:p18-depth].",
+    "- One source recommends a row-to-row spacing of 50 cm and 15 cm between plants in a row [APNI-SARI-2023:p11-spacing].",
+    "- Another source suggests 50 cm between rows and 10 cm between plants within the rows [IITA-SSPING-2022:p17-spacing]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 5, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 6, \"verdict\": \"supported\", \"why\": \"Matches source\"}\n]}"
+  },
+  {
+   "run": "D",
+   "task": "1 routine, region given",
+   "sentences": [
+    "To determine the best time to harvest your soybean crop near Tamale, you should look for the following signs: 9 out of 10 pods should be mature, which means they should be brown in color or dry.",
+    "Harvesting too late can cause the pods to become too dry and shatter.",
+    "To minimize shattering, it is recommended to harvest early in the morning [APNI-SARI-2023:harvest]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Matches passage\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Direct implication\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Direct quote\"}\n]}"
+  },
+  {
+   "run": "D",
+   "task": "4 conflicting sources",
+   "sentences": [
+    "For soybean planting in Tamale, the recommended row-to-row spacing is 50 cm [APNI-SARI-2023:p11-spacing][IITA-SSPING-2022:p17-spacing].",
+    "However, there is a conflict in the recommended spacing between plants within the row.",
+    "One source suggests 15 cm [APNI-SARI-2023:p11-spacing][APNI-SARI-2023:p11-depth], while another recommends 10 cm [IITA-SSPING-2022:p17-spacing].",
+    "Planting holes should be about 5 cm deep [APNI-SARI-2023:p11-depth]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Conflict exists\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Sources differ\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Passage matches\"}\n]}"
+  },
+  {
+   "run": "D",
+   "task": "10 region outside corpus",
+   "sentences": [
+    "For soybean planting in Kumasi, the recommended time is between mid-June and late July, based on the onset of rains and the variety [APNI-SARI-2023:p11-planting-window].",
+    "However, another source suggests planting between mid-June to mid-July when rains are well established [IITA-SSPING-2022:p18-planting-window].",
+    "Planting depth should be about 5 cm [APNI-SARI-2023:p11-depth], but another source recommends 3 cm, not deeper than 5 cm [IITA-SSPING-2022:p18-depth].",
+    "For plant spacing, one source recommends 50 cm between rows and 15 cm between plants [APNI-SARI-2023:p11-spacing], while another suggests 50 cm between rows and 10 cm between plants [IITA-SSPING-2022:p17-spacing]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"not_supported\", \"why\": \"wrong region\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"matches passage\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"matches passages\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"matches passages\"}\n]}"
+  },
+  {
+   "run": "D",
+   "task": "11 Wa (Upper West) town name",
+   "sentences": [
+    "- **Planting Window**: Choose between mid-June and late July [APNI-SARI-2023:p11-planting-window], or mid-June to mid-July [IITA-SSPING-2022:p18-planting-window].",
+    "Ensure rains are well established to avoid dry spells [IITA-SSPING-2022:p18-moisture].",
+    "- **Planting Depth**: Plant seeds at 5 cm deep [APNI-SARI-2023:p11-depth], or ideally 3 cm, not deeper than 5 cm [IITA-SSPING-2022:p18-depth].",
+    "- **Plant Spacing**: Use 50 cm between rows and 15 cm between plants [APNI-SARI-2023:p11-spacing], or 50 cm between rows and 10 cm between plants [IITA-SSPING-2022:p17-spacing]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Passage implies\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Passages match\"}\n]}"
+  },
+  {
+   "run": "D",
+   "task": "12 Twi-language question",
+   "sentences": [
+    "- One source says plant between mid-June and late July, depending on rains and variety [APNI-SARI-2023:p11-planting-window].",
+    "- Another says mid-June to mid-July, when rains are well established [IITA-SSPING-2022:p18-planting-window].",
+    "- One source says make holes about 5 cm deep [APNI-SARI-2023:p11-depth].",
+    "- Another says avoid deeper than 5 cm, with 3 cm recommended [IITA-SSPING-2022:p18-depth].",
+    "- One source says 50 cm between rows and 15 cm between plants [APNI-SARI-2023:p11-spacing].",
+    "- Another says 50 cm between rows and 10 cm between plants [IITA-SSPING-2022:p17-spacing].",
+    "- Do not plant too early before rains are well established to avoid plant death from dry spells [IITA-SSPING-2022:p18-moisture]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 5, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 6, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 7, \"verdict\": \"supported\", \"why\": \"Matches source\"}\n]}"
+  },
+  {
+   "run": "E",
+   "task": "1 routine, region given",
+   "sentences": [
+    "To determine the best time to harvest your soybean near Tamale, look for when 9 out of 10 pods are mature, which means they are brown in color or dry.",
+    "Harvesting too late can cause the pods to become too dry and shatter.",
+    "To minimize shattering, harvest early in the morning [APNI-SARI-2023:harvest]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Matches passage\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Matches passage\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Matches passage\"}\n]}"
+  },
+  {
+   "run": "E",
+   "task": "4 conflicting sources",
+   "sentences": [
+    "For soybean planting in Tamale, the recommended row-to-row spacing is 50 cm [APNI-SARI-2023:p11-spacing][IITA-SSPING-2022:p17-spacing].",
+    "However, there is a conflict in the recommended spacing between plants within the row.",
+    "One source suggests 15 cm [APNI-SARI-2023:p11-spacing][APNI-SARI-2023:p11-depth], while another recommends 10 cm [IITA-SSPING-2022:p17-spacing].",
+    "Planting holes should be about 5 cm deep [APNI-SARI-2023:p11-depth]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Conflict exists\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Sources differ\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Passage matches\"}\n]}"
+  },
+  {
+   "run": "E",
+   "task": "10 region outside corpus",
+   "sentences": [
+    "For soybean planting in Kumasi, the recommended time is between mid-June and late July, based on the onset of rains and the variety [APNI-SARI-2023:p11-planting-window].",
+    "However, another source suggests planting between mid-June and mid-July, once the rains are well established [IITA-SSPING-2022:p18-planting-window].",
+    "Planting depth should be about 5 cm deep [APNI-SARI-2023:p11-depth], but another source recommends a depth of 3 cm, not exceeding 5 cm [IITA-SSPING-2022:p18-depth].",
+    "For plant spacing, one source recommends 50 cm between rows and 15 cm between plants in a row [APNI-SARI-2023:p11-spacing], while another suggests 50 cm between rows and 10 cm between plants within the rows [IITA-SSPING-2022:p17-spacing]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"not_supported\", \"why\": \"Wrong region\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Matches sources\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Matches sources\"}\n]}"
+  },
+  {
+   "run": "E",
+   "task": "11 Wa (Upper West) town name",
+   "sentences": [
+    "- **Planting Window**: Choose between mid-June and late July [APNI-SARI-2023:p11-planting-window], or mid-June to mid-July [IITA-SSPING-2022:p18-planting-window].",
+    "Ensure rains are well established to avoid dry spells [IITA-SSPING-2022:p18-moisture].",
+    "- **Planting Depth**: Plant seeds at 5 cm deep [APNI-SARI-2023:p11-depth], or ideally 3 cm, not deeper than 5 cm [IITA-SSPING-2022:p18-depth].",
+    "- **Plant Spacing**: Space rows 50 cm apart, with 15 cm between plants [APNI-SARI-2023:p11-spacing], or 10 cm between plants [IITA-SSPING-2022:p17-spacing]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Passage implies\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Passages match\"}\n]}"
+  },
+  {
+   "run": "E",
+   "task": "12 Twi-language question",
+   "sentences": [
+    "- One source suggests planting between mid-June and late July [APNI-SARI-2023:p11-planting-window].",
+    "- Another source recommends planting between mid-June and mid-July [IITA-SSPING-2022:p18-planting-window].",
+    "- One source recommends making planting holes about 5 cm deep [APNI-SARI-2023:p11-depth].",
+    "- Another source suggests a recommended depth of 3 cm, not deeper than 5 cm [IITA-SSPING-2022:p18-depth].",
+    "- One source recommends a row-to-row spacing of 50 cm and 15 cm spacing between plants in a row [APNI-SARI-2023:p11-spacing].",
+    "- Another source suggests 50 cm between rows and 10 cm between plants within the rows [IITA-SSPING-2022:p17-spacing]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 5, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 6, \"verdict\": \"supported\", \"why\": \"Matches source\"}\n]}"
+  },
+  {
+   "run": "F1",
+   "task": "1 routine, region given",
+   "sentences": [
+    "To determine the best time to harvest your soybean crop near Tamale, look for when 9 out of 10 pods are mature, which means they are brown in color or dry.",
+    "Harvesting too late can cause the pods to become too dry and shatter.",
+    "To minimize shattering, harvest early in the morning [APNI-SARI-2023:harvest]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Matches passage\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Passage implies\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Direct quote\"}\n]}"
+  },
+  {
+   "run": "F1",
+   "task": "4 conflicting sources",
+   "sentences": [
+    "For soybean planting in Tamale, maintain a row-to-row spacing of 50 cm.",
+    "However, there is a conflict in the recommended spacing between plants within the row.",
+    "One source suggests 15 cm [APNI-SARI-2023:p11-spacing], while another recommends 10 cm [IITA-SSPING-2022:p17-spacing].",
+    "Planting holes should be about 5 cm deep [APNI-SARI-2023:p11-depth]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Conflict exists\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Sources differ\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Matches passage\"}\n]}"
+  },
+  {
+   "run": "F1",
+   "task": "10 region outside corpus",
+   "sentences": [
+    "For soybean planting in Kumasi, the recommended planting window is between mid-June and late July, based on the onset of rains and the variety [APNI-SARI-2023:p11-planting-window].",
+    "However, another source suggests planting between mid-June and mid-July, ensuring rains are well established [IITA-SSPING-2022:p18-planting-window].",
+    "Planting depth should be about 5 cm deep [APNI-SARI-2023:p11-depth], but another source recommends a depth of 3 cm, not deeper than 5 cm [IITA-SSPING-2022:p18-depth].",
+    "For plant spacing, one source recommends 50 cm between rows and 15 cm between plants in a row [APNI-SARI-2023:p11-spacing], while another suggests 50 cm between rows and 10 cm between plants within the rows [IITA-SSPING-2022:p17-spacing]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"not_supported\", \"why\": \"wrong region\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"matches passage\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"matches passages\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"matches passages\"}\n]}"
+  },
+  {
+   "run": "F1",
+   "task": "11 Wa (Upper West) town name",
+   "sentences": [
+    "- One source suggests planting between mid-June and late July [APNI-SARI-2023:p11-planting-window].",
+    "- Another recommends mid-June to mid-July [IITA-SSPING-2022:p18-planting-window].",
+    "- One source recommends 5 cm deep planting holes [APNI-SARI-2023:p11-depth].",
+    "- Another advises a depth of 3 cm, not deeper than 5 cm [IITA-SSPING-2022:p18-depth].",
+    "- One source recommends 50 cm between rows and 15 cm between plants [APNI-SARI-2023:p11-spacing].",
+    "- Another suggests 50 cm between rows and 10 cm between plants [IITA-SSPING-2022:p17-spacing].",
+    "Additionally, ensure that the rains are well established before planting to avoid prolonged dry spells [IITA-SSPING-2022:p18-moisture]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Matches passage\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Matches passage\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Matches passage\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Matches passage\"},\n{\"n\": 5, \"verdict\": \"supported\", \"why\": \"Matches passage\"},\n{\"n\": 6, \"verdict\": \"supported\", \"why\": \"Matches passage\"},\n{\"n\": 7, \"verdict\": \"supported\", \"why\": \"Matches passage\"}\n]}"
+  },
+  {
+   "run": "F1",
+   "task": "12 Twi-language question",
+   "sentences": [
+    "- One source suggests planting between mid-June and late July [APNI-SARI-2023:p11-planting-window].",
+    "- Another source recommends mid-June to mid-July [IITA-SSPING-2022:p18-planting-window].",
+    "- One source recommends 5 cm deep planting holes [APNI-SARI-2023:p11-depth].",
+    "- Another source advises a depth of 3 cm, not deeper than 5 cm [IITA-SSPING-2022:p18-depth].",
+    "- One source recommends 50 cm between rows and 15 cm between plants in a row [APNI-SARI-2023:p11-spacing].",
+    "- Another source suggests 50 cm between rows and 10 cm between plants within the rows [IITA-SSPING-2022:p17-spacing].",
+    "- Do not plant too early before the rains are well established to avoid prolonged dry spells [IITA-SSPING-2022:p18-moisture]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 5, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 6, \"verdict\": \"supported\", \"why\": \"Matches source\"},\n{\"n\": 7, \"verdict\": \"supported\", \"why\": \"Matches source\"}\n]}"
+  },
+  {
+   "run": "F1",
+   "task": "F1",
+   "sentences": [
+    "The farmer should scout the maize field at least once a week, looking for unusual patterns such as insect damage or larvae [APNI-SARI-2023-MAIZE:p18-scouting].",
+    "Additionally, the farmer should consider rotating maize with non-host plants like groundnut and practice proper weeding to reduce future infestations [APNI-SARI-2023-MAIZE:p20-faw-prevention]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Matches passage\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Matches passage\"}\n]}"
+  },
+  {
+   "run": "F1",
+   "task": "F2",
+   "sentences": [
+    "- Scout the maize field at least once a week to monitor for armyworm signs [APNI-SARI-2023-MAIZE:p18-scouting].",
+    "- Rotate maize with non-host plants like groundnut to reduce infestations [APNI-SARI-2023-MAIZE:p20-faw-prevention].",
+    "- Deep plough, bury, or burn infested maize residues to lower armyworm populations in the next season [APNI-SARI-2023-MAIZE:p20-faw-prevention].",
+    "- Weed the maize field properly to minimize infestations [APNI-SARI-2023-MAIZE:p20-faw-prevention]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"not_supported\", \"why\": \"missing details\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"matches passage\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"matches passage\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"matches passage\"}\n]}"
+  },
+  {
+   "run": "F1",
+   "task": "F4",
+   "sentences": [
+    "The normal maize planting window in the Northern Region is between early June and July 10th [APNI-SARI-2023-MAIZE:p5-planting-window].",
+    "However, early maturing varieties like Ewul-Boyu and Wang Dataa can be planted up to the end of July [APNI-SARI-2023-MAIZE:p5-early-varieties]."
+   ],
+   "raw": "{\"verdicts\": [{\"n\": 1, \"verdict\": \"supported\", \"why\": \"matches passage\"}, {\"n\": 2, \"verdict\": \"supported\", \"why\": \"matches passage\"}]}"
+  },
+  {
+   "run": "F1",
+   "task": "F5",
+   "sentences": [
+    "It is still worth applying the subsidised fertiliser, but the timing is not ideal.",
+    "The best time for top-dressing is at 6 weeks after planting [APNI-SARI-2023-MAIZE:p13-topdress-timing].",
+    "If the soil is very dry, you should delay application until some rains are received to enhance nutrient uptake [APNI-SARI-2023-MAIZE:p13-topdress-moisture].",
+    "The first application (basal application) should have been applied at about two weeks after planting [APNI-SARI-2023-MAIZE:p13-basal-timing]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"not_supported\", \"why\": \"adds claim\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"direct quote\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"paraphrased\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"paraphrased\"}\n]}"
+  },
+  {
+   "run": "F1",
+   "task": "F6",
+   "sentences": [
+    "To prevent weevils in the next maize harvest, ensure the maize is well dried and shelled before storage.",
+    "The maize should have a moisture content of about 10 to 12% [APNI-SARI-2023-MAIZE:p22-drying].",
+    "Store the maize in jute sacks lined with polythene bags, and treat with recommended storage chemicals [APNI-SARI-2023-MAIZE:p22-sacks].",
+    "Storing unhusked maize is not recommended as it makes it difficult to detect insect infestations [APNI-SARI-2023-MAIZE:p22-shelling]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passage implies\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Direct quote\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Paraphrased\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Direct quote\"}\n]}"
+  },
+  {
+   "run": "F1",
+   "task": "F7",
+   "sentences": [
+    "The farmer's mouldy maize may have high aflatoxin levels.",
+    "The Ghana Standards Authority (GSA) sets a limit of 15 ppb for maize [AGBETIAMEH-2018:aflatoxin-limits].",
+    "If the levels exceed the GSA limit, the maize should not be sold for human consumption or used as animal feed."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passage implies\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Direct quote\"},\n{\"n\": 3, \"verdict\": \"not_supported\", \"why\": \"No mention\"}\n]}"
+  },
+  {
+   "run": "F2",
+   "task": "1 routine, region given",
+   "sentences": [
+    "To determine the best time to harvest your soybean crop near Tamale, look for when 9 out of 10 pods are mature, which means they are brown in color or dry.",
+    "Harvesting too late can cause the pods to become too dry and shatter.",
+    "To minimize shattering, harvest early in the morning [APNI-SARI-2023:harvest]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Matches passage\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Directly stated\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Direct quote\"}\n]}"
+  },
+  {
+   "run": "F2",
+   "task": "4 conflicting sources",
+   "sentences": [
+    "For soybean planting in Tamale, the recommended row-to-row spacing is 50 cm [APNI-SARI-2023:p11-spacing][IITA-SSPING-2022:p17-spacing].",
+    "However, there is a conflict in the recommended spacing between plants within the row.",
+    "One source suggests 15 cm [APNI-SARI-2023:p11-spacing][APNI-SARI-2023:p11-depth], while another recommends 10 cm [IITA-SSPING-2022:p17-spacing]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passages match\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Conflict exists\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Sources differ\"}\n]}"
+  },
+  {
+   "run": "F2",
+   "task": "10 region outside corpus",
+   "sentences": [
+    "For soybean planting in Kumasi, the recommended planting window is between mid-June and late July, based on the onset of rains and the variety [APNI-SARI-2023:p11-planting-window].",
+    "However, another source suggests planting between mid-June to mid-July when the rains are well established [IITA-SSPING-2022:p18-planting-window].",
+    "Regarding planting depth, one source recommends making planting holes about 5 cm deep [APNI-SARI-2023:p11-depth], while another advises a depth of 3 cm, not deeper than 5 cm, to avoid loss of seed vigor and poor germination [IITA-SSPING-2022:p18-depth].",
+    "For plant spacing, one source suggests a row-to-row spacing of 50 cm and 15 cm between plants in a row [APNI-SARI-2023:p11-spacing], while another recommends 50 cm between rows and 10 cm between plants within the rows [IITA-SSPING-2022:p17-spacing]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"not_supported\", \"why\": \"wrong region\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"matches passage\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"matches passages\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"matches passages\"}\n]}"
+  },
+  {
+   "run": "F2",
+   "task": "11 Wa (Upper West) town name",
+   "sentences": [
+    "For soybean planting at Wa, choose a planting window.",
+    "One source says mid-June to late July [APNI-SARI-2023:p11-planting-window], another says mid-June to mid-July [IITA-SSPING-2022:p18-planting-window].",
+    "Plant when rains are well established to avoid dry spells [IITA-SSPING-2022:p18-moisture].",
+    "Choose a planting depth.",
+    "One source says 5 cm [APNI-SARI-2023:p11-depth], another says 3 cm, not deeper than 5 cm [IITA-SSPING-2022:p18-depth].",
+    "Choose a plant spacing.",
+    "One source says 15 cm between plants in a row [APNI-SARI-2023:p11-spacing], another says 10 cm between plants in a row [IITA-SSPING-2022:p17-spacing]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passages imply\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Passages state\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Passage implies\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Passages imply\"},\n{\"n\": 5, \"verdict\": \"supported\", \"why\": \"Passages state\"},\n{\"n\": 6, \"verdict\": \"supported\", \"why\": \"Passages imply\"},\n{\"n\": 7, \"verdict\": \"supported\", \"why\": \"Passages state\"}\n]}"
+  },
+  {
+   "run": "F2",
+   "task": "12 Twi-language question",
+   "sentences": [
+    "For soybean planting in Tamale, the recommended planting window varies.",
+    "One source suggests between mid-June and late July [APNI-SARI-2023:p11-planting-window], while another recommends mid-June to mid-July [IITA-SSPING-2022:p18-planting-window].",
+    "Regarding planting depth, one source advises making holes about 5 cm deep [APNI-SARI-2023:p11-depth], while another recommends a depth of 3 cm, not exceeding 5 cm [IITA-SSPING-2022:p18-depth].",
+    "For plant spacing, one source recommends 50 cm between rows and 15 cm between plants [APNI-SARI-2023:p11-spacing], while another suggests 50 cm between rows and 10 cm between plants [IITA-SSPING-2022:p17-spacing].",
+    "Always ensure that the rains are well established before planting to avoid prolonged dry spells that may harm the plants [IITA-SSPING-2022:p18-moisture]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passages imply variation\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Passages state ranges\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Passages state depths\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Passages state spacings\"},\n{\"n\": 5, \"verdict\": \"supported\", \"why\": \"Passage implies risk\"}\n]}"
+  },
+  {
+   "run": "F2",
+   "task": "F1",
+   "sentences": [
+    "The farmer should scout the maize field at least once a week, looking for unusual patterns such as insect damage, larvae, or eggs on leaves, cobs, or stems, and stunted growth [APNI-SARI-2023-MAIZE:p18-scouting].",
+    "Additionally, the farmer should consider rotating maize with non-host plants like groundnut, deep ploughing or burning infested residues, and proper weeding to reduce future infestations [APNI-SARI-2023-MAIZE:p20-faw-prevention]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Matches passage\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Matches passage\"}\n]}"
+  },
+  {
+   "run": "F2",
+   "task": "F2",
+   "sentences": [
+    "Instead, the farmer should scout the field at least once a week to monitor for signs of infestation [APNI-SARI-2023-MAIZE:p18-scouting].",
+    "Preventive measures such as crop rotation, deep ploughing, and proper weeding are suggested to reduce infestations [APNI-SARI-2023-MAIZE:p20-faw-prevention]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passage matches\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Passage matches\"}\n]}"
+  },
+  {
+   "run": "F2",
+   "task": "F4",
+   "sentences": [
+    "The ideal maize planting window in the Northern Region is between early June and July 10th for better yields [APNI-SARI-2023-MAIZE:p5-planting-window].",
+    "However, early maturing varieties like Ewul-Boyu and Wang Dataa can still be planted up to the end of July [APNI-SARI-2023-MAIZE:p5-early-varieties]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passage matches\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Passage matches\"}\n]}"
+  },
+  {
+   "run": "F2",
+   "task": "F5",
+   "sentences": [
+    "It is still worth applying the subsidised fertiliser, but the timing is not ideal.",
+    "The best time for top-dressing is at 6 weeks after planting [APNI-SARI-2023-MAIZE:p13-topdress-timing].",
+    "If the soil is very dry, application should be delayed until some rains are received [APNI-SARI-2023-MAIZE:p13-topdress-moisture].",
+    "The first application (basal application) should have been applied at about two weeks after planting [APNI-SARI-2023-MAIZE:p13-basal-timing]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"not_supported\", \"why\": \"adds claim\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"direct quote\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"direct quote\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"paraphrase\"}\n]}"
+  },
+  {
+   "run": "F2",
+   "task": "F6",
+   "sentences": [
+    "To prevent weevils in the next maize harvest, ensure the maize is well dried and shelled before storage.",
+    "The maize should have a moisture content of about 10 to 12% [APNI-SARI-2023-MAIZE:p22-drying].",
+    "Store the maize in jute sacks lined with polythene bags, and treat with recommended storage chemicals [APNI-SARI-2023-MAIZE:p22-sacks].",
+    "Do not store unhusked maize, as it is difficult to detect insect infestations [APNI-SARI-2023-MAIZE:p22-shelling]."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passage implies\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Direct quote\"},\n{\"n\": 3, \"verdict\": \"supported\", \"why\": \"Passage matches\"},\n{\"n\": 4, \"verdict\": \"supported\", \"why\": \"Passage matches\"}\n]}"
+  },
+  {
+   "run": "F2",
+   "task": "F7",
+   "sentences": [
+    "The farmer's mouldy maize may contain aflatoxins, which are harmful to humans and animals.",
+    "The Ghana Standards Authority (GSA) has set a limit of 15 ppb for aflatoxins in maize [AGBETIAMEH-2018:aflatoxin-limits].",
+    "If the levels exceed the GSA limit, the maize should not be sold for human consumption or used as animal feed."
+   ],
+   "raw": "{\"verdicts\": [\n{\"n\": 1, \"verdict\": \"supported\", \"why\": \"Passage implies\"},\n{\"n\": 2, \"verdict\": \"supported\", \"why\": \"Direct quote\"},\n{\"n\": 3, \"verdict\": \"not_supported\", \"why\": \"No mention\"}\n]}"
+  }
+ ]
+}
