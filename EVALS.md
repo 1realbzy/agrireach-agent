@@ -2,7 +2,67 @@
 
 **All hand grades in this file are self-graded by the AgriReach authors. A re-grade by an extension officer is pending; until then, treat "Pass" as the authors' judgement, not an agronomic sign-off.**
 
-## Latest: 25 Oct 2026 (UTC), live runs on `a5e9192` (runs A1, A2, EJB1-EJB5, C1)
+## Latest: 25 Oct 2026 (UTC), live runs on `cc7cf4c` (runs B1, B2, EJC1-EJC5, C2)
+
+Full write-up and raw output: [docs/live-eval-2026-10-25-run4.md](docs/live-eval-2026-10-25-run4.md).
+
+**Setup:** the same method and models as the runs below (drafter `mistralai/mistral-small-3.2-24b-instruct`, judge `meta-llama/llama-3.3-70b-instruct`, OpenRouter, temperature 0). The code adds:
+- the F1 safety-line fixes;
+- whole-sentence shapes for the run3 false rejects;
+- more late-timing wordings.
+
+**All real model output:** **119 of 119 model calls succeeded**, so no task used a stub because a call failed.
+
+| Run | Calls | OpenRouter cost | Wall time | Per question (11 agent runs) | On `a5e9192` |
+|---|---|---|---|---|---|
+| B1: F1–F14 | 33/33 | $0.003119 | 165 s | $0.000284 | A1 $0.003515, 163 s |
+| B2: F1–F14 | 36/36 | $0.003824 | 151 s | $0.000348 | A2 $0.004807, 132 s |
+| EJC: Ejura ×5 | 22/22 | $0.005186 | 347 s | $0.001037 per run | $0.004764, 185 s |
+| C2: core 1–12 | 28/28 | $0.004275 | 162 s | – | $0.004328, 131 s |
+
+**Field auto checks:** 11/12 in both runs (F4). **Model drafts that passed:** 7/10 in both runs.
+
+**Variation:** 1 of 12 tasks changed draft outcome (F1 passed first time, then second time). No task moved between model and fallback.
+
+**F1 safety line:** kept in **1 of 2** runs.
+- B2: the accepted model SMS keeps it, and "are still a problem" is no longer flagged.
+- B1: the line is dropped by a new cause. The draft wrote it as "the officer should consult the local AEA… pesticide". The model SMS that kept it was too long (723 characters). The rule rewrite then dropped the sentence as an officer instruction. The officer gets the "drops the pesticide safety line" note.
+
+**F5 and the Ejura rainfall figures are still rejected:**
+- F5: 4 of 4 attempts were stopped by the late-timing layer.
+- Ejura: 0 of 5 SMS contain rainfall figures.
+
+**Late-timing flags:** 6, all true (F4 "can still plant… end of July" ×2, F5 ×4). There were 0 false flags. "You still have time" didn't occur.
+
+**Ejura planting** (5 runs each):
+
+| | `e12846c` | `a6222d1` | `a5e9192` | `cc7cf4c` |
+|---|---|---|---|---|
+| Passed first attempt | 0 | 2 | 1 | 1 |
+| Passed after regeneration | 2 | 1 | 1 | 1 |
+| Verbatim fallback | 3 | 2 | 3 | 3 |
+
+**False rejects (self-graded by the authors):** 3 of 25 model-drafted cases fell back only on false rejects (**12%**, the same as on `a5e9192`). Of 21 draft judge verdicts, 14 were false, 2 borderline and 5 true.
+
+**What the new shapes fixed:** "Inspect… or refer to a specialist if unsure." and "A rainfall record is attached for the officer's reference." now pass. Core tasks 11 and 12 now give model drafts that pass.
+
+**Near-miss false rejects still there:**
+- "Choose the window that best fits your local conditions." ×4;
+- "…this is a model estimate and may differ from local conditions." ×2;
+- "Do not know if the maize can be sold or fed to animals.";
+- "Sources give different figures for the maize planting window." ×3;
+- the lexical layer still rejects "The officer should inspect the leaves or refer the farmer to an expert for a diagnosis." and "I do not know which chemical to use." (core task 5).
+
+**New false accepts:** none found.
+
+**Open:**
+- the F1 safety-line drop when the draft says "the officer should consult… AEA";
+- the near-miss shapes above;
+- the SMS judge rejects correctly presented spacing options (core tasks 4, 10, 11);
+- not re-tested: approval criteria 1–4, the "(MoFA) ." split, the empty fallback and the audit-log gap;
+- Twi and Dagbani are untested.
+
+## Earlier: 25 Oct 2026 (UTC), live runs on `a5e9192` (runs A1, A2, EJB1-EJB5, C1)
 
 Full write-up and raw output: [docs/live-eval-2026-10-25-run3.md](docs/live-eval-2026-10-25-run3.md).
 
