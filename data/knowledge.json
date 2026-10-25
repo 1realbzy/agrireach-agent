@@ -41,12 +41,13 @@
   },
   "MOFA-MAIZE": {
    "title": "Maize Production Guide",
-   "publisher": "Ministry of Food and Agriculture (MoFA), Ghana, Directorate of Agricultural Extension Services (DAES); prepared under the Planting for Food and Jobs campaign",
+   "publisher": "Ministry of Food and Agriculture (MoFA), Ghana, Directorate of Agricultural Extension Services (DAES)",
    "year": "not stated (PDF created 2020)",
    "region": "Ghana (all agro-ecological zones)",
    "licence": "Not an open licence. The document states: 'Shorts extracts of this publication may be reproduced in any non-advertising, non-profit-making context provided that the source is acknowledged'",
    "url": "https://mofa.gov.gh/site/images/pdf/production_guides/GUIDE_TO_MAIZE_PRODUCTION.pdf",
-   "landing_url": "https://mofa.gov.gh/site/publications/production-guides"
+   "landing_url": "https://mofa.gov.gh/site/images/pdf/production_guides/GUIDE_TO_MAIZE_PRODUCTION.pdf",
+   "landing_note": "MoFA's production-guides page does not link this guide, so the PDF itself is the landing URL. The agent's source check then only shows the PDF answers: the first 20,000 characters of the raw PDF don't contain the word 'maize', and the match comes from the file name in the URL."
   },
   "IITA-MAIZE-2025": {
    "title": "Guide for sustainable maize production in Ghana",
