@@ -139,7 +139,9 @@ def not_judged(bare: str) -> bool:
 LATE_CLAIM_RE = re.compile(r"\b(?:can|could|may|might)\s+still\b"
                            r"|\bstill\s+(?:worth|ok|okay|fine|possible|useful|in\s+time|time|help|apply|plant|sow"
                            r"|be\s+(?:applied|planted|sown|done|used))\b"
-                           r"|\b(?:there\s+is|you\s+have)\s+still\s+time\b|\bnot\s+too\s+late\b", re.I)
+                           r"|\b(?:there\s+is|you\s+have)\s+still\s+time\b|\bnot\s+too\s+late\b"
+                           # Scoffer probe on 9219e1b: "You still have time to plant." / "It is not late to plant."
+                           r"|\bstill\s+have\s+time\b|\b(?:it\s+is|it's|it\u2019s)\s+not\s+late\s+(?:to|for|yet)\b", re.I)
 # "can be planted up to end of July" speaks about late timing; "delay ... until some rains" (moisture) does not.
 LATE_SUPPORT_RE = re.compile(r"\b(?:late|later|still|missed|up\s+to)\b", re.I)
 NEGATED_AGREE = re.compile(r"\b(?:not|n't|never|dis)\s*agree|\bdo\s+not\s+agree|\bdiffer|\bdisagree", re.I)
