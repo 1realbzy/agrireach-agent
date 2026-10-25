@@ -100,6 +100,7 @@ class S(TypedDict, total=False):
     language: str
     search_query: str
     skip_retrieval: bool
+    extra_urgent_reasons: list
     conflicts: dict
     citation_check: dict
     source_checks: list
@@ -134,7 +135,7 @@ def build_graph(tools: Tools):
         q = s["question"].lower()
         lang = "twi" if language.is_twi(s["question"]) else "en"
         search_query = s["question"]
-        reasons = []
+        reasons = list(s.get("extra_urgent_reasons") or [])
         if lang == "twi":
             gl = language.gloss(s["question"])
             search_query = f"{gl} {s['question']}".strip()
@@ -168,6 +169,11 @@ def build_graph(tools: Tools):
         if clar and lang == "twi":
             # Never answer a Twi speaker with an English question: route the case to an officer instead.
             reasons.append(f"could not ask the farmer a clarifying question in Twi; officer should ask: {clar}")
+            clar = ""
+        elif clar and s.get("extra_urgent_reasons"):
+            # The question itself may be wrong (e.g. an unreliable voice-note transcript): don't ask the farmer an
+            # automatic question about it; the officer checks first.
+            reasons.append(f"no automatic clarifying question because of the flags above; officer should ask: {clar}")
             clar = ""
         case = await tools.call("create_or_update_case", {"status": "draft", "question": s["question"], "crop": crop,
                                                           "region": region})
@@ -319,7 +325,9 @@ def build_graph(tools: Tools):
     return g.compile()
 
 
-async def run(question: str, crop: str = "", region: str = "", use_fetch: bool | None = None) -> dict:
+async def run(question: str, crop: str = "", region: str = "", use_fetch: bool | None = None,
+              extra_urgent_reasons: list[str] | None = None) -> dict:
+    """extra_urgent_reasons: reasons found before the agent ran (e.g. an unreliable voice-note transcript)."""
     if use_fetch is None:
         use_fetch = os.getenv("AGRIREACH_SOURCE_CHECK", "1") == "1"
     own_p, fetch_p = _server_params()
@@ -336,7 +344,8 @@ async def run(question: str, crop: str = "", region: str = "", use_fetch: bool |
             except Exception:
                 fetch = None
         graph = build_graph(Tools(own, fetch))
-        out = await graph.ainvoke({"question": question, "crop": crop, "region": region})
+        out = await graph.ainvoke({"question": question, "crop": crop, "region": region,
+                                   "extra_urgent_reasons": list(extra_urgent_reasons or [])})
     return {k: out.get(k) for k in ("case_id", "status", "crop", "region", "clarification", "draft", "draft_mode",
                                      "urgent_reasons", "source_checks", "errors", "language",
                                      "citation_check")} | {
