@@ -132,3 +132,15 @@ def test_model_draft_caution_names_the_actual_zone_when_passages_are_not_norther
     assert out["zone_mismatch"] is True and out["citation_check"]["ok"]
     assert out["draft"].startswith("Caution:") and "transition zone" in out["draft"].split("\n\n")[0]
     assert "Kumasi" in out["draft"].split("\n\n")[0] and "Northern Ghana only" not in out["draft"]
+
+
+def test_identical_windows_from_two_sources_are_not_a_conflict():
+    # MoFA "End of March-end of April" and IITA "End of March - End of April" (coastal, major) say the same thing.
+    out = run("When should I plant maize in Accra for the major season?")
+    assert not any("sources differ" in r for r in out["urgent_reasons"])
+    assert "sources differ: edit to keep only the option you choose" not in out["farmer_draft"]["problems"]
+    minor = run("When should I plant maize in Kumasi for the minor season?")  # mid July - early September in both
+    assert not any("minor season" in r for r in minor["urgent_reasons"] if "sources differ" in r)
+    # Transition major season really differs: mid-March (MoFA) vs end of March (IITA)
+    major = run("When should I plant maize in Techiman for the major season?")
+    assert any(r.startswith("sources differ on maize planting window major season") for r in major["urgent_reasons"])

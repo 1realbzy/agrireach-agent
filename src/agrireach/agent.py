@@ -79,6 +79,13 @@ def _fit_to_zone(passages: list[dict], zone: dict | None, season: str) -> list[d
     return [p for p in passages if zones.covers(p, zone["zones"]) or p["topic"] not in local_topics]
 
 
+def _same_figures(group: list[dict]) -> bool:
+    """True if every passage states exactly the same figures and dates (e.g. MoFA "End of March-end of April" and
+    IITA "End of March - End of April"): different sources, same advice, so not a conflict for the officer."""
+    sets = {frozenset(f.value for f in citation_check.extract_figures(p["text"])) for p in group}
+    return len(sets) == 1 and bool(next(iter(sets)))
+
+
 def _crops_covered() -> list[str]:
     """Crops in the corpus. Empty if the corpus can't be read; retrieval then reports the tool error itself."""
     try:
@@ -267,7 +274,7 @@ def build_graph(tools: Tools):
         conflicts = {}
         for k, group in by_key.items():
             srcs = {p["source_id"] for p in group}
-            if len(srcs) > 1:
+            if len(srcs) > 1 and not _same_figures(group):
                 conflicts[k] = group
                 reasons.append(f"sources differ on {k.replace('_', ' ')}: {', '.join(sorted(srcs))}")
                 notes.append(f"Sources give different figures for {k.replace('_', ' ')}; officer should choose.")
