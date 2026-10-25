@@ -18,6 +18,14 @@ a real SMS. Everything below was tested only against mocked HTTP responses (`tes
   took the message, not that the phone received it: delivery reports are not handled yet. Any other status, an HTTP
   error, a network error or an unreadable response is recorded on the case as a failed delivery. The farmer's number
   is masked in that record.
+- **A failed send never looks delivered.** This applies to every channel, not just SMS. The case moves from
+  `released` to `not_delivered`. It goes back into the officer queue with the recorded reason, and the farmer view
+  says the answer hasn't been sent yet, without showing the text. From there the officer can:
+  - approve it again, editing it first if needed. This is a fresh, confirmed approval by the signed-in officer, and
+    the log records it as a re-approval after a failed delivery;
+  - or retry the same text with `POST /cases/{id}/release`.
+
+  Once a send succeeds, the case stays `released`. A further decision or release is then refused with a 409.
 - **Inbound**: `POST /channels/sms/inbound/<SMS_WEBHOOK_TOKEN>` takes Africa's Talking's incoming-message callback
   (form fields `from`, `text`, `id`, `to`, `date`, `linkId`, `networkCode`). It answers 200 at once and makes a case
   in a background task through the same `handle_inbound` path as the other channels. That means the first-contact
