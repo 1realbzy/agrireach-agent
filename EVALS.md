@@ -43,6 +43,11 @@ Full write-up and raw output: [docs/live-eval-2026-10-25-run6-approval.md](docs/
 
 **False rejects:** 12% (3/25, self-graded, run 4) is still the accepted documented limit. No more judge shapes.
 
+### Known limits found in run 7 (`d37b84b`, docs/live-eval-2026-10-25-run7-final.md), left as they are for the freeze
+- The judge sometimes warns "Extra source" on F5 sentences that are word-for-word copies of a passage. It is a false warning that the officer sees, and nothing unsafe gets through.
+- 6 of 104 model calls hit upstream rate limits. Those cases used the offline stub draft, were still queued and acknowledged, and the proposal log now marks them `offline_draft` (see `tests/test_run7_audit_draft_origin.py`).
+- The approval-time safety-line check matches the source's own sentence, so the same sentence with "Do not" in front ("Do not consult your local AEA ...") still counts as kept. An officer is unlikely to write that, and the approval-time source check should flag it, though that is not tested.
+
 ### Known limit: F1's model SMS and the length limit (branch `fix/run5-findings`, offline tests only, not yet live-tested)
 - A model SMS is never trimmed. The source's pesticide sentence goes in word for word after the caveat. If the result is over 600 characters or 4 SMS parts, the model SMS is rejected and the rule text is used.
 - On `fb923be`, F1's faithful model SMS was **always** rejected for length. The model's own AEA/pesticide sentence plus the inserted source line took it over 600: 678 in run 6 F1-a, 683 and 830 for B1, and 723 in run 4. So F1 always got the rule text.

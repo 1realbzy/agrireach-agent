@@ -435,11 +435,18 @@ def propose(officer_text: str, question: str = "", language: str = "en", conflic
     return fd
 
 
-def audit_entry(fd: FarmerDraft) -> tuple[dict, str]:
+def audit_entry(fd: FarmerDraft, draft_mode: str | None = None) -> tuple[dict, str]:
     """(args, summary) for the tool_log 'farmer_text_proposal' entry: why the farmer text is what it is (run 5: an
-    auditor reading only the log couldn't see why a model SMS was replaced by the rule text)."""
-    a = fd.audit
+    auditor reading only the log couldn't see why a model SMS was replaced by the rule text).
+    draft_mode is how the officer draft behind it was made (agent draft_mode: llm:<model> or stub(...)). Run 7: the
+    log didn't say when that draft was the code-built offline stub (no model key, a failed model call, or the
+    citation-check fallback), so a stub run could not be told from a real model run."""
+    a = dict(fd.audit)
     why = []
+    if draft_mode is not None:
+        a["draft_mode"], a["offline_draft"] = draft_mode, draft_mode.startswith("stub")
+        if a["offline_draft"]:
+            why.append(f"officer draft was the offline stub draft (no language model): {draft_mode}")
     if a.get("model_rejected"):
         why.append("model SMS rejected: " + "; ".join(a["model_rejected"]))
     if a.get("model_error"):
