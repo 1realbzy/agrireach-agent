@@ -100,3 +100,35 @@ def test_detect_season():
     assert zones.detect_season("second season maize") == "minor"
     assert zones.detect_season("major season") == "major"
     assert zones.detect_season("When should I plant maize?") == ""
+
+
+def test_edge_flag_only_for_districts_never_for_a_region_name():
+    assert zones.zone_for("Ashanti")["boundary"] is False
+    assert zones.zone_for("Brong Ahafo")["boundary"] is False
+    assert zones.zone_for("Ejura")["boundary"] is True  # Ejura/Sekyedumase district
+    out = run("When should I plant maize in Ashanti?")
+    assert "near the edge" not in out["draft"]
+    assert "near the edge" in run("When should I plant maize in Ejura?")["draft"]
+
+
+def test_model_draft_caution_names_the_actual_zone_when_passages_are_not_northern(monkeypatch, tmp_path):
+    """Soybean passages re-tagged as transition-only in a copy of the corpus: a Kumasi (deciduous forest) question must
+    get a caution naming the transition zone, not 'Northern Ghana only'."""
+    import json
+    from test_eval_failures import GOOD_WA, fake_llm
+    kb = json.loads(knowledge.DEFAULT.read_text())
+    for p in kb["passages"]:
+        if p["crop"] == "soybean":
+            p["zones"] = ["transition"]
+    path = tmp_path / "kb.json"
+    path.write_text(json.dumps(kb))
+    monkeypatch.setenv("AGRIREACH_KNOWLEDGE", str(path))
+    knowledge.load.cache_clear()
+    try:
+        fake_llm(monkeypatch, [GOOD_WA])
+        out = run("When should I plant soybean in Kumasi?")
+    finally:
+        knowledge.load.cache_clear()
+    assert out["zone_mismatch"] is True and out["citation_check"]["ok"]
+    assert out["draft"].startswith("Caution:") and "transition zone" in out["draft"].split("\n\n")[0]
+    assert "Kumasi" in out["draft"].split("\n\n")[0] and "Northern Ghana only" not in out["draft"]

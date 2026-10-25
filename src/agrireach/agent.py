@@ -125,6 +125,7 @@ class S(TypedDict, total=False):
     conflicts: dict
     zone: dict
     zone_mismatch: bool
+    mismatch_zones: str
     citation_check: dict
     source_checks: list
     status: str
@@ -214,7 +215,7 @@ def build_graph(tools: Tools):
             reasons.append(f"no local reference for region '{region}' (agroecological zone unknown; corpus covers "
                            "Northern Ghana only for most topics)")
             notes.append(f"AgriReach does not know which agroecological zone {region} is in; officer should confirm.")
-        elif zone and zone["boundary"]:
+        elif zone and zone["boundary"] and zone["district"]:
             notes.append(f"{region.title()} is near the edge of the {zones.label(zone['zone'])} zone (AgriReach's "
                          "approximate zone map): officer should confirm which zone's timing applies.")
         passages, cal = [], []
@@ -247,9 +248,11 @@ def build_graph(tools: Tools):
             reasons.append("no grounded evidence found in corpus")
         passages = _fit_to_zone(passages, zone, zones.detect_season(query))
         mismatched = [p for p in passages if region and (zone is None or not zones.covers(p, zone["zones"]))]
+        where = ""
         if zone and mismatched:
             where = _join(sorted({zones.label(z) for p in mismatched for z in p.get("zones") or zones.NORTHERN_ZONES}))
             if all(set(p.get("zones") or zones.NORTHERN_ZONES) <= zones.NORTHERN_ZONES for p in mismatched):
+                where = ""  # Northern Ghana guides: the standing Northern Ghana caution applies
                 reasons.append(f"no local reference for region '{region}' ({zones.label(zone['zone'])} zone; corpus "
                                "covers Northern Ghana only for this question)")
                 notes.append(f"The curated sources are for Northern Ghana; they may not apply in {region}.")
@@ -278,7 +281,7 @@ def build_graph(tools: Tools):
             notes.append("Possible food-safety risk (mould/aflatoxin): AgriReach cannot clear produce for sale, food "
                          "or feed. Officer should advise.")
         return {"passages": passages, "calendar": cal, "errors": errors, "notes": notes, "conflicts": conflicts,
-                "zone": zone, "zone_mismatch": bool(mismatched),
+                "zone": zone, "zone_mismatch": bool(mismatched), "mismatch_zones": where,
                 "urgent_reasons": sorted(set(reasons), key=reasons.index)}
 
     async def check_sources(s: S) -> S:
@@ -344,9 +347,14 @@ def build_graph(tools: Tools):
             reasons.append("citation check failed: " + "; ".join(attempts[-1]["problems"])[:MAX_REASON_CHARS])
         region = s.get("region") or ""
         if region and s.get("zone_mismatch") and not text.startswith(llm.STUB_LABEL):
-            # Added by code, not left to the model: the guidance below is from Northern Ghana sources.
-            text = (f"Caution: the curated sources cover Northern Ghana only. The guidance below comes from them and "
-                    f"may not apply in {region.title()}; the officer should confirm local timing.\n\n{text}")
+            # Added by code, not left to the model: name where the guidance below is from.
+            if s.get("mismatch_zones"):
+                here = f" ({zones.label(s['zone']['zone'])} zone)" if s.get("zone") else ""
+                text = (f"Caution: some of the guidance below is from sources for the {s['mismatch_zones']} zone and "
+                        f"may not apply in {region.title()}{here}; the officer should confirm local timing.\n\n{text}")
+            else:
+                text = (f"Caution: the curated sources cover Northern Ghana only. The guidance below comes from them "
+                        f"and may not apply in {region.title()}; the officer should confirm local timing.\n\n{text}")
         return {"draft": text, "draft_mode": used, "citation_check": check,
                 "urgent_reasons": sorted(set(reasons), key=reasons.index)}
 
