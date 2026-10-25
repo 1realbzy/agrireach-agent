@@ -141,7 +141,7 @@ Limits: figures are matched by a fixed word list next to each number. Uncited se
 
 ## Human in the loop workflow
 
-No advice ever reaches a farmer without approval from a named extension officer. The agent drafts, and the officer decides. Every draft advisory enters a review queue. Risk and uncertainty only set its priority: cases where sources conflict, the location or crop context is missing, confidence is low, or advice could have material consequences go to the urgent queue, and all other cases go to the routine queue. The extension officer can review the original question, retrieved references, draft advisory, and reason for any urgent flag. The officer can approve, edit, reject, or request more information, and each decision is recorded with the officer's name and a timestamp. The agent must not autonomously prescribe hazardous chemical use or present a suspected plant disease as a confirmed diagnosis.
+No advice ever reaches a farmer without approval from a named extension officer. The agent drafts, and the officer decides. Every draft advisory enters a review queue. Risk and uncertainty only set its priority: cases where sources conflict, the location or crop context is missing, confidence is low, or advice could have material consequences go to the urgent queue, and all other cases go to the routine queue. The extension officer can review the original question, retrieved references, draft advisory, and reason for any urgent flag. The officer can approve, edit, reject, or request more information, and each decision is recorded with the officer's name and a timestamp. Approval covers the exact text the farmer receives: the officer sees the cited draft and a short plain-language farmer version, can edit either, and the approved farmer text is what is sent. The agent must not autonomously prescribe hazardous chemical use or present a suspected plant disease as a confirmed diagnosis.
 
 ## Development roadmap
 
@@ -151,7 +151,9 @@ Done (23 Oct, review): the check also compares each figure's limit ("not deeper 
 Done (25 Oct): 14 field-evidence evals (EVALS F1-F14) from public reports, verified maize and aflatoxin passages, routing of uncovered crops and contact requests to the officer.
 Done (25 Oct): claim check for sentences without figures (named sources, agreement claims, lexical support) and an optional, separate judge model, with measured false-reject rates.
 Done (25 Oct, local only): voice-note channel. A voice note or text with a sender id goes through local speech-to-text (faster-whisper) into a case; the officer-approved answer goes back through the same channel as text, optionally with a Piper voice. A local simulator (CLI and Streamlit tab) stands in for the phone. A WhatsApp Cloud API adapter exists as code only, off by default and never registered or deployed. See [docs/voice-channel.md](docs/voice-channel.md) and [docs/whatsapp-setup.md](docs/whatsapp-setup.md).
-Next: test speech-to-text on real, consented voice notes; expand the place list into a fuller district gazetteer, record the demo video, then consider a weather tool and real Twi support with native-speaker review.
+Done (25 Oct, local only): farmer-facing reply (the officer approves the exact plain text that is sent; citations stay in the officer view), place-name confirm-back after speech-to-text using a gazetteer of Ghana's 261 districts, first-contact consent, STOP and a retention purge.
+
+Next: test speech-to-text on real, consented voice notes, record the demo video, then consider a weather tool and real Twi support with native-speaker review.
 
 ## Limitations
 
@@ -159,7 +161,7 @@ Next: test speech-to-text on real, consented voice notes; expand the place list 
 - Coverage is limited to the curated documents: Northern Ghana soybean and maize, plus the national maize aflatoxin limit. Other crops, prices and contact details are always passed to the officer.
 - The quality of recommendations depends on the authority and freshness of source material.
 - Text based advice may not be enough to diagnose a plant health issue.
-- Voice notes: speech-to-text was tested only on synthetic US-English clips. It is not tested on Ghanaian-accented English, and Whisper does not support Twi, Dagbani or Wali; such notes are flagged for the officer to listen to. The town name "Wa" is transcribed as "war". The WhatsApp adapter has never sent or received a real message.
+- Voice notes: speech-to-text was tested on synthetic US-English clips and on 10 Ghanaian broadcast-English clips (run S1: 52.5% word error rate with Whisper "base", language mis-detected in 7/10; all 10 flagged for the officer). It is not tested on real farmer voice notes, and Whisper does not support Twi, Dagbani or Wali; such notes are flagged for the officer to listen to. Misheard place names ("Wa" -> "war") are confirmed back with the farmer, not corrected silently. The consent wording has had no legal review. The WhatsApp adapter has never sent or received a real message.
 - Twi support is detection plus a keyword gloss only: AgriReach cannot translate or reply in Twi, so Twi cases go to the officer as urgent. Other local languages are not handled. Offline access and accessibility require further work.
 - The citation check confirms that every date and number in a draft, and any limit on it ("up to", "not deeper than", "at least"), appears in the passage it cites. Sentences without figures get code checks (named sources, agreement claims, at least one shared word) and an optional judge model; without the judge, a sentence that shares words with its passage but says something the passage doesn't will pass.
 - Weather coverage and API access have not yet been verified.

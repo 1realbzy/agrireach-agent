@@ -42,8 +42,9 @@ Keep these in a local env file outside the repo. `Config.__repr__` hides them, a
 3. Replies outside WhatsApp's 24-hour customer-service window need an approved template message. The adapter only
    sends free-form text, so an officer approval that comes more than 24 hours after the farmer's message will fail
    (the failure is recorded on the case). Template support is not built.
-4. Farmer consent and a privacy notice: the farmer's phone number is stored with the case so the answer can be sent
-   back. Decide retention and deletion first.
+4. Farmer consent and a privacy notice: a first-contact consent prompt, STOP and a retention purge exist
+   (docs/voice-channel.md), but the wording needs legal review against Ghana's Data Protection Act 2012 (Act 843),
+   and WhatsApp's own opt-in rules for business messaging apply.
 5. Test speech-to-text on real, consented voice notes from the target farmers before relying on it (see
    [voice-channel.md](voice-channel.md): it has only been tested on synthetic US-English speech).
 6. Rate limits, retries for failed sends, and monitoring are not built.

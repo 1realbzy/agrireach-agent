@@ -35,3 +35,13 @@ def test_f14_is_now_a_runnable_eval():
     e = next(x for x in evalset.load() if x["id"] == "F14")
     assert not e.get("skip") and e["kind"] == "voice_script"
     assert evalset.grade_voice_script(e) == []
+
+
+def test_stt_flags_looping_or_prompt_echo_transcripts():
+    from agrireach.channels import stt
+    for bad in ["Croppea. Croppea. Croppea. Croppea.",
+                "The land of Wa, Bolgatanga, Wa, Bolgatanga, and the land of Wa, Bolgatanga, and the land of Wa."]:
+        t = stt.check(stt.Transcript(bad, "en", 0.9, 5, "fake"))
+        assert any("repeats itself" in w for w in t.warnings)
+    ok = stt.check(stt.Transcript("When should I harvest my soybean? I farm near Tamale.", "en", 0.9, 5, "fake"))
+    assert ok.warnings == []

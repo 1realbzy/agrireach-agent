@@ -1,0 +1,18 @@
+# STT check on Ghanaian-accented English, run S1, 25 Oct 2026 (box time = UTC)
+# Command: python scripts/stt_ghana_check.py  (faster-whisper 1.2.1, model base, CPU int8, beam 5, stt.PROMPT hint, language auto-detected)
+# Clips: ghanaopenai/ghana-english-speech-600hrs (Ghana English ASR Dataset, Mich-Seth Owusu / Ghana NLP Community),
+#   CC BY-NC 4.0, revision 8f300b3. Broadcast news, not farmer voice notes. Audio and transcripts are not committed;
+#   the script downloads them to ~/.cache/agrireach/ghana-clips. Reference transcripts contain their own errors.
+# Per clip: WER against the reference, detected language and probability, whether AgriReach flagged it for the officer,
+#   Ghana places in the reference vs in the transcript, and whether a location confirm-back question was raised.
+{"row": 22, "wer": 0.4, "language": "yo", "p": 0.3, "flagged_for_officer": true, "ref_places": ["Koforidua"], "heard_places": [], "location_question": null}
+{"row": 50, "wer": 1.94, "language": "es", "p": 0.23, "flagged_for_officer": true, "ref_places": [], "heard_places": [], "location_question": null}
+{"row": 51, "wer": 1.0, "language": "fr", "p": 0.11, "flagged_for_officer": true, "ref_places": [], "heard_places": [], "location_question": null}
+{"row": 200035, "wer": 0.37, "language": "yo", "p": 0.57, "flagged_for_officer": true, "ref_places": ["Ashanti"], "heard_places": ["Kumasi"], "location_question": null}
+{"row": 300032, "wer": 0.09, "language": "en", "p": 0.51, "flagged_for_officer": true, "ref_places": [], "heard_places": [], "location_question": null}
+{"row": 390017, "wer": 0.14, "language": "en", "p": 0.47, "flagged_for_officer": true, "ref_places": [], "heard_places": [], "location_question": null}
+{"row": 390023, "wer": 0.47, "language": "yo", "p": 0.47, "flagged_for_officer": true, "ref_places": [], "heard_places": [], "location_question": null}
+{"row": 390033, "wer": 0.17, "language": "sw", "p": 0.44, "flagged_for_officer": true, "ref_places": ["Upper East"], "heard_places": ["Upper East"], "location_question": null}
+{"row": 390034, "wer": 0.09, "language": "en", "p": 0.5, "flagged_for_officer": true, "ref_places": ["Kumasi"], "heard_places": ["Kumasi"], "location_question": null}
+{"row": 390036, "wer": 0.18, "language": "sw", "p": 0.49, "flagged_for_officer": true, "ref_places": ["Upper East"], "heard_places": [], "location_question": null}
+{"clips": 10, "model": "base", "wer": 0.525, "word_errors": 106, "ref_words": 202, "flagged_for_officer": 10}

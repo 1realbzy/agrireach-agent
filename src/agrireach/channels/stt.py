@@ -11,6 +11,7 @@ support Twi, Dagbani or Wali; such notes are detected as another language and th
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -59,10 +60,22 @@ class FasterWhisper(Transcriber):
                                 f"faster-whisper:{self.model_name}"))
 
 
+def _repeats(text: str) -> bool:
+    w = re.findall(r"[a-z']+", text.lower())
+    if len(w) >= 4 and max(w.count(x) for x in set(w)) / len(w) > 0.4 and len(set(w)) <= len(w) / 2:
+        return True
+    grams = [" ".join(w[i:i + 3]) for i in range(len(w) - 2)]
+    return any(grams.count(g) >= 3 for g in set(grams))
+
+
 def check(t: Transcript) -> Transcript:
     """Add warnings that make the case urgent: no speech, not English, or low language confidence."""
     if not t.text:
         t.warnings.append("voice note: no speech recognised; officer must listen to the audio")
+    elif _repeats(t.text):
+        # Seen on Ghanaian broadcast clips: Whisper loops ("Croppea. Croppea. ...") or echoes the vocabulary hint.
+        t.warnings.append("voice note: the transcript repeats itself, a sign speech-to-text failed; officer must "
+                          "listen to the audio")
     if t.language != "en":
         t.warnings.append(f"voice note: speech detected as '{t.language}' (p={t.language_probability:.2f}), not "
                           "English; AgriReach can't transcribe it reliably; officer must listen to the audio")
