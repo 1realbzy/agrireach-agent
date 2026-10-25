@@ -49,6 +49,9 @@ Full write-up and raw output: [docs/live-eval-2026-10-25-run6-approval.md](docs/
 - **That is safe.** The rule text always carries the source's pesticide sentence. Any sentence dropped to fit is quoted to the officer. Every F1 run in runs 5 and 6 had the line.
 - On `fix/run5-findings`, the model's own copy of the referral is removed as a repeat and named for the officer, so the two F1 model SMS recorded on `a5e9192` (A1, A2) now fit (485 and 532 characters) and are proposed. Longer ones are still rejected and use the rule text, for example the B1 SMS at 631 characters after the copy is removed. Either way the line is there.
 
+### Known limit: place names written with Twi letters (offline check, left until after the freeze)
+- `zones.zone_for` finds no zone for "Kɔforidua" or "Tɛchiman" (with ɔ or ɛ), while "Koforidua" and "Techiman" match. The question is then treated as Twi and goes to the officer with no zone advice, so the farmer gets no wrong-zone guidance. The fix (mapping ɔ to o and ɛ to e before matching) is deferred.
+
 ## Earlier: 25 Oct 2026 (UTC), run 5 on `ccc609a`: full officer approval path through the HTTP API
 
 Full write-up and raw output: [docs/live-eval-2026-10-25-run5-approval.md](docs/live-eval-2026-10-25-run5-approval.md). All grades are self-graded.

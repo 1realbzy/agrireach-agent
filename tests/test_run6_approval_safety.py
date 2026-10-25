@@ -64,3 +64,15 @@ def test_the_officer_draft_alone_never_decides_it():
                json={"decision": "approve", "farmer_text": prop, "confirmed": True})
     assert r.status_code == 200, r.text
     assert not any("pesticide safety line" in w for w in r.json()["warnings"]), r.json()["warnings"]
+
+
+@pytest.mark.parametrize("swap", ["Spray pesticide every week.", "Use any pesticide you have."])
+def test_a_different_pesticide_sentence_does_not_count_as_the_safety_line(swap):
+    # Scoffer's review of d37b84b: the warning only checked that some pesticide word was left, so swapping the AEA
+    # referral for unsafe pesticide advice raised no warning. The source's own sentence (or the same referral
+    # reworded, _repeats) must still be there.
+    advice = "Check your maize at least once a week."
+    assert fr.drops_safety_line(f"{swap} {advice}", PS, proposal="")
+    assert fr.drops_safety_line(f"{advice} {swap}", [], proposal="Consult your local AEA before you spray (APNI).")
+    kept = fr.source_safety_line(PS)[0]
+    assert not fr.drops_safety_line(f"{kept} {swap} {advice}", PS, proposal="")
