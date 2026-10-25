@@ -1,0 +1,1310 @@
+{
+ "_source": "Wikipedia, 'Districts of Ghana', revision 1359154973 (2026-06-13), https://en.wikipedia.org/w/index.php?title=Districts_of_Ghana&oldid=1359154973. Text licensed CC BY-SA 4.0. Region, district and capital names only, parsed 25 Oct 2026; 261 districts in 16 regions.",
+ "districts": [
+  {
+   "region": "Ahafo Region",
+   "district": "Asunafo North",
+   "capital": "Goaso"
+  },
+  {
+   "region": "Ahafo Region",
+   "district": "Asunafo South",
+   "capital": "Kukuom"
+  },
+  {
+   "region": "Ahafo Region",
+   "district": "Asutifi North",
+   "capital": "Kenyasi"
+  },
+  {
+   "region": "Ahafo Region",
+   "district": "Asutifi South",
+   "capital": "Hwidiem"
+  },
+  {
+   "region": "Ahafo Region",
+   "district": "Tano North",
+   "capital": "Duayaw Nkwanta"
+  },
+  {
+   "region": "Ahafo Region",
+   "district": "Tano South",
+   "capital": "Bechem"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Adansi Asokwa",
+   "capital": "Adansi Asokwa"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Adansi North",
+   "capital": "Fomena"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Adansi South",
+   "capital": "New Edubiase"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Afigya-Kwabre North",
+   "capital": "Boamang"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Afigya-Kwabre South",
+   "capital": "Kodie"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Ahafo-Ano North",
+   "capital": "Tepa"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Ahafo-Ano South East",
+   "capital": "Adugyama"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Ahafo-Ano South West",
+   "capital": "Mankranso"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Akrofuom",
+   "capital": "Akrofuom"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Amansie Central",
+   "capital": "Jacobu"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Amansie West",
+   "capital": "Manso Nkwanta"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Amansie South",
+   "capital": "Manso Adubia"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Asante-Akim Central",
+   "capital": "Konongo"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Asante-Akim North",
+   "capital": "Agogo"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Asante-Akim South",
+   "capital": "Juaso"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Asokore-Mampong",
+   "capital": "Asokore Mampong"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Asokwa",
+   "capital": "Asokwa"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Atwima-Kwanwoma",
+   "capital": "Twedie"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Atwima-Mponua",
+   "capital": "Nyinahin"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Atwima-Nwabiagya",
+   "capital": "Nkawie"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Atwima-Nwabiagya North",
+   "capital": "Barekese"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Bekwai",
+   "capital": "Bekwai"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Bosome Freho",
+   "capital": "Asiwa"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Bosomtwe",
+   "capital": "Kuntanase"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Ejisu",
+   "capital": "Ejisu"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Ejura/Sekyedumase",
+   "capital": "Ejura"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Juaben",
+   "capital": "Juaben"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Kumasi",
+   "capital": "Kumasi"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Kwabre East",
+   "capital": "Mamponteng"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Kwadaso",
+   "capital": "Kwadaso"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Mampong",
+   "capital": "Mampong"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Obuasi East",
+   "capital": "Tutuka"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Obuasi",
+   "capital": "Obuasi"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Offinso",
+   "capital": "Offinso"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Offinso North",
+   "capital": "Akomadan"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Oforikrom",
+   "capital": "Oforikrom"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Old Tafo",
+   "capital": "Old Tafo"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Sekyere Afram Plains",
+   "capital": "Drobonso"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Sekyere Central",
+   "capital": "Nsuta"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Sekyere East",
+   "capital": "Effiduase"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Sekyere Kumawu",
+   "capital": "Kumawu"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Sekyere South",
+   "capital": "Agona"
+  },
+  {
+   "region": "Ashanti Region",
+   "district": "Suame",
+   "capital": "Suame"
+  },
+  {
+   "region": "Bono Region",
+   "district": "Banda",
+   "capital": "Banda Ahenkro"
+  },
+  {
+   "region": "Bono Region",
+   "district": "Berekum East",
+   "capital": "Berekum"
+  },
+  {
+   "region": "Bono Region",
+   "district": "Berekum West",
+   "capital": "Jinijini"
+  },
+  {
+   "region": "Bono Region",
+   "district": "Dormaa Central",
+   "capital": "Dormaa Ahenkro"
+  },
+  {
+   "region": "Bono Region",
+   "district": "Dormaa East",
+   "capital": "Wamfie"
+  },
+  {
+   "region": "Bono Region",
+   "district": "Dormaa West",
+   "capital": "Nkrankwanta"
+  },
+  {
+   "region": "Bono Region",
+   "district": "Jaman North",
+   "capital": "Sampa"
+  },
+  {
+   "region": "Bono Region",
+   "district": "Jaman South",
+   "capital": "Drobo"
+  },
+  {
+   "region": "Bono Region",
+   "district": "Sunyani",
+   "capital": "Sunyani"
+  },
+  {
+   "region": "Bono Region",
+   "district": "Sunyani West",
+   "capital": "Odumase"
+  },
+  {
+   "region": "Bono Region",
+   "district": "Tain",
+   "capital": "Nsawkaw"
+  },
+  {
+   "region": "Bono Region",
+   "district": "Wenchi",
+   "capital": "Wenchi"
+  },
+  {
+   "region": "Bono East Region",
+   "district": "Atebubu-Amantin",
+   "capital": "Atebubu"
+  },
+  {
+   "region": "Bono East Region",
+   "district": "Kintampo North",
+   "capital": "Kintampo"
+  },
+  {
+   "region": "Bono East Region",
+   "district": "Kintampo South",
+   "capital": "Jema"
+  },
+  {
+   "region": "Bono East Region",
+   "district": "Nkoranza North",
+   "capital": "Busunya"
+  },
+  {
+   "region": "Bono East Region",
+   "district": "Nkoranza South",
+   "capital": "Nkoranza"
+  },
+  {
+   "region": "Bono East Region",
+   "district": "Pru East",
+   "capital": "Yeji"
+  },
+  {
+   "region": "Bono East Region",
+   "district": "Pru West",
+   "capital": "Prang"
+  },
+  {
+   "region": "Bono East Region",
+   "district": "Sene East",
+   "capital": "Kajaji"
+  },
+  {
+   "region": "Bono East Region",
+   "district": "Sene West",
+   "capital": "Kwame Danso"
+  },
+  {
+   "region": "Bono East Region",
+   "district": "Techiman",
+   "capital": "Techiman"
+  },
+  {
+   "region": "Bono East Region",
+   "district": "Techiman North",
+   "capital": "Tuobodom"
+  },
+  {
+   "region": "Central Region",
+   "district": "Abura/Asebu/Kwamankese",
+   "capital": "Abura-Dunkwa"
+  },
+  {
+   "region": "Central Region",
+   "district": "Agona East",
+   "capital": "Nsaba"
+  },
+  {
+   "region": "Central Region",
+   "district": "Agona West Municipal",
+   "capital": "Agona Swedru"
+  },
+  {
+   "region": "Central Region",
+   "district": "Ajumako/Enyan/Essiam",
+   "capital": "Ajumako"
+  },
+  {
+   "region": "Central Region",
+   "district": "Asikuma Odoben Brakwa",
+   "capital": "Breman Asikuma"
+  },
+  {
+   "region": "Central Region",
+   "district": "Assin Central",
+   "capital": "Assin Foso"
+  },
+  {
+   "region": "Central Region",
+   "district": "Assin North",
+   "capital": "Assin Bereku"
+  },
+  {
+   "region": "Central Region",
+   "district": "Assin South",
+   "capital": "Nsuaem Kyekyewere"
+  },
+  {
+   "region": "Central Region",
+   "district": "Awutu Senya East",
+   "capital": "Kasoa"
+  },
+  {
+   "region": "Central Region",
+   "district": "Awutu Senya West",
+   "capital": "Awutu Breku"
+  },
+  {
+   "region": "Central Region",
+   "district": "Cape Coast",
+   "capital": "Cape Coast"
+  },
+  {
+   "region": "Central Region",
+   "district": "Effutu",
+   "capital": "Winneba"
+  },
+  {
+   "region": "Central Region",
+   "district": "Ekumfi",
+   "capital": "Esakyir"
+  },
+  {
+   "region": "Central Region",
+   "district": "Gomoa East",
+   "capital": "Potsin"
+  },
+  {
+   "region": "Central Region",
+   "district": "Gomoa Central",
+   "capital": "Afransi"
+  },
+  {
+   "region": "Central Region",
+   "district": "Gomoa West",
+   "capital": "Apam"
+  },
+  {
+   "region": "Central Region",
+   "district": "Komenda/Edina/Eguafo/Abirem",
+   "capital": "Elmina"
+  },
+  {
+   "region": "Central Region",
+   "district": "Mfantsiman",
+   "capital": "Saltpond"
+  },
+  {
+   "region": "Central Region",
+   "district": "Twifo Atti Morkwa",
+   "capital": "Twifo Praso"
+  },
+  {
+   "region": "Central Region",
+   "district": "Twifo/Hemang/Lower Denkyira",
+   "capital": "Hemang"
+  },
+  {
+   "region": "Central Region",
+   "district": "Upper Denkyira East",
+   "capital": "Dunkwa-on-Offin"
+  },
+  {
+   "region": "Central Region",
+   "district": "Upper Denkyira West",
+   "capital": "Diaso"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Abuakwa North",
+   "capital": "Kukurantumi"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Abuakwa South",
+   "capital": "Kibi"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Achiase",
+   "capital": "Achiase"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Akuapim North",
+   "capital": "Akropong"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Akuapim South",
+   "capital": "Aburi"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Akyemansa",
+   "capital": "Ofoase"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Asene Manso Akroso",
+   "capital": "Manso"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Asuogyaman",
+   "capital": "Atimpoku"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Atiwa East",
+   "capital": "Anyinam"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Atiwa West",
+   "capital": "Kwabeng"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Ayensuano",
+   "capital": "Coaltar"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Birim Central",
+   "capital": "Akim Oda"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Birim North",
+   "capital": "New Abirem"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Birim South",
+   "capital": "Akim Swedru"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Denkyembour",
+   "capital": "Akwatia"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Fanteakwa North",
+   "capital": "Begoro"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Fanteakwa South",
+   "capital": "Osino"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Kwaebibirem",
+   "capital": "Kade"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Kwahu Afram Plains North",
+   "capital": "Donkorkrom"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Kwahu Afram Plains South",
+   "capital": "Tease"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Kwahu East",
+   "capital": "Abetifi"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Kwahu South",
+   "capital": "Mpraeso"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Kwahu West",
+   "capital": "Nkawkaw"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Lower Manya Krobo",
+   "capital": "Krobo Odumase"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "New Juaben North",
+   "capital": "Effiduase"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "New Juaben South",
+   "capital": "Koforidua"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Nsawam Adoagyire",
+   "capital": "Nsawam"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Okere",
+   "capital": "Adukrom"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Suhum",
+   "capital": "Suhum, Ghana"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Upper Manya Krobo",
+   "capital": "Asesewa"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Upper West Akim",
+   "capital": "Adeiso"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "West Akim",
+   "capital": "Asamankese"
+  },
+  {
+   "region": "Eastern Region",
+   "district": "Yilo-Krobo",
+   "capital": "Somanya"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Ablekuma Central",
+   "capital": "Lartebiokorshie"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Ablekuma North",
+   "capital": "Darkuman"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Ablekuma West",
+   "capital": "Dansoman"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Accra",
+   "capital": "Accra"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Ada East",
+   "capital": "Ada Foah"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Ada West",
+   "capital": "Sege"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Adenta",
+   "capital": "Adenta"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Ashaiman",
+   "capital": "Ashaiman"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Ayawaso Central",
+   "capital": "Kokomlemle"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Ayawaso East",
+   "capital": "Nima"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Ayawaso North",
+   "capital": "Accra New Town"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Ayawaso West",
+   "capital": "Dzorwulu"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Ga Central",
+   "capital": "Sowutuom"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Ga East",
+   "capital": "Abokobi"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Ga North",
+   "capital": "Amomole"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Ga South",
+   "capital": "Ngleshie Amanfro"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Ga West",
+   "capital": "Amasaman"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Korle-Klottey",
+   "capital": "Osu"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Kpone-Katamanso",
+   "capital": "Kpone"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Krowor",
+   "capital": "Nungua"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "La-Dade-Kotopon",
+   "capital": "La"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "La-Nkwantanang-Madina",
+   "capital": "Madina"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Ledzokuku",
+   "capital": "Teshie"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Ningo-Prampram",
+   "capital": "Prampram"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Okaikwei North",
+   "capital": "Tesano"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Shai-Osudoku",
+   "capital": "Dodowa"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Tema Metropolitan",
+   "capital": "Tema"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Tema West",
+   "capital": "Tema Community 18"
+  },
+  {
+   "region": "Greater Accra Region",
+   "district": "Weija Gbawe",
+   "capital": "Weija"
+  },
+  {
+   "region": "Northern Region",
+   "district": "Gushegu Municipal",
+   "capital": "Gushegu"
+  },
+  {
+   "region": "Northern Region",
+   "district": "Karaga",
+   "capital": "Karaga"
+  },
+  {
+   "region": "Northern Region",
+   "district": "Kpandai",
+   "capital": "Kpandai"
+  },
+  {
+   "region": "Northern Region",
+   "district": "Kumbungu",
+   "capital": "Kumbungu"
+  },
+  {
+   "region": "Northern Region",
+   "district": "Mion",
+   "capital": "Sang"
+  },
+  {
+   "region": "Northern Region",
+   "district": "Nanton",
+   "capital": "Nanton"
+  },
+  {
+   "region": "Northern Region",
+   "district": "Nanumba North Municipal",
+   "capital": "Bimbilla"
+  },
+  {
+   "region": "Northern Region",
+   "district": "Nanumba South",
+   "capital": "Wulensi"
+  },
+  {
+   "region": "Northern Region",
+   "district": "Saboba",
+   "capital": "Saboba"
+  },
+  {
+   "region": "Northern Region",
+   "district": "Sagnarigu Municipal",
+   "capital": "Sagnarigu"
+  },
+  {
+   "region": "Northern Region",
+   "district": "Savelugu Municipal",
+   "capital": "Savelugu"
+  },
+  {
+   "region": "Northern Region",
+   "district": "Tamale Metropolitan",
+   "capital": "Tamale"
+  },
+  {
+   "region": "Northern Region",
+   "district": "Tatale Sanguli",
+   "capital": "Tatale"
+  },
+  {
+   "region": "Northern Region",
+   "district": "Tolon",
+   "capital": "Tolon"
+  },
+  {
+   "region": "Northern Region",
+   "district": "Yendi Municipal",
+   "capital": "Yendi"
+  },
+  {
+   "region": "Northern Region",
+   "district": "Zabzugu",
+   "capital": "Zabzugu"
+  },
+  {
+   "region": "North East Region",
+   "district": "Bunkpurugu Nyankpanduri",
+   "capital": "Bunkpurugu"
+  },
+  {
+   "region": "North East Region",
+   "district": "Chereponi",
+   "capital": "Chereponi"
+  },
+  {
+   "region": "North East Region",
+   "district": "East Mamprusi",
+   "capital": "Nalerigu"
+  },
+  {
+   "region": "North East Region",
+   "district": "Mamprugu Moagduri",
+   "capital": "Yagaba"
+  },
+  {
+   "region": "North East Region",
+   "district": "West Mamprusi",
+   "capital": "Walewale"
+  },
+  {
+   "region": "North East Region",
+   "district": "Yunyoo-Nasuan",
+   "capital": "Yunyoo"
+  },
+  {
+   "region": "Oti Region",
+   "district": "Biakoye",
+   "capital": "Nkonya Ahenkro"
+  },
+  {
+   "region": "Oti Region",
+   "district": "Guan",
+   "capital": "Likpe-Mate"
+  },
+  {
+   "region": "Oti Region",
+   "district": "Jasikan",
+   "capital": "Jasikan"
+  },
+  {
+   "region": "Oti Region",
+   "district": "Kadjebi",
+   "capital": "Kadjebi"
+  },
+  {
+   "region": "Oti Region",
+   "district": "Krachi East",
+   "capital": "Dambai"
+  },
+  {
+   "region": "Oti Region",
+   "district": "Krachi Nchumuru",
+   "capital": "Chinderi"
+  },
+  {
+   "region": "Oti Region",
+   "district": "Krachi West",
+   "capital": "Kete Krachi"
+  },
+  {
+   "region": "Oti Region",
+   "district": "Nkwanta North",
+   "capital": "Kpassa"
+  },
+  {
+   "region": "Oti Region",
+   "district": "Nkwanta South",
+   "capital": "Nkwanta"
+  },
+  {
+   "region": "Savannah Region",
+   "district": "Bole",
+   "capital": "Bole"
+  },
+  {
+   "region": "Savannah Region",
+   "district": "Central Gonja",
+   "capital": "Buipe"
+  },
+  {
+   "region": "Savannah Region",
+   "district": "East Gonja Municipal",
+   "capital": "Salaga"
+  },
+  {
+   "region": "Savannah Region",
+   "district": "North Gonja",
+   "capital": "Daboya"
+  },
+  {
+   "region": "Savannah Region",
+   "district": "North East Gonja",
+   "capital": "Kpalbe"
+  },
+  {
+   "region": "Savannah Region",
+   "district": "Sawla-Tuna-Kalba",
+   "capital": "Sawla"
+  },
+  {
+   "region": "Savannah Region",
+   "district": "West Gonja",
+   "capital": "Damongo"
+  },
+  {
+   "region": "Upper East Region",
+   "district": "Bawku Municipal",
+   "capital": "Bawku"
+  },
+  {
+   "region": "Upper East Region",
+   "district": "Bawku West",
+   "capital": "Zebilla"
+  },
+  {
+   "region": "Upper East Region",
+   "district": "Binduri",
+   "capital": "Binduri"
+  },
+  {
+   "region": "Upper East Region",
+   "district": "Bolgatanga East",
+   "capital": "Zuarungu"
+  },
+  {
+   "region": "Upper East Region",
+   "district": "Bolgatanga Municipal",
+   "capital": "Bolgatanga"
+  },
+  {
+   "region": "Upper East Region",
+   "district": "Bongo",
+   "capital": "Bongo"
+  },
+  {
+   "region": "Upper East Region",
+   "district": "Builsa North Municipal",
+   "capital": "Sandema"
+  },
+  {
+   "region": "Upper East Region",
+   "district": "Builsa South",
+   "capital": "Fumbisi"
+  },
+  {
+   "region": "Upper East Region",
+   "district": "Garu",
+   "capital": "Garu"
+  },
+  {
+   "region": "Upper East Region",
+   "district": "Kassena-Nankana Municipal",
+   "capital": "Navrongo"
+  },
+  {
+   "region": "Upper East Region",
+   "district": "Kassena-Nankana West",
+   "capital": "Paga"
+  },
+  {
+   "region": "Upper East Region",
+   "district": "Nabdam",
+   "capital": "Nangodi"
+  },
+  {
+   "region": "Upper East Region",
+   "district": "Pusiga",
+   "capital": "Pusiga"
+  },
+  {
+   "region": "Upper East Region",
+   "district": "Talensi",
+   "capital": "Tongo"
+  },
+  {
+   "region": "Upper East Region",
+   "district": "Tempane",
+   "capital": "Tempane"
+  },
+  {
+   "region": "Upper West Region",
+   "district": "Daffiama Bussie Issa",
+   "capital": "Issa"
+  },
+  {
+   "region": "Upper West Region",
+   "district": "Jirapa Municipal",
+   "capital": "Jirapa"
+  },
+  {
+   "region": "Upper West Region",
+   "district": "Lambussie Karni",
+   "capital": "Lambussie"
+  },
+  {
+   "region": "Upper West Region",
+   "district": "Lawra Municipal",
+   "capital": "Lawra"
+  },
+  {
+   "region": "Upper West Region",
+   "district": "Nadowli-Kaleo",
+   "capital": "Nadowli"
+  },
+  {
+   "region": "Upper West Region",
+   "district": "Nandom Municipal",
+   "capital": "Nandom"
+  },
+  {
+   "region": "Upper West Region",
+   "district": "Sissala East Municipal",
+   "capital": "Tumu"
+  },
+  {
+   "region": "Upper West Region",
+   "district": "Sissala West",
+   "capital": "Gwollu"
+  },
+  {
+   "region": "Upper West Region",
+   "district": "Wa East",
+   "capital": "Funsi"
+  },
+  {
+   "region": "Upper West Region",
+   "district": "Wa Municipal",
+   "capital": "Wa"
+  },
+  {
+   "region": "Upper West Region",
+   "district": "Wa West",
+   "capital": "Wechiau"
+  },
+  {
+   "region": "Volta Region",
+   "district": "Adaklu District",
+   "capital": "Adaklu Waya"
+  },
+  {
+   "region": "Volta Region",
+   "district": "Afadzato South",
+   "capital": "Ve Golokwati"
+  },
+  {
+   "region": "Volta Region",
+   "district": "Agotime Ziope",
+   "capital": "Kpetoe"
+  },
+  {
+   "region": "Volta Region",
+   "district": "Akatsi North",
+   "capital": "Ave-Dakpa"
+  },
+  {
+   "region": "Volta Region",
+   "district": "Akatsi South",
+   "capital": "Akatsi"
+  },
+  {
+   "region": "Volta Region",
+   "district": "Anloga",
+   "capital": "Anloga"
+  },
+  {
+   "region": "Volta Region",
+   "district": "Central Tongu",
+   "capital": "Adidome"
+  },
+  {
+   "region": "Volta Region",
+   "district": "Ho Municipal",
+   "capital": "Ho"
+  },
+  {
+   "region": "Volta Region",
+   "district": "Ho West",
+   "capital": "Dzolokpuita"
+  },
+  {
+   "region": "Volta Region",
+   "district": "Hohoe Municipal",
+   "capital": "Hohoe"
+  },
+  {
+   "region": "Volta Region",
+   "district": "Keta Municipal",
+   "capital": "Keta"
+  },
+  {
+   "region": "Volta Region",
+   "district": "Ketu North Municipal",
+   "capital": "Dzodze"
+  },
+  {
+   "region": "Volta Region",
+   "district": "Ketu South Municipal",
+   "capital": "Denu"
+  },
+  {
+   "region": "Volta Region",
+   "district": "Kpando Municipal",
+   "capital": "Kpando"
+  },
+  {
+   "region": "Volta Region",
+   "district": "North Dayi",
+   "capital": "Anfoega"
+  },
+  {
+   "region": "Volta Region",
+   "district": "North Tongu",
+   "capital": "Battor Dugame"
+  },
+  {
+   "region": "Volta Region",
+   "district": "South Dayi",
+   "capital": "Kpeve"
+  },
+  {
+   "region": "Volta Region",
+   "district": "South Tongu",
+   "capital": "Sogakope"
+  },
+  {
+   "region": "Western Region",
+   "district": "Ahanta West",
+   "capital": "Agona Ahanta"
+  },
+  {
+   "region": "Western Region",
+   "district": "Amenfi Central",
+   "capital": "Manso Amenfi"
+  },
+  {
+   "region": "Western Region",
+   "district": "Amenfi West",
+   "capital": "Asankragua"
+  },
+  {
+   "region": "Western Region",
+   "district": "Effia Kwesimintsim Municipal",
+   "capital": "Kwesimintsim"
+  },
+  {
+   "region": "Western Region",
+   "district": "Ellembelle",
+   "capital": "Nkroful"
+  },
+  {
+   "region": "Western Region",
+   "district": "Jomoro",
+   "capital": "Half Assini"
+  },
+  {
+   "region": "Western Region",
+   "district": "Mpohor",
+   "capital": "Mpohor"
+  },
+  {
+   "region": "Western Region",
+   "district": "Nzema East Municipal",
+   "capital": "Axim"
+  },
+  {
+   "region": "Western Region",
+   "district": "Prestea-Huni Valley Municipal",
+   "capital": "Prestea"
+  },
+  {
+   "region": "Western Region",
+   "district": "Sekondi Takoradi Metropolitan",
+   "capital": "Sekondi-Takoradi"
+  },
+  {
+   "region": "Western Region",
+   "district": "Shama",
+   "capital": "Shama"
+  },
+  {
+   "region": "Western Region",
+   "district": "Tarkwa-Nsuaem Municipal",
+   "capital": "Tarkwa"
+  },
+  {
+   "region": "Western Region",
+   "district": "Wassa Amenfi East",
+   "capital": "Wassa-Akropong"
+  },
+  {
+   "region": "Western Region",
+   "district": "Wassa East",
+   "capital": "Daboase"
+  },
+  {
+   "region": "Western North Region",
+   "district": "Aowin",
+   "capital": "Enchi"
+  },
+  {
+   "region": "Western North Region",
+   "district": "Bia East",
+   "capital": "Sefwi Adabokrom"
+  },
+  {
+   "region": "Western North Region",
+   "district": "Bia West",
+   "capital": "Essam-Debiso"
+  },
+  {
+   "region": "Western North Region",
+   "district": "Bibiani Anhwiaso Bekwai",
+   "capital": "Bibiani"
+  },
+  {
+   "region": "Western North Region",
+   "district": "Bodi",
+   "capital": "Sefwi Bodi"
+  },
+  {
+   "region": "Western North Region",
+   "district": "Juaboso",
+   "capital": "Juaboso"
+  },
+  {
+   "region": "Western North Region",
+   "district": "Sefwi Akontombra",
+   "capital": "Sefwi Akontombra"
+  },
+  {
+   "region": "Western North Region",
+   "district": "Sefwi-Wiawso",
+   "capital": "Sefwi Wiawso"
+  },
+  {
+   "region": "Western North Region",
+   "district": "Suaman",
+   "capital": "Dadieso"
+  }
+ ]
+}

@@ -165,3 +165,25 @@ def test_live_run_false_rejects_fixed():
           "[IITA-SSPING-2022:p17-spacing].\n2. Plant spacing is disputed [APNI-SARI-2023:p11-spacing].")
     r = claim_check.check_claims(d2, PS, SPACING, judge=True, judge_call=fake)
     assert r.ok and asked == []  # nothing left to ask the judge about
+
+
+def test_place_names_are_masked_before_the_judge_unless_the_passage_has_them():
+    seen = []
+
+    def fake(prompt):
+        seen.append(prompt)
+        return json.dumps({"verdicts": [{"n": 1, "verdict": "supported", "why": "ok"}]})
+
+    d = "For soybean planting in Kumasi, plant between mid-June and late July [APNI-SARI-2023:p11-planting-window]."
+    r = claim_check.check_claims(d, PS, judge=True, judge_call=fake)
+    assert r.ok and "Kumasi" not in seen[0] and "the farmer's area" in seen[0]
+    assert r.judge["verdicts"][0]["sentence"] == d  # the officer sees the original sentence
+    assert "northern region" in seen[0].lower()  # the passage's own place name is kept
+
+
+def test_gazetteer_has_all_districts_and_skips_english_words():
+    from agrireach import places
+    assert len({v["region"] for v in places.gazetteer().values()}) == 16
+    assert [p["name"] for p in places.find("Jirapa and Wa, not Kumasi")] == ["Jirapa", "Wa", "Kumasi"]
+    assert places.find("she sang to tease her friend about la la land") == []
+    assert places.is_northern(places.find("Nadowli-Kaleo")[0]["region"])

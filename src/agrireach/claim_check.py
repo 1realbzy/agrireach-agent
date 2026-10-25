@@ -26,7 +26,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from agrireach import citation_check
+from agrireach import citation_check, places
 
 CITE_RE = citation_check.CITE_RE
 SENT_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[\"'(*\-\[A-Z0-9])")
@@ -211,7 +211,14 @@ def check_claims(draft: str, passages: list[dict], conflicts: dict | None = None
     judged = None
     from agrireach import judge as judge_mod
     if (judge if judge is not None else judge_mod.enabled()) and to_judge:
-        judged = judge_mod.judge([(s.text, cited) for s, cited in to_judge], call=judge_call)
+        # Place names the cited passages don't contain are masked: whether a Northern Ghana guide applies to the
+        # farmer's place is decided in code (caution note + urgent flag), and the judge kept rejecting
+        # "For soybean planting in Kumasi, ..." on that ground alone (7 of its 8 replay false rejects).
+        items = [(places.mask(s.text, keep=" ".join(p["text"] for p in cited)), cited) for s, cited in to_judge]
+        judged = judge_mod.judge(items, call=judge_call)
+        for v, (s, _c) in zip(judged.get("verdicts", []), to_judge):
+            if v["sentence"] != s.text:
+                v["sent_to_judge"], v["sentence"] = v["sentence"], s.text
         for v in judged.get("verdicts", []):
             if v["verdict"] == "not_supported":
                 problems.append(f"'{_short(v['sentence'])}' is not supported by its citation according to the judge "
