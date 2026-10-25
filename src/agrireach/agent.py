@@ -91,25 +91,56 @@ def _same_figures(group: list[dict]) -> bool:
     return len(sets) == 1 and bool(next(iter(sets)))
 
 
-async def _attach_rainfall(tools, region: str, zone: dict | None, passages: list, notes: list, facts: list) -> dict:
+def _regions_of(zone: dict | None) -> set[str]:
+    """The administrative regions a region-level place stands for ('Northern Ghana' -> the five northern ones)."""
+    r = (zone or {}).get("region", "")
+    if r == "Northern Ghana":
+        return set(places.NORTHERN_REGIONS)
+    if r.startswith("Brong Ahafo"):
+        return {"Bono", "Bono East", "Ahafo"}
+    return {r} if r else set()
+
+
+def _rain_district(question: str, region: str, zone: dict | None, region_from_text: bool) -> tuple[str, str, bool]:
+    """(district, why-not, read-from-text). A district typed in the place field is used as given. Otherwise (no
+    field, a region, or a place intake picked out of the text) the question text is searched for exactly one known
+    district (rainfall.districts_in_text). Rainfall only: zone, region and zone_mismatch are not changed here."""
+    if region and not region_from_text and zone and zone.get("district"):
+        return region, "", False
+    found = rainfall.districts_in_text(question)
+    if len(found) > 1:
+        return "", (f"the question text names more than one district ({_join(found)}); confirm with the farmer which "
+                    "district they farm in"), False
+    if found:
+        d, dreg = found[0], rainfall.coords()[found[0]]["region"]
+        given = _regions_of(zone) if not (region_from_text and zone and zone.get("district")) else set()
+        if given and dreg not in given:
+            return "", (f"the question text names {d} ({dreg} Region), but the region given is {region.title()}; "
+                        "confirm the district with the farmer"), False
+        return d, "", True
+    if not region or (region_from_text and (zone or {}).get("district")):  # e.g. "Ho," read as a place
+        return "", "the question names no district; ask the farmer which district they farm in", False
+    return "", (f"rainfall is looked up per district and '{region.title()}' is not a district AgriReach knows; ask "
+                "the farmer which district they farm in"), False
+
+
+async def _attach_rainfall(tools, question: str, region: str, zone: dict | None, region_from_text: bool,
+                           passages: list, notes: list, facts: list) -> dict:
     """Planting and top-dressing questions: the district's rainfall record (MCP get_recent_rainfall) as a citable
     record for the officer, never as guidance. No district or unavailable -> an officer fact saying why, no claim."""
-    if not region:
-        why = "the question names no district; ask the farmer which district they farm in"
-    elif not (zone and zone.get("district")):
-        why = (f"rainfall is looked up per district and '{region.title()}' is not a district AgriReach knows; ask the "
-               "farmer which district they farm in")
-    else:
-        why = ""
+    district, why, from_text = _rain_district(question, region, zone, region_from_text)
     if why:
         facts.append(f"{OFFICER_FACT} No rainfall record: {why}.")
         return {"available": False, "reason": f"rainfall unavailable: {why}"}
+    if from_text:
+        facts.append(f"{OFFICER_FACT} District {district} taken from the question text.")
+    zone = zones.zone_for(district) or zone or {}
     try:
-        rain = await tools.call("get_recent_rainfall", {"district": region})
+        rain = await tools.call("get_recent_rainfall", {"district": district})
     except Exception as e:
         rain = {"available": False, "reason": f"rainfall unavailable: {str(e)[:120]}"}
     if rain.get("available"):
-        passages.append(rainfall.as_passage(rain, zone["zone"]))
+        passages.append(rainfall.as_passage(rain, zone.get("zone")))
         notes.append("A rainfall record is attached for the officer. The guides give no rainfall amount that marks "
                      "onset, so AgriReach does not say whether the guides' condition is met; the officer decides.")
         p = rain["period"]
@@ -174,6 +205,7 @@ class S(TypedDict, total=False):
     officer_facts: list
     received: str
     season_prompt: str
+    region_from_text: bool
     citation_check: dict
     source_checks: list
     status: str
@@ -217,6 +249,7 @@ def build_graph(tools: Tools):
         crop = (s.get("crop") or language.detect_crop(q)).lower()
         covered = _crops_covered()
         region = s.get("region") or ""
+        region_from_text = not region
         if not region:
             region = _detect_region(q)
         reasons += [f"{k.replace('_', ' ')} terms in question" for k, terms in RISK_TERMS.items()
@@ -251,7 +284,7 @@ def build_graph(tools: Tools):
                                                           "region": region})
         return {"crop": crop, "region": region, "urgent_reasons": reasons, "clarification": clar, "language": lang,
                 "search_query": search_query, "case_id": case["case_id"], "notes": [], "errors": [],
-                "received": case.get("created_at", ""),
+                "received": case.get("created_at", ""), "region_from_text": region_from_text,
                 "skip_retrieval": uncovered or (contact and not crop)}
 
     async def retrieve(s: S) -> S:
@@ -323,7 +356,8 @@ def build_graph(tools: Tools):
         rain, facts = None, []
         topdress = TOPDRESS_Q.search(query) or any("topdress" in p.get("claim_key", "") for p in passages)
         if (PLANTING_Q.search(query) or topdress) and passages and not errors:
-            rain = await _attach_rainfall(tools, region, zone, passages, notes, facts)
+            rain = await _attach_rainfall(tools, s["question"], region, zone, bool(s.get("region_from_text")),
+                                          passages, notes, facts)
         season_prompt = ""
         if PLANTING_Q.search(query) and s.get("received"):
             received = datetime.fromisoformat(s["received"]).date()
