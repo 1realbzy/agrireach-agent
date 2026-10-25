@@ -45,7 +45,10 @@ class Transcriber:
 def _load(model: str, cache_dir: str):
     from faster_whisper import WhisperModel  # optional dependency: requirements-voice.txt
 
-    return WhisperModel(model, device="cpu", compute_type="int8", download_root=cache_dir)
+    # float32, not int8: on this CPU the int8 kernels gave a different transcript (even a different language) for the
+    # same audio on repeated calls; float32 gave 12 identical results out of 12. About 1 s per clip instead of 0.7 s.
+    return WhisperModel(model, device="cpu", compute_type=os.getenv("AGRIREACH_STT_COMPUTE", "float32"),
+                        download_root=cache_dir)
 
 
 class FasterWhisper(Transcriber):
