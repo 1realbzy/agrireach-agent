@@ -11,13 +11,14 @@ import os
 import re
 import sys
 from contextlib import AsyncExitStack
+from dataclasses import asdict
 from typing import TypedDict
 
 from langgraph.graph import END, StateGraph
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from agrireach import citation_check, claim_check, knowledge, language, llm
+from agrireach import citation_check, claim_check, farmer_reply, knowledge, language, llm
 
 RISK_TERMS = {
     "chemical": ["spray", "herbicide", "pesticide", "insecticide", "fungicide", "chemical", "glyphosate", "paraquat",
@@ -94,6 +95,7 @@ class S(TypedDict, total=False):
     calendar: list
     urgent_reasons: list
     notes: list
+    farmer_draft: dict
     clarification: str
     draft: str
     draft_mode: str
@@ -302,11 +304,13 @@ def build_graph(tools: Tools):
 
     async def file_case(s: S) -> S:
         reasons = s["urgent_reasons"]
+        conflicts = any(n.startswith("Sources give different figures") for n in s.get("notes", []))
+        fd = farmer_reply.propose(s["draft"], s["question"], s.get("language", "en"), conflicts=conflicts)
         r = await tools.call("create_or_update_case", {
             "status": "pending_review", "case_id": s["case_id"], "draft": s["draft"],
             "source_ids": [p["id"] for p in s["passages"]], "priority": "urgent" if reasons else "routine",
-            "urgent_reasons": reasons})
-        return {"status": r["status"]}
+            "urgent_reasons": reasons, "farmer_draft": json.dumps(asdict(fd), ensure_ascii=False)})
+        return {"status": r["status"], "farmer_draft": asdict(fd)}
 
     async def clarify(s: S) -> S:
         return {"status": "draft", "draft": s["clarification"], "draft_mode": "rule"}
@@ -348,7 +352,7 @@ async def run(question: str, crop: str = "", region: str = "", use_fetch: bool |
                                    "extra_urgent_reasons": list(extra_urgent_reasons or [])})
     return {k: out.get(k) for k in ("case_id", "status", "crop", "region", "clarification", "draft", "draft_mode",
                                      "urgent_reasons", "source_checks", "errors", "language",
-                                     "citation_check")} | {
+                                     "citation_check", "farmer_draft")} | {
         "priority": "urgent" if out.get("urgent_reasons") else "routine",
         "sources": [p["id"] for p in out.get("passages") or []]}
 

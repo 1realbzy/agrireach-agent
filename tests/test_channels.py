@@ -119,9 +119,11 @@ def test_api_simulator_flow_and_officer_decision_delivers(monkeypatch):
     assert v["sender"] == mask_sender(SENDER) and v["has_audio"] and "soybean" in v["transcript"]
     assert c.get(f"/officer/cases/{cid}/audio").status_code == 200
     assert c.post(f"/cases/{cid}/release").status_code == 409  # gate unchanged
-    d = c.post(f"/officer/cases/{cid}/decision", json={"officer": "Ama Mensah", "decision": "approve"}).json()
+    d = c.post(f"/officer/cases/{cid}/decision", json={"officer": "Ama Mensah", "decision": "approve",
+                                                       "farmer_text": "Harvest when 9 of 10 pods are brown."}).json()
     assert d["status"] == "released" and d["delivery"]["ok"]
-    assert [m["text"] for m in c.get("/channels/simulator/outbox", params={"sender": SENDER}).json()][-1] == d["final_text"]
+    out = [m["text"] for m in c.get("/channels/simulator/outbox", params={"sender": SENDER}).json()]
+    assert out[-1] == "Harvest when 9 of 10 pods are brown." != d["final_text"]  # officer view keeps citations
 
 
 def test_optional_tts_attaches_audio_to_the_approved_answer(monkeypatch, tmp_path):

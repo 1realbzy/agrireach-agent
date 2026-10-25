@@ -5,6 +5,7 @@ the normal test run stays offline. These clips are clean synthetic US-English sp
 nothing about Ghanaian-accented English, Twi, Dagbani or Wali.
 """
 import asyncio
+import json
 import os
 from pathlib import Path
 
@@ -56,11 +57,12 @@ def test_voice_note_end_to_end_through_the_simulator_with_real_stt(whisper):
     msgs = simulator.SimulatorChannel().messages("sim:farmer-1")
     assert len(msgs) == 1 and "officer" in msgs[0]["text"].lower()
 
-    delivered = simulator.officer_approve(out["case_id"], officer="Test Officer")
+    con = db.connect()
+    proposed = json.loads(db.get_case(con, out["case_id"])["farmer_draft"])["text"]
+    delivered = simulator.officer_approve(out["case_id"], officer="Test Officer", farmer_text=proposed)
     assert delivered["ok"]
     msgs = simulator.SimulatorChannel().messages("sim:farmer-1")
-    con = db.connect()
-    assert msgs[-1]["text"] == db.get_case(con, out["case_id"])["final_text"]
+    assert msgs[-1]["text"] == proposed == db.get_case(con, out["case_id"])["farmer_text"]
 
 
 PIPER = Path(os.getenv("AGRIREACH_TTS_DIR", str(Path.home() / ".cache/agrireach/piper")))

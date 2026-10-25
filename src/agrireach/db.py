@@ -63,6 +63,11 @@ def connect(path: str | None = None) -> sqlite3.Connection:
           channel TEXT NOT NULL, message_id TEXT NOT NULL, ts TEXT NOT NULL, PRIMARY KEY (channel, message_id));
         """
     )
+    cols = {r[1] for r in con.execute("PRAGMA table_info(cases)")}
+    for col in ("farmer_draft", "farmer_text"):  # added for the farmer-facing reply; older DBs gain them here
+        if col not in cols:
+            con.execute(f"ALTER TABLE cases ADD COLUMN {col} TEXT")
+    con.commit()
     return con
 
 
@@ -75,7 +80,9 @@ def log(con, actor: str, tool: str, args: dict, summary: str, ok: bool = True, c
 
 
 def agent_upsert_case(con, *, status: str, question: str = "", case_id: int | None = None, crop=None, region=None,
-                      draft=None, sources=None, priority="routine", urgent_reasons=None) -> int:
+                      draft=None, sources=None, priority="routine", urgent_reasons=None, farmer_draft=None) -> int:
+    """farmer_draft: AgriReach's PROPOSED farmer-facing text (JSON, see farmer_reply). Only the officer's approved
+    farmer_text is ever delivered."""
     if status not in AGENT_STATUSES:
         log(con, "agent", "create_or_update_case", {"status": status, "case_id": case_id},
             f"BLOCKED: agent may not set status '{status}'", ok=False, case_id=case_id)
@@ -101,15 +108,18 @@ def agent_upsert_case(con, *, status: str, question: str = "", case_id: int | No
             f"BLOCKED: case already '{row['status']}' (officer-owned)", ok=False, case_id=case_id)
         raise GateError(f"case {case_id} is '{row['status']}' and can no longer be changed by the agent")
     con.execute(
-        "UPDATE cases SET draft=COALESCE(?,draft), sources=?, priority=?, urgent_reasons=?, status=?, updated_at=? WHERE id=?",
-        (draft, json.dumps(sources if sources is not None else json.loads(row["sources"])), priority,
+        "UPDATE cases SET draft=COALESCE(?,draft), farmer_draft=COALESCE(?,farmer_draft), sources=?, priority=?,"
+        " urgent_reasons=?, status=?, updated_at=? WHERE id=?",
+        (draft, farmer_draft, json.dumps(sources if sources is not None else json.loads(row["sources"])), priority,
          json.dumps(urgent_reasons or []), status, t, case_id))
     con.commit()
     return case_id
 
 
 def officer_decide(con, case_id: int, *, officer: str, decision: str, edited_text: str | None = None,
-                   note: str | None = None) -> dict:
+                   note: str | None = None, farmer_text: str | None = None) -> dict:
+    """Approval covers exactly what is delivered: farmer_text is the farmer-facing text the officer approved. If it is
+    not given, the approved officer text itself is what the farmer gets (the API requires it explicitly)."""
     if not officer or not officer.strip():
         raise GateError("a named officer is required")
     if decision not in OFFICER_DECISIONS:
@@ -128,11 +138,17 @@ def officer_decide(con, case_id: int, *, officer: str, decision: str, edited_tex
         if not edited_text:
             raise ValueError("edited_text required for edit_approve")
         final = edited_text
+    farmer = None
+    if final is not None:
+        farmer = farmer_text.strip() if farmer_text and farmer_text.strip() else final
     t = now()
-    con.execute("UPDATE cases SET status=?, final_text=?, officer=?, decided_at=?, officer_note=?, updated_at=? WHERE id=?",
-                (status, final, officer.strip(), t, note, t, case_id))
+    con.execute("UPDATE cases SET status=?, final_text=?, farmer_text=?, officer=?, decided_at=?, officer_note=?,"
+                " updated_at=? WHERE id=?", (status, final, farmer, officer.strip(), t, note, t, case_id))
     con.commit()
-    log(con, f"officer:{officer.strip()}", "officer_decision", {"decision": decision}, status, case_id=case_id)
+    log(con, f"officer:{officer.strip()}", "officer_decision",
+        {"decision": decision, "farmer_text": None if farmer is None else
+         ("officer-approved farmer text" if farmer != final else "same as officer text"),
+         "farmer_text_chars": len(farmer or "")}, status, case_id=case_id)
     return dict(get_case(con, case_id))
 
 

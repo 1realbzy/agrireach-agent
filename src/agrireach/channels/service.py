@@ -78,7 +78,8 @@ def deliver(con, case_id: int, channels: dict[str, Channel]) -> dict | None:
     if contact is None:
         return None
     row = db.get_case(con, case_id)
-    if row is None or row["status"] != "released" or not row["officer"] or not row["final_text"]:
+    text = (row["farmer_text"] or row["final_text"]) if row is not None else None  # exactly what the officer approved
+    if row is None or row["status"] != "released" or not row["officer"] or not text:
         db.log(con, f"channel:{contact['channel']}", "send_answer", {"to": mask_sender(contact["sender_id"])},
                f"BLOCKED: case is '{row['status'] if row else 'missing'}', not released after officer approval",
                ok=False, case_id=case_id)
@@ -88,13 +89,13 @@ def deliver(con, case_id: int, channels: dict[str, Channel]) -> dict | None:
     ch = channels.get(contact["channel"])
     audio = None
     if ch is not None and tts.enabled():
-        script = voice_script.build(row["final_text"], row["officer"], row["crop"] or "")
+        script = voice_script.build(text, row["officer"], row["crop"] or "")
         if script.ok:
             try:
                 audio = tts.synthesize(script.text, str(media_dir() / "out" / f"case{case_id}-{uuid.uuid4().hex[:8]}.wav"))
             except Exception as e:  # text still goes out; the officer sees why there is no audio
                 db.log(con, "channel:tts", "synthesize", {}, f"failed: {type(e).__name__}", ok=False, case_id=case_id)
-    r = ch.send(contact["sender_id"], OutboundMessage(text=row["final_text"], audio_path=audio)) if ch else \
+    r = ch.send(contact["sender_id"], OutboundMessage(text=text, audio_path=audio)) if ch else \
         SendResult(False, f"channel '{contact['channel']}' is not configured")
     db.record_delivery(con, case_id, contact["channel"], "answer", r.ok, r.detail)
     db.log(con, f"channel:{contact['channel']}", "send_answer",

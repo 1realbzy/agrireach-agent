@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 import json
-
+from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from agrireach import agent, db, llm
+from agrireach import agent, db, farmer_reply, llm
 from agrireach.channels import service, simulator, whatsapp
 from agrireach.channels.base import mask_sender
 
@@ -29,12 +29,19 @@ class Decision(BaseModel):
     decision: str  # approve | edit_approve | reject | request_info
     edited_text: str | None = None
     note: str | None = None
+    # The exact farmer-facing text being approved (required to approve): this, and only this, is delivered.
+    farmer_text: str | None = None
+
+
+class OfficerText(BaseModel):
+    officer_text: str
 
 
 def _case(row) -> dict:
     d = dict(row)
     d["sources"] = json.loads(d["sources"] or "[]")
     d["urgent_reasons"] = json.loads(d["urgent_reasons"] or "[]")
+    d["farmer_draft"] = json.loads(d.get("farmer_draft") or "null")
     return d
 
 
@@ -69,9 +76,11 @@ def case_detail(case_id: int):
 @app.post("/officer/cases/{case_id}/decision")
 def decide(case_id: int, d: Decision):
     con = db.connect()
+    if d.decision in ("approve", "edit_approve") and not (d.farmer_text or "").strip():
+        raise HTTPException(400, "farmer_text required: approve the exact text the farmer will receive")
     try:
         row = db.officer_decide(con, case_id, officer=d.officer, decision=d.decision, edited_text=d.edited_text,
-                                note=d.note)
+                                note=d.note, farmer_text=d.farmer_text)
         delivery = None
         if row["status"] == "approved":
             row = db.release_to_farmer(con, case_id, actor=f"officer:{d.officer}")
@@ -81,6 +90,16 @@ def decide(case_id: int, d: Decision):
     except ValueError as e:
         raise HTTPException(400, str(e))
     return _case(row) | {"delivery": delivery}
+
+
+@app.post("/officer/cases/{case_id}/farmer-draft")
+def farmer_draft(case_id: int, body: OfficerText):
+    """Re-propose the farmer-facing text from the officer's (edited) text. A proposal only; nothing is saved or sent."""
+    row = db.get_case(db.connect(), case_id)
+    if not row:
+        raise HTTPException(404, "not found")
+    lang = (json.loads(row["farmer_draft"] or "null") or {}).get("language", "en")
+    return asdict(farmer_reply.propose(body.officer_text, row["question"], lang))
 
 
 @app.post("/cases/{case_id}/release")
@@ -103,7 +122,8 @@ def farmer_view(case_id: int):
     if row["status"] != "released":
         return {"case_id": case_id, "status": row["status"], "answer": None,
                 "message": "Waiting for an extension officer to review your question."}
-    return {"case_id": case_id, "status": "released", "answer": row["final_text"], "approved_by": row["officer"],
+    return {"case_id": case_id, "status": "released", "answer": row["farmer_text"] or row["final_text"],
+            "approved_by": row["officer"],
             "approved_at": row["decided_at"]}
 
 

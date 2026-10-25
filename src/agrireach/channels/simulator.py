@@ -6,7 +6,7 @@ Outgoing messages are appended to <outbox>/outbox.jsonl (AGRIREACH_OUTBOX, defau
 CLI (run from the repo root with PYTHONPATH=src):
   python -m agrireach.channels.simulator ask --sender sim:farmer-1 --audio question.wav
   python -m agrireach.channels.simulator ask --sender sim:farmer-1 --text "When should I plant soybean in Tamale?"
-  python -m agrireach.channels.simulator officer-approve --case 3 --officer "Ama Mensah"   # officer's action
+  python -m agrireach.channels.simulator officer-approve --case 3 --officer "Ama Mensah" --accept-proposed
   python -m agrireach.channels.simulator outbox [--sender sim:farmer-1]
 """
 from __future__ import annotations
@@ -70,11 +70,13 @@ async def ask(sender: str, text: str | None = None, audio: str | None = None, tr
                                         channel=SimulatorChannel(), transcriber=transcriber)
 
 
-def officer_approve(case_id: int, officer: str, edited_text: str | None = None) -> dict:
-    """The officer's decision (named officer required), then release, then delivery through the channel."""
+def officer_approve(case_id: int, officer: str, farmer_text: str, edited_text: str | None = None) -> dict:
+    """The officer's decision (named officer required) on the exact farmer_text to send, then release and delivery."""
+    if not (farmer_text or "").strip():
+        raise ValueError("farmer_text required: the officer approves the exact text the farmer will receive")
     con = db.connect()
     db.officer_decide(con, case_id, officer=officer, decision="edit_approve" if edited_text else "approve",
-                      edited_text=edited_text)
+                      edited_text=edited_text, farmer_text=farmer_text)
     db.release_to_farmer(con, case_id, actor=f"officer:{officer}")
     return service.deliver(con, case_id, service.configured_channels()) or {}
 
@@ -90,13 +92,22 @@ def main(argv=None):
     o.add_argument("--case", type=int, required=True)
     o.add_argument("--officer", required=True)
     o.add_argument("--edited-text")
+    g = o.add_mutually_exclusive_group(required=True)
+    g.add_argument("--farmer-text", help="the exact text the farmer will receive")
+    g.add_argument("--accept-proposed", action="store_true",
+                   help="approve AgriReach's proposed farmer text, printed here first")
     b = sub.add_parser("outbox")
     b.add_argument("--sender")
     args = ap.parse_args(argv)
     if args.cmd == "ask":
         out = asyncio.run(ask(args.sender, args.text, args.audio))
     elif args.cmd == "officer-approve":
-        out = officer_approve(args.case, args.officer, args.edited_text)
+        text = args.farmer_text
+        if args.accept_proposed:
+            row = db.get_case(db.connect(), args.case)
+            text = (json.loads(row["farmer_draft"] or "null") or {}).get("text", "") if row else ""
+            print(f"Approving this farmer text:\n{text}\n")
+        out = officer_approve(args.case, args.officer, text, args.edited_text)
     else:
         out = SimulatorChannel().messages(args.sender)
     print(json.dumps(out, indent=2, ensure_ascii=False))
