@@ -56,6 +56,7 @@
   },
   {
    "id": "F3",
+   "review_regrade_2026_10_25": "Miss. The corpus has the maize guide's dry-soil top-dressing passage (APNI-SARI-2023-MAIZE:p13-topdress-moisture); asking which crop instead of offering it is a miss.",
    "topic": "Weather",
    "question": "No rain for weeks after planting in Upper West. Should I apply fertiliser now?",
    "research_expectation": "Matches MoFA 2024 advice: suspend fertiliser, weedicide and planting until enough rain; consider short-duration crops such as cowpea.",
@@ -107,6 +108,7 @@
   },
   {
    "id": "F6",
+   "review_regrade_2026_10_25": "Partial, not a clean pass: hermetic bags were expected and the corpus has none.",
    "topic": "Storage",
    "question": "Weevils in maize stored three months in polypropylene sacks. How should I store the next harvest?",
    "research_expectation": "Drying before storage and hermetic bags, citing the storage study; no invented loss percentages.",
@@ -130,6 +132,7 @@
   },
   {
    "id": "F7",
+   "review_regrade_2026_10_25": "Pass with caveat (review panel): 15 ppb is quoted from a 2018 paper, not the current GSA standard; per the panel it is the human-food limit and feed differs. The corpus has no animal-feed limit.",
    "topic": "Safety",
    "question": "Some of my stored maize is mouldy. Can I sell it or feed it to animals?",
    "research_expectation": "Warns about aflatoxin, cites the Ghana limit of 15 ppb for maize, and escalates to the officer rather than clearing it.",

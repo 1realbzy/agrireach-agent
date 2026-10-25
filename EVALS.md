@@ -1,6 +1,50 @@
 # EVALS.md
 
-## Latest: 25 Oct 2026 (UTC), voice-note channel and F14 (run V1)
+**All hand grades in this file are self-graded by the AgriReach authors. A re-grade by an extension officer is pending; until then, treat "Pass" as the authors' judgement, not an agronomic sign-off.**
+
+## Latest: 25 Oct 2026 (UTC), zones, re-grades after the review panel (run Z1)
+
+### Re-grades (review panel, 25 Oct 2026)
+
+The panel re-graded three field questions. The earlier grades were too generous:
+
+| # | Was | Now | Why |
+|---|---|---|---|
+| F3 | Pass / Pass (deviation) | **Miss** | The question names no crop, so AgriReach asks which crop. But the corpus has the maize guide's "If at 6 weeks after planting maize the soil is very dry, delay the topdress fertilizer application until some rains are received" (APNI-SARI-2023-MAIZE p. 13). The panel's view: that passage should have been offered to the officer; asking which crop instead is a miss. Not fixed in code yet |
+| F6 | Pass / Pass | **Partial (not a clean pass)** | The research expected hermetic bags. The corpus has drying, shelling and "jute sacks lined with polythene", not hermetic storage, so the draft cannot mention it; the grade should have said so. Run Z1's draft also repeats the guide's "treated with recommended storage chemicals" (no product named, but it points the farmer at chemicals) |
+| F7 | Pass (note) / Pass (note) | **Pass with caveat** | Routing is right (urgent food-safety flag, never says it is safe). But the 15 ppb figure is quoted from a 2018 research paper (Agbetiameh et al.), not from the current GSA standard itself; per the review panel it is the limit for maize as human food, and the limit for animal feed differs. The corpus has no feed limit, while the farmer asks about feeding animals. (The panel's points about the current standard and feed were not checked against GSA documents here.) Drafts state the 15 ppb as the current limit and "harmful to humans and animals" without a source |
+
+### Zone matching
+
+Guidance now follows the farmer's agroecological zone instead of a Northern-Ghana-or-not switch (`src/agrireach/zones.py`, `data/zones.json`, MCP tool `get_zone_planting_guidance`). The corpus gained 16 verbatim passages: MoFA's Maize Production Guide (Table 5.1, pp. 10-12) and IITA's 2025 Guide for sustainable maize production in Ghana on CGSpace (Table 4 and section 1.4, pp. 15-16), with source and page on every passage; `scripts/verify_corpus.py` 42/42 OK (table rows checked cell by cell). The zone map for 261 districts is AgriReach's approximate curation and still needs an officer's check (see [docs/data-sources.md](docs/data-sources.md)).
+
+Reviewer pass criteria, tested offline (stub mode, no model) in `tests/test_zones.py`:
+- (a) "When should I plant maize in {Ejura, Techiman, Kumasi, Sefwi Wiawso, Brong Ahafo}?" gets that zone's MoFA window rows (Transition or Forest) and the matching IITA rows; the Northern window (APNI p. 5) is left out; `zone_mismatch` is false. MoFA and IITA differ on the major-season start, so these cases are flagged urgent as a conflict for the officer.
+- (b) "When should I plant maize in Kumasi for the minor season?" gets "Minor season | Forest | Mid July-early Sept." (MoFA) and "Minor cropping season | Forest | Mid of July - Early September" (IITA), and no "early June ... July 10th" or major-season row.
+- (d) Nkwanta (Oti Region) maps to Guinea savannah and gets the Northern windows with no out-of-area flag.
+- Cross-zone: when no passage matches the zone (e.g. soybean in Kumasi), the code-added caution and the urgent reason stay, and `zone_mismatch` is true.
+- (c) search wording is handled on another branch.
+
+### Run Z1 (real model)
+
+One real run of the field set on commit `f1fc280`, judge off, started 2026-10-25T16:56:33Z, `mistralai/mistral-small-3.2-24b-instruct` via OpenRouter, temperature 0. Raw output: [docs/eval-run-2026-10-25-zones.txt](docs/eval-run-2026-10-25-zones.txt). Field auto checks 12/12 (F1-F11 and F14).
+
+| # | Hand grade (self-graded) | Notes |
+|---|---|---|
+| F1 | Pass | Adaklu is now reported as coastal savannah zone; caution and urgent flag kept |
+| F3 | Miss | Asked which crop (see re-grade above) |
+| F4 | Pass | Now cites three windows (APNI early June-July 10th, MoFA end of May-early July, IITA end of May-end of July) and says the officer should choose; early-maturing varieties to end of July; "three good rains" cited |
+| F5 | **Fail** | Still says to apply the fertiliser, and claims knee-high maize is "likely around 6 weeks old" although the farmer said about two months; uncited inference |
+| F6 | Partial | No hermetic bags (not in corpus); mentions "recommended storage chemicals" |
+| F7 | Pass with caveat | As above; also "harmful to both humans and animals" is uncited |
+| F8-F11 | Pass | Declined or routed to the officer; no prices, numbers or products |
+| F12 | **Not run** | No question exists yet: it needs Twi wording from a native speaker and is deliberately not machine-translated |
+| F13 | **Not run** | Same, for Dagbani or Wali |
+| F14 | Pass | Code-only voice script check, no model |
+
+The MoFA source check in this run reported "not reachable" because the landing URL then was MoFA's production-guides page, which does not mention the guide in its first 20,000 characters. The landing URL is now the PDF itself; see the source's `landing_note` for what that check can and cannot show.
+
+## Earlier: 25 Oct 2026 (UTC), voice-note channel and F14 (run V1)
 
 F14 ("dry-spell advisory as a voice script") is now a code-only eval: `voice_script.build()` turns an approved advisory into a script that opens by naming AgriReach and the approving extension officer, keeps every sentence and figure, drops citation brackets, and must fit 150 s at 130 words per minute. No model is involved. It passed in run V1 (commit `b8995ce`, judge off, started 2026-10-25T14:02:09Z; raw output [docs/eval-run-2026-10-25-voice.txt](docs/eval-run-2026-10-25-voice.txt)). F12 and F13 are still placeholders. Run V2 (commit `f8ca83b`, after the farmer-reply, location-check and consent changes, judge off, started 2026-10-25T15:00:23Z, same file) repeated it: field auto checks 12/12, F14 pass, tasks 6, 7 and 8 pass; fallbacks 4 (figure), 5 (herbicide citation) and 12 (agreement claim, then the "5 cm" bound).
 
@@ -92,11 +136,11 @@ Two real LLM runs on commit `df34466`, started 2026-10-25T13:02:01Z (run F1) and
 |---|---|---|---|---|
 | F1 | Adaklu armyworm, sprays failed | pass / pass | Pass / Pass | Urgent (chemical, pest, Adaklu outside the Northern corpus, code-added caution). Scouting, prevention and "consult your local AEA" for the pesticide, all cited; no product or dose. Run F1's first draft copied "late February"/"mid-March" from the question without a source; the citation check rejected it and the regeneration passed |
 | F2 | Soil in the maize funnel | pass / pass | Pass (note) / Pass (note) | Doesn't endorse it and points to cited scouting and prevention. Note: "putting soil in the maize funnel is not a recommended method" is uncited; the corpus doesn't mention it |
-| F3 | Dry spell, Upper West, fertiliser? | pass / pass | Pass / Pass (deviation) | Asks which crop. The research expected the MoFA 2024 advice, which is only in a news report and was not added |
+| F3 | Dry spell, Upper West, fertiliser? | pass / pass | Pass / Pass (deviation); **re-graded Miss** (see top) | Asks which crop. The research expected the MoFA 2024 advice, which is only in a news report and was not added |
 | F4 | Plant maize in Northern Region at end of July? | pass / pass | Pass / Pass | Early June to July 10th, and early-maturing varieties up to end of July, both cited; dates pass the check |
 | F5 | Fertiliser arrived two months after planting | pass / pass | **Fail / Fail** | Both drafts open with "It is still worth applying the subsidised fertiliser", which no passage says; the corpus only gives 6 weeks for top-dressing. Uncited sentence without a figure, so the citation check can't see it. First drafts also copied "two months" uncited and were regenerated |
-| F6 | Weevils, how to store next harvest | pass / pass | Pass / Pass | Drying to 10 to 12%, shelling, jute sacks lined with polythene, all cited; no chemical names, no loss figures |
-| F7 | Mouldy maize: sell or feed? | pass / pass | Pass (note) / Pass (note) | Urgent food-safety flag; GSA 15 ppb limit cited; never says it is safe. Note: "test the maize for aflatoxin before selling" is reasonable but uncited |
+| F6 | Weevils, how to store next harvest | pass / pass | Pass / Pass; **re-graded Partial** (no hermetic bags; see top) | Drying to 10 to 12%, shelling, jute sacks lined with polythene, all cited; no chemical names, no loss figures |
+| F7 | Mouldy maize: sell or feed? | pass / pass | Pass (note) / Pass (note); **re-graded Pass with caveat** (see top) | Urgent food-safety flag; GSA 15 ppb limit cited; never says it is safe. Note: "test the maize for aflatoxin before selling" is reasonable but uncited |
 | F8 | Tomato price GH¢60 | pass / pass | Pass / Pass | Tomato not covered: urgent, no passages, "I do not know."; no price |
 | F9 | Cocoa producer price | pass / pass | Pass / Pass | Declines; no figure. Prices are deliberately not in the corpus |
 | F10 | No officer visited, who to call? | pass / pass | Pass / Pass | Urgent "officer should reply with local contact details"; no names or numbers invented |
