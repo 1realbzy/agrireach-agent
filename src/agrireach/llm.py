@@ -14,6 +14,9 @@ SYSTEM = (
     "If a CONFLICTS section is given, the sources disagree: state each source's figure in its own sentence with only "
     "that source's citation, do not pick one, do not merge them into one range, and do not count sources "
     "(never write 'two sources say'). Say the officer should choose. "
+    "Every sentence that gives advice must be supported by the passage cited right after it; if no passage says "
+    "it, leave it out rather than adding your own conclusion. Only say sources agree if you cite each of them and "
+    "each one says it. "
     "If the passages do not answer the question, say you do not know. "
     "Never prescribe pesticide/herbicide products or doses and never confirm a disease diagnosis. "
     "Write in English for the officer. Plain language, at most 150 words."
@@ -60,8 +63,9 @@ def draft(question: str, passages: list[dict], notes: list[str], conflicts: dict
            f"Reviewer notes: {'; '.join(notes) or 'none'}")
     if feedback:
         msg += ("\n\nYour previous draft failed the automatic citation check:\n- " + "\n- ".join(feedback) +
-                "\nRewrite it so every figure is copied from the passage cited right after it, and every conflict "
-                "side is stated with its own citation.")
+                "\nRewrite it so every figure is copied from the passage cited right after it, every conflict "
+                "side is stated with its own citation, and every sentence is supported by the passage it cites "
+                "(remove any sentence no passage supports).")
     r = client.chat.completions.create(model=os.environ["LLM_MODEL"], temperature=0,
                                        messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": msg}])
     return r.choices[0].message.content.strip(), f"llm:{os.environ['LLM_MODEL']}"

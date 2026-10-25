@@ -17,7 +17,7 @@ from langgraph.graph import END, StateGraph
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from agrireach import citation_check, knowledge, language, llm
+from agrireach import citation_check, claim_check, knowledge, language, llm
 
 RISK_TERMS = {
     "chemical": ["spray", "herbicide", "pesticide", "insecticide", "fungicide", "chemical", "glyphosate", "paraquat",
@@ -267,10 +267,17 @@ def build_graph(tools: Tools):
             # draft is checked in full, so it cannot slip an unchecked figure past the check behind "Note:".
             skip = ("Note:", llm.STUB_LABEL) if used.startswith("stub") else ()
             res = citation_check.check_draft(text, s["passages"], conflicts, ignore_prefixes=skip)
-            attempts.append({"draft_mode": used, "ok": res.ok, "problems": res.problems, "figures_checked": res.checked})
-            if res.ok or used.startswith("stub"):
+            # Sentences without figures: named sources, agreement claims, lexical support, optional model judge.
+            # The code-built stub quotes passages verbatim, so it is not sent to the (optional, paid) judge.
+            claims = claim_check.check_claims(text, s["passages"], conflicts, ignore_prefixes=skip,
+                                              judge=False if used.startswith("stub") else None)
+            problems = res.problems + claims.problems
+            attempts.append({"draft_mode": used, "ok": not problems, "problems": problems,
+                             "figures_checked": res.checked, "sentences_checked": claims.checked,
+                             **({"judge": {k: v for k, v in claims.judge.items() if k != "raw"}} if claims.judge else {})})
+            if not problems or used.startswith("stub"):
                 break
-            feedback = res.problems
+            feedback = problems
         check = {"ok": attempts[-1]["ok"], "attempts": attempts}
         if not check["ok"]:
             rejected = text
