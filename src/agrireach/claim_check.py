@@ -47,6 +47,18 @@ NOT_JUDGED_RE = re.compile(r"\bfarmer\s+(?:asks|is\s+asking|wants\s+to\s+know)\b
                            # the farmer to follow.") gives no advice; the judge rejected it live on 25 Oct.
                            r"|^\W*(?:the\s+)?(?:extension\s+)?officer\s+(?:should|must|can|may)\s+(?:choose|decide|confirm)"
                            r"\s+which\b[^0-9]*$"
+                           # Shapes the judge rejected live on a6222d1 (docs/live-eval-2026-10-25-run2.md), each with no
+                           # figure and no claim tacked on ("because", "but", "so", a comma): an officer action that
+                           # gives no advice, choosing between the cited options, and saying the sources don't know.
+                           r"|^\W*(?:the\s+)?(?:extension\s+)?officer\s+(?:should|must|can|may)\s+(?:also\s+)?"
+                           r"(?:inspect|visit|refer)\b(?:(?!\b(?:because|since|as|so|which|that)\b)[^0-9])*$"
+                           r"|^\W*(?:choose|pick|select)\s+the\s+(?:appropriate|right|correct|suitable)\s+"
+                           r"(?:window|option|limit|figure)\b(?:(?!\b(?:from|between)\b)[^0-9])*$"
+                           r"|^\W*(?:we|i|agrireach)\s+(?:do\s+not|don't|cannot|can't)\s+(?:know|say)\b"
+                           r"(?:(?!,|;|\bbut\b)[^0-9])*$"
+                           r"|^\W*the\s+(?:curated\s+)?(?:passages|sources)\s+do\s+not\s+(?:mention|cover|say|address|describe)"
+                           r"\b(?:(?!,|;|\bbut\b|\bso\b)[^0-9])*$"
+                           r"|\bvar(?:y|ies)\s+(?:by|between|across)\s+sources?\b"
                            r"|\bsources?\b[^.]*\b(?:disagree|differ)|\bdisagree|\bdisput|\bone\s+source\b[^.]*\banother\b",
                            re.I)
 NEGATED_AGREE = re.compile(r"\b(?:not|n't|never|dis)\s*agree|\bdo\s+not\s+agree|\bdiffer|\bdisagree", re.I)

@@ -150,3 +150,13 @@ def test_model_text_that_drops_the_pesticide_line_is_rejected():
     assert any("pesticide" in p for p in fr.check(text, F1_OFFICER))
     assert not any("pesticide" in p or "officer" in p for p in fr.check(
         text + " Ask your local AEA which pesticide to use against fall army worm.", F1_OFFICER))
+
+
+def test_rainfall_record_is_not_a_source_for_farmer_text():
+    # EJ1 live: the SMS judge accepted rainfall figures because the RAINFALL record was among the case's passages,
+    # though rainfall figures are officer-only and the SMS dropped the "model estimate" caveat.
+    p = [{"id": "RAINFALL-OPEN-METEO:ejura-2026-10", "source_id": "RAINFALL-OPEN-METEO", "kind": "record", "text": "Open-Meteo model estimate, not a gauge reading: 24 of "
+          "30 days with at least 1 mm, total 185.5 mm, 2026-09-25 to 2026-10-24."},
+         {"id": "MOFA-MAIZE:p11", "source_id": "MOFA-MAIZE", "text": "Plant maize in the major season from mid-March to end of April."}]
+    problems = fr.sms_claims("A rainfall record shows 24 of 30 days with at least 1 mm and a total of 185.5 mm.", p)
+    assert problems, "rainfall figures must not be backed by the RAINFALL record in a farmer SMS"

@@ -100,3 +100,23 @@ def test_a_pure_choice_instruction_to_the_officer_is_not_judged():
     # advice to pass on, or one with a figure, is still judged
     assert not claim_check.NOT_JUDGED_RE.search("The officer should tell the farmer it is safe to sell.")
     assert not claim_check.NOT_JUDGED_RE.search("The officer should choose which of 15 ppb or 4 ppb applies.")
+
+
+def test_live_false_rejects_of_officer_actions_and_abstentions_are_not_judged():
+    # Sentence shapes the judge rejected in the 25 Oct live run on a6222d1 (docs/live-eval-2026-10-25-run2.md)
+    from agrireach import claim_check
+    for s in ("The officer should inspect the field or refer the farmer to an expert.",
+              "The extension officer should visit the farm and inspect the maize.",
+              "Choose the appropriate window and confirm it with the farmer.",
+              "We do not know if putting soil in the whorl is enough to control the worms.",
+              "We do not know if this method is effective.",
+              "The passages do not mention this method.",
+              "The planting window varies by source."):
+        assert claim_check.NOT_JUDGED_RE.search(s), s
+    # still judged: advice to pass on, a figure, or a claim hidden behind an action verb
+    for s in ("The officer should inspect the field because fall army worm kills 50% of plants.",
+              "The officer should tell the farmer that spraying works.",
+              "We do not know the dose, but spraying twice a week controls the worms.",
+              "Choose the window from June to July.",
+              "The passages do not mention this method, so it does not work."):
+        assert not claim_check.NOT_JUDGED_RE.search(s), s

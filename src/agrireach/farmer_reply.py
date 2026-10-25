@@ -227,7 +227,8 @@ def sms_claims(text: str, passages: list[dict], judge_call=None, caveat: dict | 
     sents = [s for s in _sentences(text) if s not in fixed and re.search(r"[A-Za-z]{3}", s) and not NO_CLAIM_RE.match(s)]
     if not sents:
         return []
-    passages = [p for p in passages if p and p.get("text")]
+    # The rainfall record is officer-only (a model estimate, not a gauge reading): never a source for farmer text.
+    passages = [p for p in passages if p and p.get("text") and not str(p.get("id", "")).startswith("RAINFALL-")]
     if not passages:
         return [f"'{s[:80]}' has no source behind it: the case cites no passage" for s in sents]
     ids = ", ".join(p["id"] for p in passages)
