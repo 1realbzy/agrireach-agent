@@ -22,12 +22,21 @@ TASKS = [
 ]
 
 
+RUNS: list[dict] = []  # usage of every agent run, for the cost line and the no-model-call check
+
+
+async def _run(q: str, **k) -> dict:
+    o = await agent.run(q, **k)
+    RUNS.append(o.get("usage") or {"calls": 0, "by_role": {}, "cost_usd": None})
+    return o
+
+
 def _record(o: dict) -> dict:
     return {"status": o["status"], "priority": o["priority"], "clarification": o["clarification"],
             "urgent_reasons": o["urgent_reasons"], "sources": o["sources"],
             "source_checks": [(c["source_id"], c["reachable"]) for c in o["source_checks"] or []],
             "errors": o["errors"], "draft_mode": o["draft_mode"], "language": o["language"],
-            "citation_check": o["citation_check"], "draft": o["draft"]}
+            "citation_check": o["citation_check"], "draft": o["draft"], "usage": o.get("usage")}
 
 
 async def field():
@@ -43,7 +52,7 @@ async def field():
             print(json.dumps({"task": e["id"], "auto": "pass" if not problems else "FAIL", "auto_problems": problems,
                               "kind": "voice_script (code, no model)"}))
             continue
-        o = await agent.run(e["question"])
+        o = await _run(e["question"])
         problems = evalset.grade(e, o)
         passed, failed = passed + (not problems), failed + bool(problems)
         print(json.dumps({"task": e["id"], "q": e["question"], "auto": "pass" if not problems else "FAIL",
@@ -58,11 +67,18 @@ async def main():
         await core()
     if which in ("all", "field"):
         await field()
+    calls = sum(u["calls"] for u in RUNS)
+    costs = [u["cost_usd"] for u in RUNS if u["calls"]]
+    print(json.dumps({"usage_summary": {"runs": len(RUNS), "model_calls": calls,
+                                        "cost_usd": round(sum(costs), 6) if costs and None not in costs else None}}))
+    if llm.mode() == "llm" and RUNS and calls == 0:
+        # e.g. every call refused with 402: the drafts above are offline stubs, not a model run.
+        sys.exit("FAILED: a model is configured but no model call succeeded; this run is NOT a live run")
 
 
 async def core():
     for name, q in TASKS:
-        o = await agent.run(q)
+        o = await _run(q)
         print(json.dumps({"task": name, "q": q, "status": o["status"], "priority": o["priority"],
                           "clarification": o["clarification"], "urgent_reasons": o["urgent_reasons"],
                           "sources": o["sources"], "source_checks": [(c["source_id"], c["reachable"]) for c in o["source_checks"] or []],

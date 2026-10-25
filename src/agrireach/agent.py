@@ -546,6 +546,7 @@ async def run(question: str, crop: str = "", region: str = "", use_fetch: bool |
             except Exception:
                 fetch = None
         graph = build_graph(Tools(own, fetch))
+        calls = llm.start_usage()
         out = await graph.ainvoke({"question": question, "crop": crop, "region": region,
                                    "extra_urgent_reasons": list(extra_urgent_reasons or [])})
     return {k: out.get(k) for k in ("case_id", "status", "crop", "region", "clarification", "draft", "draft_mode",
@@ -557,7 +558,20 @@ async def run(question: str, crop: str = "", region: str = "", use_fetch: bool |
         "rainfall": out.get("rainfall"),
         "zone": (out.get("zone") or {}).get("zone"),
         "priority": "urgent" if out.get("urgent_reasons") else "routine",
-        "sources": [p["id"] for p in out.get("passages") or []]}
+        "sources": [p["id"] for p in out.get("passages") or []],
+        "usage": _log_usage(out.get("case_id"), calls)}
+
+
+def _log_usage(case_id, calls: list) -> dict:
+    """Tokens and provider-reported cost of this run's model calls, logged on the case (drafter, farmer text, judge)."""
+    summary = llm.usage_summary(calls)
+    if calls and case_id:
+        from agrireach import db
+        con = db.connect()
+        cost = "unknown" if summary["cost_usd"] is None else f"${summary['cost_usd']}"
+        db.log(con, "agent", "model_usage", summary, f"{summary['calls']} model calls, cost {cost}",
+               case_id=case_id)
+    return summary
 
 
 def main():

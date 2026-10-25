@@ -52,12 +52,17 @@ def build_user_message(items: list[tuple[str, list[dict]]]) -> str:
 def _call(user: str) -> str:
     from openai import OpenAI
 
-    client = OpenAI(base_url=os.getenv("AGRIREACH_JUDGE_BASE_URL") or os.environ["LLM_BASE_URL"],
+    from agrireach import llm
+
+    base = os.getenv("AGRIREACH_JUDGE_BASE_URL") or os.environ["LLM_BASE_URL"]
+    client = OpenAI(base_url=base,
                     api_key=os.getenv("AGRIREACH_JUDGE_API_KEY") or os.getenv("LLM_API_KEY", "none"),
                     timeout=float(os.getenv("LLM_TIMEOUT", "60")))
-    r = client.chat.completions.create(model=model(), temperature=0,
+    r = client.chat.completions.create(model=model(), temperature=0, max_tokens=llm.max_tokens("judge"),
+                                       extra_body=llm.extra_body(base),
                                        messages=[{"role": "system", "content": PROMPT},
                                                  {"role": "user", "content": user}])
+    llm.record_usage("judge", model(), r)
     return r.choices[0].message.content or ""
 
 

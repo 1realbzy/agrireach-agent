@@ -170,10 +170,12 @@ def _llm_rewrite(officer_text: str, question: str, conflicts: bool = False) -> t
     client = OpenAI(base_url=os.environ["LLM_BASE_URL"], api_key=os.getenv("LLM_API_KEY", "none"),
                     timeout=float(os.getenv("LLM_TIMEOUT", "60")))
     r = client.chat.completions.create(
-        model=os.environ["LLM_MODEL"], temperature=0,
+        model=os.environ["LLM_MODEL"], temperature=0, max_tokens=llm.max_tokens("farmer_text"),
+        extra_body=llm.extra_body(os.environ["LLM_BASE_URL"]),
         messages=[{"role": "system", "content": PROMPT},
                   {"role": "user", "content": f"Farmer's question: {question}\nSOURCES DIFFER: {'yes' if conflicts else 'no'}\n\n"
                                                     f"Advice for the officer:\n{officer_text}"}])
+    llm.record_usage("farmer_text", os.environ["LLM_MODEL"], r)
     return (r.choices[0].message.content or "").strip(), f"llm:{os.environ['LLM_MODEL']}"
 
 
