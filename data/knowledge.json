@@ -1,5 +1,5 @@
 {
- "_note": "Curated starter corpus. Every 'text' field is a VERBATIM excerpt from the cited public document (checked against the downloaded source document: soybean passages on 2026-10-13, maize and aflatoxin passages on 2026-10-25; re-run scripts/verify_corpus.py). No agronomic statements were written by the AgriReach authors. 'claim_key' and 'topic' are AgriReach curation labels used for retrieval and conflict detection.",
+ "_note": "Curated starter corpus. Every 'text' field is a VERBATIM excerpt from the cited public document (checked against the downloaded source document: soybean passages on 2026-10-13, maize and aflatoxin passages on 2026-10-25; re-run scripts/verify_corpus.py). No agronomic statements were written by the AgriReach authors. 'claim_key' and 'topic' are AgriReach curation labels used for retrieval and conflict detection. Table rows (form 'table_row', MoFA and IITA maize planting windows, added 2026-10-25) are quoted cell by cell: 'text' joins the verbatim cells (season | location | planting period) with ' | ', and each cell is checked against the source page; 'pdf_lines' maps a cell that the PDF splits across lines (or shares with a neighbouring column) to the PDF lines it is printed on. Which period belongs to which location is read from the table layout. 'zones' lists the agroecological zones a passage applies to (AgriReach curation from the source's own zone labels; Northern Ghana guides are tagged guinea_savannah and sudan_savannah).",
  "sources": {
   "APNI-SARI-2023": {
    "title": "Soybean Cropping Guide: 4R Nutrient Management and Best Agronomic Practices, Northern Ghana",
@@ -38,6 +38,24 @@
    "landing_url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC7779968/fullTextXML",
    "verify_url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC7779968/fullTextXML",
    "verify_format": "xml"
+  },
+  "MOFA-MAIZE": {
+   "title": "Maize Production Guide",
+   "publisher": "Ministry of Food and Agriculture (MoFA), Ghana, Directorate of Agricultural Extension Services (DAES); prepared under the Planting for Food and Jobs campaign",
+   "year": "not stated (PDF created 2020)",
+   "region": "Ghana (all agro-ecological zones)",
+   "licence": "Not an open licence. The document states: 'Shorts extracts of this publication may be reproduced in any non-advertising, non-profit-making context provided that the source is acknowledged'",
+   "url": "https://mofa.gov.gh/site/images/pdf/production_guides/GUIDE_TO_MAIZE_PRODUCTION.pdf",
+   "landing_url": "https://mofa.gov.gh/site/publications/production-guides"
+  },
+  "IITA-MAIZE-2025": {
+   "title": "Guide for sustainable maize production in Ghana",
+   "publisher": "International Institute of Tropical Agriculture (IITA); authors N. Abdul Rahman, B. Kotu, A. Ortega-Beltran, S. Adjei-Nsiah, D. Agbetiameh, S.S.J. Buah",
+   "year": 2025,
+   "region": "Ghana (all agro-ecological zones)",
+   "licence": "CC BY 4.0 (CGSpace item metadata: dcterms.license CC-BY-4.0)",
+   "url": "https://cgspace.cgiar.org/server/api/core/bitstreams/40fbec24-8696-4f7d-b2d1-f6ade042ac7a/content",
+   "landing_url": "https://cgspace.cgiar.org/items/e9c5bd9a-4669-4b3d-aa0c-a13394baf389"
   }
  },
  "passages": [
@@ -49,7 +67,11 @@
    "region": "northern",
    "topic": "planting",
    "claim_key": "planting_window",
-   "text": "Soybean planting in the northern region should be done between mid-June and late July based on the onset of the rains and the variety."
+   "text": "Soybean planting in the northern region should be done between mid-June and late July based on the onset of the rains and the variety.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "APNI-SARI-2023:p11-spacing",
@@ -59,7 +81,11 @@
    "region": "northern",
    "topic": "spacing",
    "claim_key": "plant_spacing",
-   "text": "The recommended plant spacing for soybean in northern Ghana is a row to row spacing of 50 cm and 15 cm spacing between plants in a row."
+   "text": "The recommended plant spacing for soybean in northern Ghana is a row to row spacing of 50 cm and 15 cm spacing between plants in a row.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "APNI-SARI-2023:p11-depth",
@@ -72,7 +98,11 @@
    "also_claims": [
     "plant_spacing"
    ],
-   "text": "To achieve the desired spacing, make planting holes that are about 5 cm deep at a spacing of 15 cm between holes."
+   "text": "To achieve the desired spacing, make planting holes that are about 5 cm deep at a spacing of 15 cm between holes.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "APNI-SARI-2023:p10-seed-rate",
@@ -82,7 +112,11 @@
    "region": "northern",
    "topic": "seed",
    "claim_key": "seed_rate",
-   "text": "The recommended seed rate for good soybean yields is about 50 to 60 kg per hectare."
+   "text": "The recommended seed rate for good soybean yields is about 50 to 60 kg per hectare.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "APNI-SARI-2023:p3-land-prep",
@@ -92,7 +126,11 @@
    "region": "northern",
    "topic": "land preparation",
    "claim_key": "land_prep_timing",
-   "text": "Start field preparation 2 to 3 weeks before the start of the rainy season (from mid-May to early June)."
+   "text": "Start field preparation 2 to 3 weeks before the start of the rainy season (from mid-May to early June).",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "APNI-SARI-2023:p3-rotation",
@@ -102,7 +140,11 @@
    "region": "northern",
    "topic": "rotation",
    "claim_key": "rotation",
-   "text": "To ensure good soybean yields each season, avoid growing soybean on the same field continuously and rotate soybean with cereal crops such as maize. Planting soybean in the same field continuously increases the chance of pest and disease infestations."
+   "text": "To ensure good soybean yields each season, avoid growing soybean on the same field continuously and rotate soybean with cereal crops such as maize. Planting soybean in the same field continuously increases the chance of pest and disease infestations.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "APNI-SARI-2023:weeds-manual",
@@ -112,7 +154,11 @@
    "region": "northern",
    "topic": "weeding",
    "claim_key": "manual_weeding",
-   "text": "Manual weed control: Weed about 3 to 4 weeks after planting and again at around 6 weeks after planting. If the crops grow very well and the canopy closes early, the second weeding is not required."
+   "text": "Manual weed control: Weed about 3 to 4 weeks after planting and again at around 6 weeks after planting. If the crops grow very well and the canopy closes early, the second weeding is not required.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "APNI-SARI-2023:weeds-herbicide",
@@ -123,7 +169,11 @@
    "topic": "herbicide",
    "claim_key": "herbicide_use",
    "risk": "chemical",
-   "text": "Before applying any herbicide, carefully read and follow instructions provided by the manufacturer or consult your local AEA."
+   "text": "Before applying any herbicide, carefully read and follow instructions provided by the manufacturer or consult your local AEA.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "APNI-SARI-2023:harvest",
@@ -133,7 +183,11 @@
    "region": "northern",
    "topic": "harvest",
    "claim_key": "harvest_timing",
-   "text": "Soybean should be harvested when 9 out of 10 pods are mature (brown in color or dry). Leaving the crop in the field too long makes the pods very dry, so they might shatter during harvesting. To avoid shattering, it is best to harvest early in the morning."
+   "text": "Soybean should be harvested when 9 out of 10 pods are mature (brown in color or dry). Leaving the crop in the field too long makes the pods very dry, so they might shatter during harvesting. To avoid shattering, it is best to harvest early in the morning.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "IITA-SSPING-2022:p18-planting-window",
@@ -143,7 +197,11 @@
    "region": "northern",
    "topic": "planting",
    "claim_key": "planting_window",
-   "text": "The best planting time for soyabean is between mid-June to mid-July with the rains likely well established."
+   "text": "The best planting time for soyabean is between mid-June to mid-July with the rains likely well established.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "IITA-SSPING-2022:p17-spacing",
@@ -153,7 +211,11 @@
    "region": "northern",
    "topic": "spacing",
    "claim_key": "plant_spacing",
-   "text": "This will allow the recommended spacing of 50 cm between rows (roughly the length of two footprints) and 10 cm between plants within the rows (roughly the length from the base of your thumb to the top of your index finger) to be applied and to achieve the required plant population."
+   "text": "This will allow the recommended spacing of 50 cm between rows (roughly the length of two footprints) and 10 cm between plants within the rows (roughly the length from the base of your thumb to the top of your index finger) to be applied and to achieve the required plant population.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "IITA-SSPING-2022:p18-depth",
@@ -163,7 +225,11 @@
    "region": "northern",
    "topic": "planting",
    "claim_key": "planting_depth",
-   "text": "Avoid deeper sowing (recommended depth = 3 cm; not deeper than 5 cm) as this may result in loss of seed vigor and poor germination or failure to germinate."
+   "text": "Avoid deeper sowing (recommended depth = 3 cm; not deeper than 5 cm) as this may result in loss of seed vigor and poor germination or failure to germinate.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "IITA-SSPING-2022:seed-rate",
@@ -173,7 +239,11 @@
    "region": "northern",
    "topic": "seed",
    "claim_key": "seed_rate",
-   "text": "Seed rate: About 40 – 45 kg of soyabean seeds are required to plant one hectare and 16 – 18 kg (dibbling) or 20 kg (drilling) to plant one acre. These are targeted at achieving the optimum population of 400,000 plants per hectare and about 162,000 plants per acre."
+   "text": "Seed rate: About 40 – 45 kg of soyabean seeds are required to plant one hectare and 16 – 18 kg (dibbling) or 20 kg (drilling) to plant one acre. These are targeted at achieving the optimum population of 400,000 plants per hectare and about 162,000 plants per acre.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "IITA-SSPING-2022:p18-moisture",
@@ -183,7 +253,11 @@
    "region": "northern",
    "topic": "planting",
    "claim_key": "early_planting_risk",
-   "text": "Do not plant too early before the rains are well established as a prolonged dry spell after planting may cause the plants to die."
+   "text": "Do not plant too early before the rains are well established as a prolonged dry spell after planting may cause the plants to die.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "APNI-SARI-2023-MAIZE:p5-planting-window",
@@ -193,7 +267,11 @@
    "region": "northern",
    "topic": "planting",
    "claim_key": "maize_planting_window",
-   "text": "Maize planting in the northern region should be done between early June and July 10th based on the onset of rains. Better yields are achieved with early planting with the first rains."
+   "text": "Maize planting in the northern region should be done between early June and July 10th based on the onset of rains. Better yields are achieved with early planting with the first rains.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "APNI-SARI-2023-MAIZE:p5-early-varieties",
@@ -203,7 +281,11 @@
    "region": "northern",
    "topic": "planting",
    "claim_key": "maize_late_planting",
-   "text": "Early maturing varieties such as Ewul-Boyu and Wang Dataa can be planted up to end of July."
+   "text": "Early maturing varieties such as Ewul-Boyu and Wang Dataa can be planted up to end of July.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "APNI-SARI-2023-MAIZE:p13-basal-timing",
@@ -213,7 +295,11 @@
    "region": "northern",
    "topic": "fertilizer",
    "claim_key": "maize_basal_timing",
-   "text": "The first fertilizer application (basal application) should be applied shortly after germination at about two weeks after planting."
+   "text": "The first fertilizer application (basal application) should be applied shortly after germination at about two weeks after planting.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "APNI-SARI-2023-MAIZE:p13-topdress-timing",
@@ -223,7 +309,11 @@
    "region": "northern",
    "topic": "fertilizer",
    "claim_key": "maize_topdress_timing",
-   "text": "The Right time for application of top-dressing fertilizer is at 6 weeks after planting."
+   "text": "The Right time for application of top-dressing fertilizer is at 6 weeks after planting.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "APNI-SARI-2023-MAIZE:p13-topdress-moisture",
@@ -233,7 +323,11 @@
    "region": "northern",
    "topic": "fertilizer",
    "claim_key": "maize_topdress_moisture",
-   "text": "Top dressing should be done when the soil is moist, to enhance the dissolving of applied nutrients in the soil as this allows for faster uptake of nutrients. If at 6 weeks after planting maize the soil is very dry, delay the topdress fertilizer application until some rains are received."
+   "text": "Top dressing should be done when the soil is moist, to enhance the dissolving of applied nutrients in the soil as this allows for faster uptake of nutrients. If at 6 weeks after planting maize the soil is very dry, delay the topdress fertilizer application until some rains are received.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "APNI-SARI-2023-MAIZE:p18-scouting",
@@ -243,7 +337,11 @@
    "region": "northern",
    "topic": "pest",
    "claim_key": "maize_scouting",
-   "text": "It is recommended to have a walk through the maize field at least once a week. When scouting, walk through the field and look out for unusual patterns such as insect damage on leaves, cobs or stems, presence of insect larvae or eggs on maize leaves, abnormal leaf colour, and stunted slow growing plants."
+   "text": "It is recommended to have a walk through the maize field at least once a week. When scouting, walk through the field and look out for unusual patterns such as insect damage on leaves, cobs or stems, presence of insect larvae or eggs on maize leaves, abnormal leaf colour, and stunted slow growing plants.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "APNI-SARI-2023-MAIZE:p20-faw-prevention",
@@ -253,7 +351,11 @@
    "region": "northern",
    "topic": "pest",
    "claim_key": "maize_faw_prevention",
-   "text": "Rotate maize with non-host plants such as groundnut to help reduce Fall Army worm infestations. Deep ploughing and burial, or burning of infested maize residues helps to reduce populations in the following season. Proper weeding of maize fields also helps to reduce infestations."
+   "text": "Rotate maize with non-host plants such as groundnut to help reduce Fall Army worm infestations. Deep ploughing and burial, or burning of infested maize residues helps to reduce populations in the following season. Proper weeding of maize fields also helps to reduce infestations.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "APNI-SARI-2023-MAIZE:p20-faw-control",
@@ -264,7 +366,11 @@
    "topic": "pest",
    "claim_key": "maize_faw_control",
    "text": "Application of recommended pesticides can help to control infestations once they occur. Consult your local AEA for advice on the recommended fall army worm control pesticide in your area.",
-   "risk": "chemical"
+   "risk": "chemical",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "APNI-SARI-2023-MAIZE:p22-drying",
@@ -274,7 +380,11 @@
    "region": "northern",
    "topic": "storage",
    "claim_key": "maize_drying",
-   "text": "At harvesting, maize grains are usually not fully dry and have a moisture content of about 15 to 20%. Immediately after harvesting, cobs should be dried so as to reduce the grain moisture content to about 10 to 12% in readiness for storage."
+   "text": "At harvesting, maize grains are usually not fully dry and have a moisture content of about 15 to 20%. Immediately after harvesting, cobs should be dried so as to reduce the grain moisture content to about 10 to 12% in readiness for storage.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "APNI-SARI-2023-MAIZE:p22-shelling",
@@ -284,7 +394,11 @@
    "region": "northern",
    "topic": "storage",
    "claim_key": "maize_storage_form",
-   "text": "Maize should be stored after removal of maize husks and shelling. Storing unhusked maize is not recommended as it is very difficult to detect insect infestations."
+   "text": "Maize should be stored after removal of maize husks and shelling. Storing unhusked maize is not recommended as it is very difficult to detect insect infestations.",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "APNI-SARI-2023-MAIZE:p22-sacks",
@@ -295,7 +409,11 @@
    "topic": "storage",
    "claim_key": "maize_storage_sacks",
    "text": "Well dried and shelled maize should be treated with recommended storage chemicals and stored in jute sacks lined with polythene bags.",
-   "risk": "chemical"
+   "risk": "chemical",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
   },
   {
    "id": "AGBETIAMEH-2018:aflatoxin-limits",
@@ -306,7 +424,378 @@
    "topic": "aflatoxin",
    "claim_key": "maize_aflatoxin_limit",
    "text": "aflatoxin limits imposed by the European Union (4 ppb), the Ghana Standards Authority (GSA; 15 ppb for maize and 20 ppb for groundnut), and the United States Food and Drugs Administration (FDA; 20 ppb)",
-   "excerpt_note": "Mid-sentence excerpt; the full sentence describes how the study grouped its samples."
+   "excerpt_note": "Mid-sentence excerpt; the full sentence describes how the study grouped its samples.",
+   "zones": [
+    "sudan_savannah",
+    "guinea_savannah",
+    "transition",
+    "deciduous_forest",
+    "rain_forest",
+    "coastal_savannah"
+   ]
+  },
+  {
+   "id": "MOFA-MAIZE:p11-forest-major",
+   "source_id": "MOFA-MAIZE",
+   "page": "11 (PDF page 15), table '5.1 RECOMMENDED PLANTING PERIODS FOR DIFFERENT AGRO-ECOLOGICAL ZONES IN GHANA'",
+   "crop": "maize",
+   "region": "forest",
+   "zones": [
+    "deciduous_forest",
+    "rain_forest"
+   ],
+   "season": "major",
+   "topic": "planting",
+   "claim_key": "maize_planting_window_major_season",
+   "text": "Major season | Forest | Early March-end of April",
+   "form": "table_row",
+   "table": "5.1 RECOMMENDED PLANTING PERIODS FOR DIFFERENT AGRO-ECOLOGICAL ZONES IN GHANA",
+   "cells": [
+    "Major season",
+    "Forest",
+    "Early March-end of April"
+   ]
+  },
+  {
+   "id": "MOFA-MAIZE:p11-transition-major",
+   "source_id": "MOFA-MAIZE",
+   "page": "11 (PDF page 15), table '5.1 RECOMMENDED PLANTING PERIODS FOR DIFFERENT AGRO-ECOLOGICAL ZONES IN GHANA'",
+   "crop": "maize",
+   "region": "transition",
+   "zones": [
+    "transition"
+   ],
+   "season": "major",
+   "topic": "planting",
+   "claim_key": "maize_planting_window_major_season",
+   "text": "Major season | Transition | Mid-March-end of April",
+   "form": "table_row",
+   "table": "5.1 RECOMMENDED PLANTING PERIODS FOR DIFFERENT AGRO-ECOLOGICAL ZONES IN GHANA",
+   "cells": [
+    "Major season",
+    "Transition",
+    "Mid-March-end of April"
+   ]
+  },
+  {
+   "id": "MOFA-MAIZE:p11-coastal-major",
+   "source_id": "MOFA-MAIZE",
+   "page": "11 (PDF page 15), table '5.1 RECOMMENDED PLANTING PERIODS FOR DIFFERENT AGRO-ECOLOGICAL ZONES IN GHANA'",
+   "crop": "maize",
+   "region": "coastal",
+   "zones": [
+    "coastal_savannah"
+   ],
+   "season": "major",
+   "topic": "planting",
+   "claim_key": "maize_planting_window_major_season",
+   "text": "Major season | Coastal savannah | End of March-end of April",
+   "form": "table_row",
+   "table": "5.1 RECOMMENDED PLANTING PERIODS FOR DIFFERENT AGRO-ECOLOGICAL ZONES IN GHANA",
+   "cells": [
+    "Major season",
+    "Coastal savannah",
+    "End of March-end of April"
+   ],
+   "pdf_lines": {
+    "Coastal savannah": [
+     "Coastal",
+     "savannah End of March-"
+    ],
+    "End of March-end of April": [
+     "savannah End of March-",
+     "end of April"
+    ]
+   }
+  },
+  {
+   "id": "MOFA-MAIZE:p12-guinea-sudan-major",
+   "source_id": "MOFA-MAIZE",
+   "page": "12 (PDF page 16), table '5.1 RECOMMENDED PLANTING PERIODS FOR DIFFERENT AGRO-ECOLOGICAL ZONES IN GHANA'",
+   "crop": "maize",
+   "region": "northern",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ],
+   "season": "major",
+   "topic": "planting",
+   "claim_key": "maize_planting_window",
+   "text": "Major season | Guinea/Sudan savannah | End of May-early July",
+   "form": "table_row",
+   "table": "5.1 RECOMMENDED PLANTING PERIODS FOR DIFFERENT AGRO-ECOLOGICAL ZONES IN GHANA",
+   "cells": [
+    "Major season",
+    "Guinea/Sudan savannah",
+    "End of May-early July"
+   ],
+   "pdf_lines": {
+    "Guinea/Sudan savannah": [
+     "Guinea/Sudan",
+     "savannah"
+    ]
+   }
+  },
+  {
+   "id": "MOFA-MAIZE:p12-forest-minor",
+   "source_id": "MOFA-MAIZE",
+   "page": "12 (PDF page 16), table '5.1 RECOMMENDED PLANTING PERIODS FOR DIFFERENT AGRO-ECOLOGICAL ZONES IN GHANA'",
+   "crop": "maize",
+   "region": "forest",
+   "zones": [
+    "deciduous_forest",
+    "rain_forest"
+   ],
+   "season": "minor",
+   "topic": "planting",
+   "claim_key": "maize_planting_window_minor_season",
+   "text": "Minor season | Forest | Mid July-early Sept.",
+   "form": "table_row",
+   "table": "5.1 RECOMMENDED PLANTING PERIODS FOR DIFFERENT AGRO-ECOLOGICAL ZONES IN GHANA",
+   "cells": [
+    "Minor season",
+    "Forest",
+    "Mid July-early Sept."
+   ]
+  },
+  {
+   "id": "MOFA-MAIZE:p12-transition-minor",
+   "source_id": "MOFA-MAIZE",
+   "page": "12 (PDF page 16), table '5.1 RECOMMENDED PLANTING PERIODS FOR DIFFERENT AGRO-ECOLOGICAL ZONES IN GHANA'",
+   "crop": "maize",
+   "region": "transition",
+   "zones": [
+    "transition"
+   ],
+   "season": "minor",
+   "topic": "planting",
+   "claim_key": "maize_planting_window_minor_season",
+   "text": "Minor season | Transition | Mid July through August-early Sept.",
+   "form": "table_row",
+   "table": "5.1 RECOMMENDED PLANTING PERIODS FOR DIFFERENT AGRO-ECOLOGICAL ZONES IN GHANA",
+   "cells": [
+    "Minor season",
+    "Transition",
+    "Mid July through August-early Sept."
+   ],
+   "pdf_lines": {
+    "Mid July through August-early Sept.": [
+     "Mid July through",
+     "August-early Sept."
+    ]
+   }
+  },
+  {
+   "id": "MOFA-MAIZE:p12-coastal-minor",
+   "source_id": "MOFA-MAIZE",
+   "page": "12 (PDF page 16), table '5.1 RECOMMENDED PLANTING PERIODS FOR DIFFERENT AGRO-ECOLOGICAL ZONES IN GHANA'",
+   "crop": "maize",
+   "region": "coastal",
+   "zones": [
+    "coastal_savannah"
+   ],
+   "season": "minor",
+   "topic": "planting",
+   "claim_key": "maize_planting_window_minor_season",
+   "text": "Minor season | Coastal Savannah | Mid July-Mid Aug.",
+   "form": "table_row",
+   "table": "5.1 RECOMMENDED PLANTING PERIODS FOR DIFFERENT AGRO-ECOLOGICAL ZONES IN GHANA",
+   "cells": [
+    "Minor season",
+    "Coastal Savannah",
+    "Mid July-Mid Aug."
+   ],
+   "pdf_lines": {
+    "Coastal Savannah": [
+     "Coastal",
+     "Savannah"
+    ]
+   }
+  },
+  {
+   "id": "MOFA-MAIZE:p10-when-to-plant",
+   "source_id": "MOFA-MAIZE",
+   "page": "10 (PDF page 14), section 5.1 When to plant",
+   "crop": "maize",
+   "region": "ghana",
+   "zones": [
+    "sudan_savannah",
+    "guinea_savannah",
+    "transition",
+    "deciduous_forest",
+    "rain_forest",
+    "coastal_savannah"
+   ],
+   "topic": "planting",
+   "claim_key": "maize_planting_rule",
+   "text": "Planting time or periods differ according to agro-ecology, season and maturity group of the variety. Sow after the rains have stabilized to avoid wilting. Planting time should be informed by local weather information."
+  },
+  {
+   "id": "IITA-MAIZE-2025:p16-sudan-major",
+   "source_id": "IITA-MAIZE-2025",
+   "page": "16 (PDF page 24), Table 4. Recommended planting period for maize production in Ghana",
+   "crop": "maize",
+   "region": "northern",
+   "zones": [
+    "sudan_savannah"
+   ],
+   "season": "major",
+   "topic": "planting",
+   "claim_key": "maize_planting_window",
+   "text": "Major cropping season | Sudan savannah | End of May - Mid of July",
+   "form": "table_row",
+   "table": "Table 4. Recommended planting period for maize production in Ghana",
+   "cells": [
+    "Major cropping season",
+    "Sudan savannah",
+    "End of May - Mid of July"
+   ]
+  },
+  {
+   "id": "IITA-MAIZE-2025:p16-guinea-major",
+   "source_id": "IITA-MAIZE-2025",
+   "page": "16 (PDF page 24), Table 4. Recommended planting period for maize production in Ghana",
+   "crop": "maize",
+   "region": "northern",
+   "zones": [
+    "guinea_savannah"
+   ],
+   "season": "major",
+   "topic": "planting",
+   "claim_key": "maize_planting_window",
+   "text": "Major cropping season | Guinea savannah | End of May - End of July",
+   "form": "table_row",
+   "table": "Table 4. Recommended planting period for maize production in Ghana",
+   "cells": [
+    "Major cropping season",
+    "Guinea savannah",
+    "End of May - End of July"
+   ]
+  },
+  {
+   "id": "IITA-MAIZE-2025:p16-coastal-major",
+   "source_id": "IITA-MAIZE-2025",
+   "page": "16 (PDF page 24), Table 4. Recommended planting period for maize production in Ghana",
+   "crop": "maize",
+   "region": "coastal",
+   "zones": [
+    "coastal_savannah"
+   ],
+   "season": "major",
+   "topic": "planting",
+   "claim_key": "maize_planting_window_major_season",
+   "text": "Major cropping season | Costal savannah | End of March - End of April",
+   "form": "table_row",
+   "table": "Table 4. Recommended planting period for maize production in Ghana",
+   "cells": [
+    "Major cropping season",
+    "Costal savannah",
+    "End of March - End of April"
+   ]
+  },
+  {
+   "id": "IITA-MAIZE-2025:p16-forest-major",
+   "source_id": "IITA-MAIZE-2025",
+   "page": "16 (PDF page 24), Table 4. Recommended planting period for maize production in Ghana",
+   "crop": "maize",
+   "region": "forest",
+   "zones": [
+    "deciduous_forest",
+    "rain_forest"
+   ],
+   "season": "major",
+   "topic": "planting",
+   "claim_key": "maize_planting_window_major_season",
+   "text": "Major cropping season | Forest | End of March - End of April",
+   "form": "table_row",
+   "table": "Table 4. Recommended planting period for maize production in Ghana",
+   "cells": [
+    "Major cropping season",
+    "Forest",
+    "End of March - End of April"
+   ]
+  },
+  {
+   "id": "IITA-MAIZE-2025:p16-transition-major",
+   "source_id": "IITA-MAIZE-2025",
+   "page": "16 (PDF page 24), Table 4. Recommended planting period for maize production in Ghana",
+   "crop": "maize",
+   "region": "transition",
+   "zones": [
+    "transition"
+   ],
+   "season": "major",
+   "topic": "planting",
+   "claim_key": "maize_planting_window_major_season",
+   "text": "Major cropping season | Transition | End of March - End of April",
+   "form": "table_row",
+   "table": "Table 4. Recommended planting period for maize production in Ghana",
+   "cells": [
+    "Major cropping season",
+    "Transition",
+    "End of March - End of April"
+   ]
+  },
+  {
+   "id": "IITA-MAIZE-2025:p16-forest-minor",
+   "source_id": "IITA-MAIZE-2025",
+   "page": "16 (PDF page 24), Table 4. Recommended planting period for maize production in Ghana",
+   "crop": "maize",
+   "region": "forest",
+   "zones": [
+    "deciduous_forest",
+    "rain_forest"
+   ],
+   "season": "minor",
+   "topic": "planting",
+   "claim_key": "maize_planting_window_minor_season",
+   "text": "Minor cropping season | Forest | Mid of July - Early September",
+   "form": "table_row",
+   "table": "Table 4. Recommended planting period for maize production in Ghana",
+   "cells": [
+    "Minor cropping season",
+    "Forest",
+    "Mid of July - Early September"
+   ]
+  },
+  {
+   "id": "IITA-MAIZE-2025:p16-transition-minor",
+   "source_id": "IITA-MAIZE-2025",
+   "page": "16 (PDF page 24), Table 4. Recommended planting period for maize production in Ghana",
+   "crop": "maize",
+   "region": "transition",
+   "zones": [
+    "transition"
+   ],
+   "season": "minor",
+   "topic": "planting",
+   "claim_key": "maize_planting_window_minor_season",
+   "text": "Minor cropping season | Transition | Mid of July - Early September",
+   "form": "table_row",
+   "table": "Table 4. Recommended planting period for maize production in Ghana",
+   "cells": [
+    "Minor cropping season",
+    "Transition",
+    "Mid of July - Early September"
+   ]
+  },
+  {
+   "id": "IITA-MAIZE-2025:p15-three-good-rains",
+   "source_id": "IITA-MAIZE-2025",
+   "page": "15 (PDF page 23), section 1.4 Planting",
+   "crop": "maize",
+   "region": "ghana",
+   "zones": [
+    "sudan_savannah",
+    "guinea_savannah",
+    "transition",
+    "deciduous_forest",
+    "rain_forest",
+    "coastal_savannah"
+   ],
+   "topic": "planting",
+   "claim_key": "maize_onset_rule",
+   "text": "It is recommended to plant after three good rains within the planting window to ensure enough soil moisture to support germination and early growth."
   }
  ],
  "crop_calendar": [
