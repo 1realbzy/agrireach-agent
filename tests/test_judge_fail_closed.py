@@ -91,4 +91,4 @@ def test_agent_accepts_a_model_draft_the_judge_supports(monkeypatch):
     seen, call = recording_judge("supported")
     monkeypatch.setattr(judge, "_call", call)
     out = asyncio.run(agent.run("When should I top dress my maize in Tamale?", use_fetch=False))
-    assert out["citation_check"]["ok"] and out["draft"] == GOOD and seen
+    assert out["citation_check"]["ok"] and out["draft"].split("\n\n" + agent.OFFICER_FACT)[0] == GOOD and seen
