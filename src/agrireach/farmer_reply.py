@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from dataclasses import dataclass, field
 
 from agrireach import citation_check, llm
@@ -89,6 +90,14 @@ class FarmerDraft:
     zone_caveat: dict | None = None  # set when the guidance is for another zone; see zone_caveat()
 
 
+def sms_length_problem(text: str) -> str | None:
+    """The SMS limit the approval endpoint enforces (sms.length_prompt: SMS_MAX_SEGMENTS parts, by default 612 GSM-7
+    characters, or 268 if any character needs Unicode), measured on the text as proposed (plain punctuation). Using
+    the same function means a proposed text can't be refused with a 400 at approval for length."""
+    from agrireach.channels import sms
+    return sms.length_prompt(plain_punctuation(text))
+
+
 def check(text: str, officer_text: str) -> list[str]:
     """Problems with a farmer-facing text; empty if it can be proposed as is."""
     out = []
@@ -105,6 +114,8 @@ def check(text: str, officer_text: str) -> list[str]:
         out.append("drops the pesticide safety line: keep the officer text's line on pesticides or spraying")
     if len(text) > MAX_CHARS:
         out.append(f"{len(text)} characters, over {MAX_CHARS}")
+    if p := sms_length_problem(text):
+        out.append(p)
     pool = citation_check.extract_figures(CITE_RE.sub(" ", officer_text))
     for f in citation_check.extract_figures(text):
         if not citation_check._matches(f, pool):
@@ -189,8 +200,9 @@ def rule_rewrite(officer_text: str, max_chars: int = MAX_CHARS) -> str:
 
 
 def ensure_safety_line(text: str, passages: list[dict] | None, caveat: dict | None = None,
-                       max_chars: int | None = None) -> tuple[str, list[str]]:
-    """The pesticide safety guarantee, applied to every proposed farmer text (model or rule-based).
+                       fit: bool = False) -> tuple[str, list[str]]:
+    """The pesticide safety guarantee, applied when the farmer text is proposed (never at approval or send: the
+    officer approves, and may edit, the exact text that is sent).
 
     Why it exists: F1 lost the safety line from the farmer SMS three different ways in live runs, each a different
     wording, so patching wordings did not hold. a5e9192 run 2: the late-timing check flagged "worms are still a
@@ -199,11 +211,15 @@ def ensure_safety_line(text: str, passages: list[dict] | None, caveat: dict | No
     pesticide" as an officer instruction (docs/live-eval-2026-10-25-run4.md).
 
     When a case passage carries a pesticide safety sentence (SAFETY_RE; a referral to the AEA is preferred), that
-    sentence goes word for word, with its source named like the planting rows ("(APNI)"), first after the zone caveat.
-    It is never reworded or shortened: other sentences are dropped from the end to fit (the caveat and the
-    sources-differ sentence stay). If it still can't fit, the text is "" with a note: no SMS is proposed and the
-    officer writes it. The rainfall record is never a source. Returns (text, notes for the officer)."""
-    limit = MAX_CHARS if max_chars is None else max_chars
+    sentence goes word for word, with its source named like the planting rows ("(APNI)"), right after the zone caveat
+    and before the advice. It is never reworded or shortened.
+    fit=False (model text): nothing is dropped; dropping trailing model sentences can leave half a piece of advice, so
+    a model text that no longer fits is rejected by check() and the rule path is used.
+    fit=True (rule text, which is built sentence by sentence): advice sentences are dropped whole from the end until
+    the text fits MAX_CHARS and the approval endpoint's SMS limit (sms_length_problem); the caveat, the safety line
+    and the sources-differ sentence are never dropped, and every dropped sentence is named in the officer note. If it
+    still can't fit, the text is "" with a note: no SMS is proposed and the officer writes it.
+    The rainfall record is never a source. Returns (text, notes for the officer)."""
     line = src = None
     for p in passages or []:
         pid = str(p.get("id", "")) if p else ""
@@ -216,27 +232,31 @@ def ensure_safety_line(text: str, passages: list[dict] | None, caveat: dict | No
             src = SOURCE_NAMES.get(pid.split("-")[0], pid.split(":")[0])
             line = f"{re.sub(r'[.!?]+$', '', cands[0])} ({src})."
             break
-    if not line or not text:
-        return text, []  # nothing to guarantee, or no proposal at all (the officer writes the text)
-    head = caveat["sentence"] if caveat and text.startswith(caveat["sentence"]) else ""
+    if not text or (not line and not fit):
+        return text, []  # no proposal (the officer writes the text), or nothing to guarantee or fit
+    head = [caveat["sentence"]] if caveat and text.startswith(caveat["sentence"]) else []
 
     def key(s: str) -> str:  # the same sentence with or without its "(Source)" name
         return re.sub(r"\W+", " ", re.sub(r"\s*\([^)]*\)\s*[.!?]*$", "", s)).strip().lower()
-    body = [s for s in _sentences(text[len(head):].strip()) if key(s) != key(line)]
+    body = [s for s in _sentences(text[len(head[0]) if head else 0:].strip()) if not line or key(s) != key(line)]
     tail = [s for s in body if s == CONFIRM]
     body = [s for s in body if s != CONFIRM]
-    dropped = 0
-    while body and len(" ".join([head, line, *body, *tail]).strip()) > limit:
-        body.pop()
-        dropped += 1
-    out = " ".join([head, line, *body, *tail]).strip()
-    if len(out) > limit:
-        return "", [f"the cited source's pesticide sentence ({src}) does not fit in {limit} characters with the "
-                    "caveat; it is never shortened, so no SMS is proposed: the officer must write the farmer text"]
-    if out == text:
-        return text, []
-    return out, [f"the cited source's pesticide sentence ({src}) was put first, word for word"
-                 + (f"; {dropped} other sentence(s) dropped to fit {limit} characters" if dropped else "")]
+    join = lambda b: " ".join([*head, *([line] if line else []), *b, *tail])  # noqa: E731
+    fits = lambda t: len(t) <= MAX_CHARS and not sms_length_problem(t)  # noqa: E731
+    dropped: list[str] = []
+    while fit and body and not fits(join(body)):
+        dropped.insert(0, body.pop())
+    out, notes = join(body), []
+    if fit and (not fits(out) or not (body or line)):  # caveat + safety line alone is still worth proposing
+        why = (f"the cited source's pesticide sentence ({src}) does not fit" if line else "no advice sentence fits")
+        return "", [f"{why} within the length limit ({MAX_CHARS} characters, and the approval part limit) with the caveat; "
+                    "it is never shortened, so no SMS is proposed: the officer must write the farmer text"]
+    if line and out != text:
+        notes.append(f"the cited source's pesticide sentence ({src}) was put first after any caveat, word for word")
+    if dropped:
+        notes.append(f"{len(dropped)} advice sentence(s) dropped to fit the length limit; check the reply still makes "
+                     "sense: " + "; ".join(f"'{d}'" for d in dropped))
+    return out, notes
 
 
 def _llm_rewrite(officer_text: str, question: str, conflicts: bool = False) -> tuple[str, str]:
@@ -348,12 +368,13 @@ def _propose(officer_text: str, question: str, language: str, conflicts: bool, c
             notes.append(f"model rewrite rejected ({'; '.join(problems)}); rule-based version shown")
         except Exception as e:
             notes.append(f"model rewrite failed ({type(e).__name__}); rule-based version shown")
-    text = rule_rewrite(officer_text, MAX_CHARS - len(lead) - (len(CONFIRM) + 1 if conflicts else 0))
+    # No length cut here: ensure_safety_line(fit=True) drops whole sentences to fit and names them for the officer.
+    text = rule_rewrite(officer_text, sys.maxsize)
     if conflicts and text and CONFIRM not in text:
         # The options are listed with their sources; never present them as if they agree.
         text = f"{text} {CONFIRM}"
     text = lead + text if text else text
-    text, safety = ensure_safety_line(text, passages, caveat)
+    text, safety = ensure_safety_line(text, passages, caveat, fit=True)
     if not text:
         return FarmerDraft("", "rule", notes + (safety or ["nothing farmer-facing left after removing officer notes; "
                                                            "the officer must write it"]), needs_officer_text=True)

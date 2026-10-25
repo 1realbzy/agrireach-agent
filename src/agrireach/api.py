@@ -125,6 +125,11 @@ def decide(case_id: int, d: Decision, officer: str = Depends(current_officer)):
             ps = [knowledge.reference(i) for i in json.loads(current["sources"] or "[]")]
             warnings += [f"farmer text not backed by the case's sources: {p}"
                          for p in farmer_reply.sms_claims(d.farmer_text, ps, caveat=caveat)]
+            # The proposal carries the source's pesticide line (farmer_reply.ensure_safety_line); an officer who takes
+            # it out is warned and logged, and the line is never put back: what is approved is what is sent.
+            warnings += [f"approved farmer text {p}" for p in farmer_reply.check(d.farmer_text,
+                                                                                  d.edited_text or current["draft"] or "")
+                         if "pesticide safety line" in p]
     try:
         row = db.officer_decide(con, case_id, officer=officer, decision=d.decision, edited_text=d.edited_text,
                                 note=d.note, farmer_text=d.farmer_text)
