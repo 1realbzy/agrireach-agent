@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlencode
 import httpx
 from fastapi.testclient import TestClient
 
-from agrireach import api, db
+from agrireach import api, db, farmer_reply
 from agrireach.channels import service, sms
 from tests.test_sms import CFG, FARMER, FakeAT, TWI_QUESTION, callback
 
@@ -76,18 +76,26 @@ def test_sms_case_shows_the_limit_and_no_prompt_when_the_proposal_fits():
     assert any(p.startswith("season check") for p in fd["problems"])     # existing prompts kept
 
 
-def test_sms_case_prompts_when_the_proposal_is_over_the_limit(monkeypatch):
+def test_sms_case_proposal_already_fits_a_lower_part_limit(monkeypatch):
+    # Since fix/sms-safety-guarantee-2 (QA): the proposal uses the approval endpoint's own limit
+    # (farmer_reply.sms_length_problem), so a proposed text can never be refused for length at approval. Whole
+    # sentences are dropped from the end and named for the officer; nothing is cut mid-sentence. Officer edits are
+    # still only prompted, never cut (test_officer_edit_is_checked_...).
     monkeypatch.setenv("SMS_MAX_SEGMENTS", "3")
     cid = _sms_case()
     fd = api._case(db.get_case(db.connect(), cid))["farmer_draft"]
-    prompt = ("too long for SMS: this text needs 4 parts (standard SMS characters); the limit is 3. "
-              "Shorten it to 459 characters or fewer before approving (it is 574 now). Nothing is cut automatically.")
-    assert prompt in fd["problems"] and "too long" not in fd["text"] and fd["text"] == EJURA_SMS
-    # Re-propose keeps it, computed on the new text.
+    assert sms.length_prompt(fd["text"]) is None and sms.measure(fd["text"]).segments <= 3
+    assert not any("too long" in p for p in fd["problems"])
+    note = next(p for p in fd["problems"] if "dropped to fit" in p)
+    assert fd["text"].endswith("Your extension officer will confirm which to follow.")  # never dropped
+    kept = farmer_reply._sentences(fd["text"])
+    for s in farmer_reply._sentences(EJURA_SMS):
+        assert s in kept or f"'{s}'" in note, s  # each sentence is sent whole or named as dropped
+    # Re-propose gives the same fitted text, and the officer still sees the limit.
     c = TestClient(api.app)
     r = c.post(f"/officer/cases/{cid}/farmer-draft", json={"officer_text": db.get_case(db.connect(), cid)["draft"]},
                headers=_officer()).json()
-    assert prompt in r["problems"] and "too long" not in r["text"]
+    assert r["text"] == fd["text"] and not any("too long" in p for p in r["problems"])
     assert r["sms_limit"].startswith("SMS limit for this farmer: 3 parts, which is 459 characters")
 
 

@@ -83,15 +83,22 @@ def test_herbicide_passage_gives_its_own_sentence():
         "your local AEA (APNI).")
 
 
-# (a) the over-length faithful model SMS is trimmed to fit, not discarded
-def test_a_723_char_model_sms_is_trimmed_to_fit_with_the_safety_line_first(monkeypatch):
+# (a) the over-length faithful model SMS is NOT trimmed (dropping trailing model sentences can leave half a piece of
+# advice): model SMS + the source's line is over the limit, so it falls to the rule path, which fits at sentence
+# boundaries and lists every dropped sentence for the officer.
+STORAGE = ("For storage, well-dried and shelled maize should be treated with recommended storage chemicals and stored "
+           "in jute sacks lined with polythene bags.")
+
+
+def test_a_723_char_model_sms_is_not_trimmed_the_rule_path_carries_the_line(monkeypatch):
     llm_on(monkeypatch, SMS_B1)
     fd = fr.propose(DRAFT_B1, Q, zone_caveat=CAVEAT, passages=F1_PS)
-    assert fd.mode == "llm:fake", fd.problems
+    assert fd.mode == "rule", fd.problems
+    assert any(p.startswith("model rewrite rejected") and "over 600" in p for p in fd.problems), fd.problems
     assert_line_first(fd.text)
-    assert "You should check your maize field at least once a week" in fd.text
-    assert not any("over 600" in p or "safety line" in p or "model rewrite rejected" in p for p in fd.problems), \
-        fd.problems
+    assert "You should check your maize field" not in fd.text  # nothing from the rejected model SMS is kept
+    assert "You should scout the maize field at least once a week" in fd.text
+    assert STORAGE not in fd.text and any(STORAGE in p and "dropped" in p for p in fd.problems), fd.problems
 
 
 # (b) the model call fails: the rule text carries the line
@@ -120,16 +127,16 @@ def test_c_rule_path_after_a_rejected_model_sms_keeps_the_safety_line(monkeypatc
     assert_line_first(fd.text)
 
 
-# (d) a model SMS that drops the line gets the source's sentence
+# (d) a model SMS that drops the line gets the source's sentence (it fits, so the model text is kept whole)
 def test_d_model_sms_that_drops_the_line_gets_it_back(monkeypatch):
-    no_line = SMS_B1.replace(
-        " If the infestation is severe and the recommended chemicals have not worked, consult your local Agricultural "
-        "Extension Agent for advice on the recommended fall armyworm control pesticide in your area.", "")
+    no_line = ("You should check your maize field at least once a week for unusual patterns like insect damage, "
+               "larvae, or stunted growth.")
     assert not fr.SAFETY_RE.search(no_line)
     llm_on(monkeypatch, no_line)
     fd = fr.propose(DRAFT_B1, Q, zone_caveat=CAVEAT, passages=F1_PS)
     assert fd.mode == "llm:fake", fd.problems
     assert_line_first(fd.text)
+    assert fd.text == f"{CAVEAT['sentence']} {LINE} {no_line}"
 
 
 # (e) no safety passage: nothing is injected

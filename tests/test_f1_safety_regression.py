@@ -117,13 +117,20 @@ def test_rule_rewrite_keeps_the_safety_line_and_the_referral(draft):
 
 @pytest.mark.parametrize("draft,sms", [(DRAFT_RUN1, SMS_RUN1), (DRAFT_RUN2, SMS_RUN2)])
 def test_faithful_model_sms_is_proposed_with_the_safety_line(monkeypatch, draft, sms):
+    # Since fix/sms-safety-guarantee-2 the source's own pesticide sentence goes after the caveat and a model SMS is
+    # never trimmed (tests/test_sms_safety_guarantee*.py). These recorded SMS are then over 600 characters, so they
+    # are rejected for length only, never as late-timing claims, and the proposal still carries the line.
     monkeypatch.setattr(llm, "mode", lambda: "llm")
     monkeypatch.setattr(fr, "_llm_rewrite", lambda *a, **k: (sms, "llm:fake"))
     monkeypatch.setattr(judge, "_call", accepting_judge()[1])
+    assert fr.sms_claims(f"{CAVEAT['sentence']} {sms}", PS, caveat=CAVEAT) == []  # faithful, no late-timing flag
+    assert len(fr.ensure_safety_line(f"{CAVEAT['sentence']} {sms}", PS, CAVEAT)[0]) > fr.MAX_CHARS
     fd = fr.propose(draft, Q, zone_caveat=CAVEAT, passages=PS)
-    assert fd.mode == "llm:fake", fd.problems
+    rejected = [p for p in fd.problems if p.startswith("model rewrite rejected")]
+    assert fd.mode == "rule" and rejected and "over 600" in rejected[0], fd.problems
+    assert "late" not in rejected[0] and "not supported" not in rejected[0], rejected
     assert fd.text.startswith(CAVEAT["sentence"]) and "pesticide" in fd.text and "Extension Agent" in fd.text
-    assert not any("safety line" in p or "model rewrite rejected" in p for p in fd.problems), fd.problems
+    assert not any("drops the pesticide safety line" in p for p in fd.problems), fd.problems
 
 
 @pytest.mark.parametrize("draft", [DRAFT_RUN1, DRAFT_RUN2])
