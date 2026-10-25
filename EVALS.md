@@ -64,6 +64,11 @@ The "3 cm… seed vigor" sentence didn't occur. The depth sentences that did occ
 - not re-tested: approval criteria 1–4, the "(MoFA) ." split, the empty fallback and the audit-log gap;
 - Twi and Dagbani are untested.
 
+### Known limits of the judge exemptions (code at `9219e1b` and later)
+
+- A "do not know if/whether ..." sentence may end in one "X or Y" word pair, so a nonsense line such as "Do not know if the maize is safe or spray." skips the judge. Any longer second part ("... or spray mancozeb.") is judged (`tests/test_not_judged_run3.py`). Accepted after review: a single trailing verb gives the farmer nothing to act on.
+- The late-timing check (`claim_check.LATE_CLAIM_RE`) is a fixed list of wordings ("can still", "still worth", "still have time", "not too late", "it is not late to/for/yet", ...). A late-timing claim phrased another way reaches only the judge.
+
 ## Earlier: 25 Oct 2026 (UTC), live runs on `a6222d1` (runs R1, R2, EJ1-EJ5)
 
 Full write-up and raw output: [docs/live-eval-2026-10-25-run2.md](docs/live-eval-2026-10-25-run2.md).

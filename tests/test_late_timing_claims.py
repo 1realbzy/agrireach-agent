@@ -29,3 +29,19 @@ def test_still_claim_backed_by_a_late_timing_passage_passes_and_plain_advice_is_
     assert not any("late" in p for p in claim_check.check_claims(ok, [LATE], judge=False).problems)
     plain = f"If the soil is very dry, delay application until some rains are received [{MOIST['id']}]."
     assert claim_check.check_claims(plain, [MOIST], judge=False).problems == []
+
+
+# Scoffer probe on 9219e1b: ordinary word orders the pattern missed ("you have still time" only).
+import pytest
+
+
+@pytest.mark.parametrize("sms", ["You still have time to plant.", "Farmers still have time to apply the fertiliser.",
+                                 "It is not late to plant.", "It's not late for top dressing."])
+def test_more_late_wordings_without_a_late_timing_passage_are_rejected(sms):
+    assert any("late" in p for p in farmer_reply.sms_claims(sms, [MOIST, TIMING]))
+
+
+@pytest.mark.parametrize("text", ["It is not late blight, it is leaf spot.", "You still have the receipt.",
+                                  "Fall armyworms are still a problem in the field."])
+def test_late_wordings_do_not_catch_unrelated_still_or_late(text):
+    assert not claim_check.LATE_CLAIM_RE.search(text)
