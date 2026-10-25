@@ -120,22 +120,20 @@ def test_rule_rewrite_keeps_the_safety_line_and_the_referral(draft):
 @pytest.mark.parametrize("draft,sms", [(DRAFT_RUN1, SMS_RUN1), (DRAFT_RUN2, SMS_RUN2)])
 def test_faithful_model_sms_is_proposed_with_the_safety_line(monkeypatch, draft, sms):
     # Since fix/sms-safety-guarantee-2 the source's own pesticide sentence goes after the caveat and a model SMS is
-    # never trimmed (tests/test_sms_safety_guarantee*.py). These recorded SMS are then over 600 characters, so they
-    # are rejected for length only, never as late-timing claims, and the proposal still carries the line.
+    # never trimmed (tests/test_sms_safety_guarantee*.py); with the model's own referral sentence as well these SMS
+    # were over 600 characters and the rule text was used. Since fix/run5-findings (run 6 note 9) the model's referral
+    # sentence is removed as a repeat of the source's sentence (and named), so the faithful model SMS fits again and is
+    # proposed, never rejected as a late-timing claim.
     monkeypatch.setattr(llm, "mode", lambda: "llm")
     monkeypatch.setattr(fr, "_llm_rewrite", lambda *a, **k: (sms, "llm:fake"))
     monkeypatch.setattr(judge, "_call", accepting_judge()[1])
     assert fr.sms_claims(f"{CAVEAT['sentence']} {sms}", PS, caveat=CAVEAT) == []  # faithful, no late-timing flag
-    assert len(fr.ensure_safety_line(f"{CAVEAT['sentence']} {sms}", PS, CAVEAT)[0]) > fr.MAX_CHARS
     fd = fr.propose(draft, Q, zone_caveat=CAVEAT, passages=PS)
-    rejected = [p for p in fd.problems if p.startswith("model rewrite rejected")]
-    assert fd.mode == "rule" and rejected and "over 600" in rejected[0], fd.problems
-    assert "late" not in rejected[0] and "not supported" not in rejected[0], rejected
-    # Since fix/run5-findings (item 5b) the draft's own referral sentence is removed as a near-repeat of the source's
-    # pesticide sentence, which carries the same referral word for word; the removal is named in the officer note.
-    assert fd.text.startswith(CAVEAT["sentence"]) and SOURCE_LINE in fd.text, fd.text
-    assert any(p.startswith("removed as a repeat of the source's pesticide sentence") and "Extension Agent (AEA)" in p
-               for p in fd.problems), fd.problems
+    assert fd.mode == "llm:fake", fd.problems
+    assert not any(p.startswith("model rewrite rejected") for p in fd.problems), fd.problems
+    assert fd.text.startswith(f"{CAVEAT['sentence']} {SOURCE_LINE}") and len(fd.text) <= fr.MAX_CHARS, fd.text
+    [copy] = fd.audit["repeats"]
+    assert "Extension Agent" in copy and copy in sms and copy not in fd.text
     assert not any("drops the pesticide safety line" in p for p in fd.problems), fd.problems
 
 

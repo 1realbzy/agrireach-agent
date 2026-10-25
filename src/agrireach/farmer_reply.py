@@ -221,6 +221,10 @@ _STOP = {"the", "a", "an", "your", "you", "in", "on", "for", "to", "of", "and", 
          "are", "be", "can", "this", "that", "any"}
 
 
+_REFERRAL_WORDS = {"should", "consult", "talk", "ask", "speak", "contact", "see", "right", "best", "which", "use",
+                   "recommended", "advice", "pesticide", "insecticide", "also", "please"}
+
+
 def _repeats(s: str, line: str) -> bool:
     """s says the same as the source's safety line: the same sentence (ignoring its "(Source)", punctuation and case),
     or another pesticide sentence sharing most of its content words. Run 5's S-Kintampo SMS ended with "Ask your local
@@ -232,7 +236,15 @@ def _repeats(s: str, line: str) -> bool:
         x = re.sub(r"\barmy\s+worms?\b", "armyworm", x)
         return {w[:-1] if len(w) > 3 and w.endswith("s") else w for w in re.findall(r"[a-z]+", x)} - _STOP
     a, b = words(s), words(line)
-    return a == b or bool(SAFETY_RE.search(s) and a and len(a & b) / len(a | b) >= 0.6)
+    if a == b or bool(SAFETY_RE.search(s) and a and len(a & b) / len(a | b) >= 0.6):
+        return True
+    # The same referral in other words (live run 6, 3 of 5 pesticide proposals): "If the worms are still a problem,
+    # talk to your local Agricultural Extension Agent about the right pesticide to use." A leading "If/When/For ...,"
+    # clause is ignored; any other word not in the line keeps the sentence (it says something more).
+    if not (SAFETY_RE.search(s) and "aea" in b and ALLOWED_OFFICER.search(line)):
+        return False
+    core = words(re.sub(r"^(?:if|when|for)\b[^,]*,\s*", "", s.strip(), flags=re.I))
+    return "aea" in core and bool(core & {"pesticide", "insecticide"}) and core <= b | _REFERRAL_WORDS
 
 
 def source_safety_line(passages: list[dict] | None) -> tuple[str | None, str | None]:

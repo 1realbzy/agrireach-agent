@@ -12,9 +12,9 @@ from agrireach.api import app
 
 F1_Q = "Adaklu maize farmer planted late Feb, saw worms mid-March, sprayed the recommended chemicals with no effect."
 DRAFT = "Scout the maize field at least once a week [APNI-SARI-2023-MAIZE:p18-scouting]."
-# F1-b's model SMS sentence (run 5) that the judge rejected
-SEVERE = ("If the infestation is severe and the recommended chemicals have not worked, consult your local Agricultural "
-          "Extension Agent for advice on the recommended fall armyworm control pesticide in your area.")
+# A model SMS sentence the judge rejects for an added severity condition (as F1-b's was in run 5; that sentence itself
+# is now removed as a repeat of the source's AEA referral, tests/test_run6_safety_dedupe.py, so another one is used)
+SEVERE = "If the infestation is severe, check the field every day and remove the larvae by hand."
 
 
 def severity_judge(user):
