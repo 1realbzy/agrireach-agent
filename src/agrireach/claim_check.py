@@ -161,10 +161,78 @@ def _backs(sentence: str, ps: list[dict]) -> bool:
     return len(words & content_words(" ".join(p["text"] for p in ps))) / len(words) >= AGREE_MIN_OVERLAP
 
 
+def _named_source_problems(s: Sentence, low: str, cited: list[dict], aliases: dict) -> list[str]:
+    """Layer 1: a sentence that names a source (MoFA, IITA...) must cite a passage from that source."""
+    return [f"'{_short(s.text)}' names {alias.upper()} but cites no {alias.upper()} passage"
+            for alias, srcs in aliases.items()
+            if re.search(rf"(?<![a-z]){re.escape(alias)}(?![a-z])", low) and not any(p["source_id"] in srcs for p in cited)]
+
+
+def _check_uncited(s: Sentence, bare: str, all_cited: list[dict]) -> tuple[bool, str | None, bool]:
+    """An uncited sentence (after a paragraph's last citation, or in a paragraph with none) can still add a claim.
+    It is checked against everything the draft cites; headings ("...:") carry no claim.
+    Returns (counted as checked, problem or None, send to the judge)."""
+    words = content_words(bare)
+    plain = re.sub(r"\*\*|__|`", "", bare).strip()
+    if not all_cited or not words or plain.endswith(":") or NOT_JUDGED_RE.search(bare):
+        return False, None, False
+    if not META_RE.search(bare) and not UNCITED_META_RE.search(plain) and \
+            not words & content_words(" ".join(p["text"] for p in all_cited)):
+        return True, (f"'{_short(s.text)}' has no citation and is not supported by any cited passage "
+                      "(no shared content words)"), False
+    return True, None, True
+
+
+def _agreement_problem(s: Sentence, bare: str, cited: list[dict], by_id: dict, conflict_groups: list) -> str | None:
+    """Layer 2, for a sentence that says sources agree: it must cite each source, each must back it, and it must not
+    describe a detected disagreement as agreement."""
+    by_src: dict[str, list[dict]] = {}
+    for p in cited:
+        by_src.setdefault(p["source_id"], []).append(p)
+    if len(by_src) < 2:
+        return (f"'{_short(s.text)}' says sources agree but cites only {', '.join(by_src)}; cite each "
+                "source that says it, or don't claim agreement")
+    weak = [src for src, ps in by_src.items() if not _backs(bare, ps)]
+    if weak:
+        return f"'{_short(s.text)}' says sources agree, but {', '.join(weak)} does not say this"
+    figs = citation_check.extract_figures(bare)
+    ids = {p["id"] for p in cited}
+    for key, group in conflict_groups:
+        if len({by_id[i]["source_id"] for i in ids & group}) > 1 and not figs:
+            return f"'{_short(s.text)}' describes the detected disagreement on {key.replace('_', ' ')} as agreement"
+    return None
+
+
+def _run_judge(to_judge: list[tuple[Sentence, list[dict]]], judge_call) -> tuple[dict, list[str]]:
+    """Layer 4: the judge model reads each sentence against its passages. Fails closed: an error is a problem."""
+    from agrireach import judge as judge_mod
+    problems = []
+    # Place names the cited passages don't contain are masked: whether a Northern Ghana guide applies to the
+    # farmer's place is decided in code (caution note + urgent flag), and the judge kept rejecting
+    # "For soybean planting in Kumasi, ..." on that ground alone (7 of its 8 replay false rejects).
+    items = [(places.mask(s.text, keep=" ".join(p["text"] for p in cited)), cited) for s, cited in to_judge]
+    judged = judge_mod.judge(items, call=judge_call)
+    if judged.get("error"):
+        err = judged["error"]
+        problems.append("source check couldn't run: no judge model is configured (set LLM_BASE_URL and LLM_API_KEY)"
+                        if "LLM_BASE_URL" in err else f"source check couldn't run: the judge model gave no verdict "
+                                                        f"({err[:120]})")
+    for v, (s, _c) in zip(judged.get("verdicts", []), to_judge):
+        if v["sentence"] != s.text:
+            v["sent_to_judge"], v["sentence"] = v["sentence"], s.text
+    for v in judged.get("verdicts", []):
+        if v["verdict"] == "not_supported":
+            problems.append(f"'{_short(v['sentence'])}' is not supported by its citation according to the judge "
+                            f"model: {v.get('why', '')}".rstrip(": "))
+    return judged, problems
+
+
 def check_claims(draft: str, passages: list[dict], conflicts: dict | None = None, judge: bool | None = None,
                  ignore_prefixes: tuple[str, ...] = (), judge_call=None) -> ClaimResult:
-    """judge: None = judge.enabled() (always on); False only for code-built verbatim drafts. judge_call replaces the
-    judge's network call (tests). Uncited sentences are checked against every passage the draft cites."""
+    """Sentence-level claim check, in layers: named sources, uncited sentences, agreement claims, lexical support,
+    then the judge. judge: None = judge.enabled() (always on); False only for code-built verbatim drafts.
+    judge_call replaces the judge's network call (tests)."""
+    from agrireach import judge as judge_mod
     if ignore_prefixes:
         draft = "\n".join(l for l in draft.splitlines() if not l.strip().startswith(ignore_prefixes))
     by_id = {p["id"]: p for p in passages}
@@ -178,46 +246,18 @@ def check_claims(draft: str, passages: list[dict], conflicts: dict | None = None
     for s in ss:
         cited = [by_id[i] for i in dict.fromkeys(s.ids) if i in by_id]
         bare = CITE_RE.sub(" ", s.text)
-        low = bare.lower()
-        # 1. Named sources.
-        for alias, srcs in aliases.items():
-            if re.search(rf"(?<![a-z]){re.escape(alias)}(?![a-z])", low) and not any(p["source_id"] in srcs for p in cited):
-                problems.append(f"'{_short(s.text)}' names {alias.upper()} but cites no {alias.upper()} passage")
+        problems += _named_source_problems(s, bare.lower(), cited, aliases)
         if not cited:
-            # An uncited sentence (after a paragraph's last citation, or in a paragraph with none) can still add a
-            # claim. Check it against everything the draft cites; headings ("...:") carry no claim.
-            words = content_words(bare)
-            plain = re.sub(r"\*\*|__|`", "", bare).strip()
-            if not all_cited or not words or plain.endswith(":") or NOT_JUDGED_RE.search(bare):
-                continue
-            checked += 1
-            if not META_RE.search(bare) and not UNCITED_META_RE.search(plain) and not words & content_words(" ".join(p["text"] for p in all_cited)):
-                problems.append(f"'{_short(s.text)}' has no citation and is not supported by any cited passage "
-                                "(no shared content words)")
-                continue
-            to_judge.append((s, all_cited))
+            counted, problem, judge_it = _check_uncited(s, bare, all_cited)
+            checked += counted
+            problems += [problem] if problem else []
+            if judge_it:
+                to_judge.append((s, all_cited))
             continue
         checked += 1
-        by_src: dict[str, list[dict]] = {}
-        for p in cited:
-            by_src.setdefault(p["source_id"], []).append(p)
-        # 2. Agreement claims.
         if AGREE_RE.search(bare) and not NEGATED_AGREE.search(bare):
-            if len(by_src) < 2:
-                problems.append(f"'{_short(s.text)}' says sources agree but cites only {', '.join(by_src)}; cite each "
-                                "source that says it, or don't claim agreement")
-                continue
-            weak = [src for src, ps in by_src.items() if not _backs(bare, ps)]
-            if weak:
-                problems.append(f"'{_short(s.text)}' says sources agree, but {', '.join(weak)} does not say this")
-                continue
-            figs = citation_check.extract_figures(bare)
-            ids = {p["id"] for p in cited}
-            for key, group in conflict_groups:
-                if len({by_id[i]["source_id"] for i in ids & group}) > 1 and not figs:
-                    problems.append(f"'{_short(s.text)}' describes the detected disagreement on {key.replace('_', ' ')} "
-                                    "as agreement")
-                    break
+            if problem := _agreement_problem(s, bare, cited, by_id, conflict_groups):
+                problems.append(problem)
             continue
         # 3. Lexical support: at least one shared content word with the cited passages. Skipped when the sentence has
         # no content words of its own (e.g. "One source says 15 cm [A], another 10 cm [B]": the figure check covers
@@ -232,24 +272,8 @@ def check_claims(draft: str, passages: list[dict], conflicts: dict | None = None
         if words and not NOT_JUDGED_RE.search(bare):
             to_judge.append((s, cited))
     judged = None
-    from agrireach import judge as judge_mod
     if (judge if judge is not None else judge_mod.enabled()) and to_judge:
-        # Place names the cited passages don't contain are masked: whether a Northern Ghana guide applies to the
-        # farmer's place is decided in code (caution note + urgent flag), and the judge kept rejecting
-        # "For soybean planting in Kumasi, ..." on that ground alone (7 of its 8 replay false rejects).
-        items = [(places.mask(s.text, keep=" ".join(p["text"] for p in cited)), cited) for s, cited in to_judge]
-        judged = judge_mod.judge(items, call=judge_call)
-        if judged.get("error"):
-            err = judged["error"]
-            problems.append("source check couldn't run: no judge model is configured (set LLM_BASE_URL and LLM_API_KEY)"
-                            if "LLM_BASE_URL" in err else f"source check couldn't run: the judge model gave no verdict "
-                                                            f"({err[:120]})")
-        for v, (s, _c) in zip(judged.get("verdicts", []), to_judge):
-            if v["sentence"] != s.text:
-                v["sent_to_judge"], v["sentence"] = v["sentence"], s.text
-        for v in judged.get("verdicts", []):
-            if v["verdict"] == "not_supported":
-                problems.append(f"'{_short(v['sentence'])}' is not supported by its citation according to the judge "
-                                f"model: {v.get('why', '')}".rstrip(": "))
+        judged, judge_problems = _run_judge(to_judge, judge_call)
+        problems += judge_problems
     return ClaimResult(ok=not problems, problems=list(dict.fromkeys(problems)), checked=checked, judge=judged,
                        judge_failed=bool(judged and judged.get("error")))
