@@ -2,7 +2,69 @@
 
 **All hand grades in this file are self-graded by the AgriReach authors. A re-grade by an extension officer is pending; until then, treat "Pass" as the authors' judgement, not an agronomic sign-off.**
 
-## Latest: 25 Oct 2026 (UTC), live runs on `a6222d1` (runs R1, R2, EJ1-EJ5)
+## Latest: 25 Oct 2026 (UTC), live runs on `a5e9192` (runs A1, A2, EJB1-EJB5, C1)
+
+Full write-up and raw output: [docs/live-eval-2026-10-25-run3.md](docs/live-eval-2026-10-25-run3.md).
+
+**Setup:** the same method as the `a6222d1` runs below. Code is `fix/review-findings` at `a5e9192`, which adds:
+- the rainfall record is never a source for farmer text;
+- judge exemptions must match the whole sentence;
+- a late-timing claim layer.
+
+Models (OpenRouter, temperature 0): drafter `mistralai/mistral-small-3.2-24b-instruct` ($0.075 / $0.20 per M tokens) and judge `meta-llama/llama-3.3-70b-instruct` ($0.10 / $0.32). One extra core-task run (C1) was added.
+
+**All real model output:** **118 of 118 model calls succeeded** (A1 34, A2 38, EJB 22, C1 24), so no task used a stub because a call failed.
+
+| Run | Calls | OpenRouter cost | Wall time | Per question (11 agent runs) | On `a6222d1` |
+|---|---|---|---|---|---|
+| A1: F1–F14 | 34/34 | $0.003515 | 163 s | $0.000320 | R1 $0.003136, 131 s |
+| A2: F1–F14 | 38/38 | $0.004807 | 132 s | $0.000437 | R2 $0.002855, 145 s |
+| EJB: Ejura ×5 | 22/22 | $0.004764 | 185 s | $0.000953 per run | $0.005011, 284 s |
+| C1: core 1–12 | 24/24 | $0.004328 | 131 s | – | – |
+
+**Field auto checks:** 11/12 in both runs (F4 fell back).
+
+**Model drafts that passed:** 6/10 and 7/10, against 6/10 and 6/10 on `a6222d1`.
+
+**Variation (A1 against A2):**
+- 2 of 12 tasks changed draft outcome: F1 went from first-attempt pass to second-attempt pass, and F6 from fallback to second-attempt pass.
+- At the SMS stage, F1 and F2 changed.
+
+**The two `a6222d1` SMS false accepts are fixed:**
+- **F5:** "still worth applying" was rejected in 4 of 4 draft attempts, so the SMS is the verbatim passages.
+- **Ejura:** 0 of 5 final SMS contain rainfall figures. Two model SMS that included them were rejected.
+
+**F1 safety line:** kept in **1 of 2** runs (2 of 2 on `a6222d1`). In A2 the proposed SMS drops it, and the officer gets the "drops the pesticide safety line" note. Two causes stack:
+1. The late-timing layer falsely rejects the faithful model SMS. "worms are **still a problem**" matches `(?:is|are) still`. This happened in both runs.
+2. The rule rewrite drops "consult your local **Agriculture** Extension Agent (AEA)…". `ALLOWED_OFFICER` only allows "Agricultural". This bug was already there in `d1685de`.
+
+**Ejura planting** (5 runs each):
+
+| | `e12846c` | `a6222d1` | `a5e9192` |
+|---|---|---|---|
+| Passed first attempt | 0 | 2 | 1 |
+| Passed after regeneration | 2 | 1 | 1 |
+| Verbatim fallback | 3 | 2 | 3 |
+
+Two of the three fallbacks failed only on false rejects of "A rainfall record is attached…"-type sentences.
+
+**False rejects (self-graded by the authors):** 3 of 25 model-drafted cases fell back only because a faithful sentence was rejected (**12%**, down from 20%, 5/25). Of 23 judge rejections in drafts, 11 were false, 4 borderline and 8 true.
+
+**New false rejects from the whole-sentence exemptions:**
+- bare "Choose which planting window/depth/spacing to follow." (core task 11);
+- "**Planting Window:** Sources disagree." ×6 (task 12);
+- "Do not know if the maize is safe to sell or feed." (F7), which has no subject.
+
+The "3 cm… seed vigor" sentence didn't occur. The depth sentences that did occur were judged supported. No bare "We do not know." occurred. **No new false accepts were found.**
+
+**Open:**
+- the late-timing regex false positive, and the "Agriculture Extension Agent" rule-rewrite drop (F1 safety line);
+- false rejects of "A rainfall record is attached…" and of heading-style "Sources disagree";
+- the rule SMS keeps bold-heading labels ("Planting Window: …");
+- not re-tested: approval criteria 1–4, the "(MoFA) ." split, the empty fallback and the audit-log gap;
+- Twi and Dagbani are untested.
+
+## Earlier: 25 Oct 2026 (UTC), live runs on `a6222d1` (runs R1, R2, EJ1-EJ5)
 
 Full write-up and raw output: [docs/live-eval-2026-10-25-run2.md](docs/live-eval-2026-10-25-run2.md).
 
