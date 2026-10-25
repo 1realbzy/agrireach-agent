@@ -40,6 +40,10 @@ ROW_RE = re.compile(r'^"?(Major|Minor)(?:\s+cropping)?\s+season\s*\|\s*([^|]+?)\
                     r'\[([A-Z0-9][A-Z0-9-]*):[^\]]*\]', re.I)
 SOURCE_NAMES = {"MOFA": "MoFA", "IITA": "IITA", "APNI": "APNI"}
 CONFIRM = "Your extension officer will confirm which to follow."
+# Regulatory limits (aflatoxin in ppb) are for the officer: a farmer can't measure them, and a quoted limit reads as
+# "safe below this". They stay in the officer draft and never go into the farmer text.
+LIMIT_RE = re.compile(r"\b\d+(?:\.\d+)?\s*(?:ppb|ppm|µg\s*/\s*kg|ug\s*/\s*kg|mg\s*/\s*kg)\b|\bparts\s+per\s+(?:billion|million)\b",
+                      re.I)
 
 
 def _zone_words(cell: str) -> str:
@@ -90,6 +94,8 @@ def check(text: str, officer_text: str) -> list[str]:
         out.append("contains a raw table row ('|'): write it as a sentence")
     if OFFICER_RE.search(ALLOWED_OFFICER.sub("", text)):
         out.append("still addresses the officer")
+    if LIMIT_RE.search(text):
+        out.append("quotes a regulatory limit (ppb) a farmer can't measure: keep it in the officer notes")
     if len(text) > MAX_CHARS:
         out.append(f"{len(text)} characters, over {MAX_CHARS}")
     pool = citation_check.extract_figures(CITE_RE.sub(" ", officer_text))
@@ -133,6 +139,8 @@ def rule_rewrite(officer_text: str, max_chars: int = MAX_CHARS) -> str:
         for s in _sentences(l):
             if s.startswith(("Note:", "Caution:")):
                 continue  # caveats for the officer; the officer decides whether the farmer needs them
+            if LIMIT_RE.search(s) or s[:1].islower():
+                continue  # a regulatory limit, or a verbatim mid-sentence excerpt: not something to text a farmer
             for pat, rep in _OPENERS:
                 # The officer instruction may follow a lead-in clause ("To decide when to harvest, the officer
                 # should advise the farmer to ..."): keep only what the farmer is told to do.

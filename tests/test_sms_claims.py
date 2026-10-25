@@ -84,3 +84,19 @@ def test_unconfigured_judge_reads_plainly(monkeypatch):
     monkeypatch.setattr(judge, "_call", lambda _u: {}["LLM_BASE_URL"])
     p = fr.sms_claims("Plant when the rains are well established.", PS)
     assert p == ["source check couldn't run: no judge model is configured (set LLM_BASE_URL and LLM_API_KEY)"]
+
+
+def test_mouldy_maize_sms_never_quotes_aflatoxin_limits_and_the_officer_writes_it():
+    # GRER: a farmer can't measure ppb, and the offline text began mid-sentence ("aflatoxin limits imposed by...").
+    import asyncio
+    from agrireach import agent
+    out = asyncio.run(agent.run("My maize is mouldy, can I feed it to my animals in Tamale?", use_fetch=False))
+    assert "ppb" in out["draft"]  # the limit stays for the officer
+    fd = out["farmer_draft"]
+    assert "ppb" not in fd["text"] and not fd["text"][:1].islower()
+    assert fd["needs_officer_text"] and fd["text"] == ""
+
+
+def test_model_sms_quoting_a_limit_is_rejected():
+    assert any("regulatory limit" in p for p in fr.check("Do not eat maize above 15 ppb of aflatoxin.",
+                                                       "maize limit 15 ppb [AGBETIAMEH-2018:aflatoxin-limits]"))
