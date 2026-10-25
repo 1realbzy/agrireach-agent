@@ -110,17 +110,21 @@ def test_clarifying_question_goes_back_through_the_channel():
 def test_api_simulator_flow_and_officer_decision_delivers(monkeypatch):
     monkeypatch.setattr(stt, "default", lambda: FakeTranscriber("When should I harvest my soybean? I farm near Tamale."))
     c = TestClient(api.app)
+    h = {"Authorization": f"Bearer {db.add_officer(db.connect(), 'Ama Mensah')}"}
     assert c.post("/channels/simulator/inbound", data={"sender": "+233000000000", "text": "hi"}).status_code == 400
     with open(CLIP, "rb") as f:
         r = c.post("/channels/simulator/inbound", data={"sender": SENDER}, files={"audio": ("q.wav", f, "audio/wav")})
     assert r.status_code == 200
     cid = r.json()["case_id"]
-    v = c.get(f"/officer/cases/{cid}/voice").json()
+    assert c.get(f"/officer/cases/{cid}/voice").status_code == 401
+    assert c.get(f"/officer/cases/{cid}/audio").status_code == 401  # farmer audio is officer-only
+    v = c.get(f"/officer/cases/{cid}/voice", headers=h).json()
     assert v["sender"] == mask_sender(SENDER) and v["has_audio"] and "soybean" in v["transcript"]
-    assert c.get(f"/officer/cases/{cid}/audio").status_code == 200
-    assert c.post(f"/cases/{cid}/release").status_code == 409  # gate unchanged
-    d = c.post(f"/officer/cases/{cid}/decision", json={"officer": "Ama Mensah", "decision": "approve",
-                                                       "farmer_text": "Harvest when 9 of 10 pods are brown."}).json()
+    assert c.get(f"/officer/cases/{cid}/audio", headers=h).status_code == 200
+    assert c.post(f"/cases/{cid}/release", headers=h).status_code == 409  # gate unchanged
+    d = c.post(f"/officer/cases/{cid}/decision", headers=h,
+               json={"decision": "approve", "confirmed": True,
+                     "farmer_text": "Harvest when 9 of 10 pods are brown."}).json()
     assert d["status"] == "released" and d["delivery"]["ok"]
     out = [m["text"] for m in c.get("/channels/simulator/outbox", params={"sender": SENDER}).json()]
     assert out[-1] == "Harvest when 9 of 10 pods are brown." != d["final_text"]  # officer view keeps citations

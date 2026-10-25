@@ -5,7 +5,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -24,13 +24,25 @@ class Ask(BaseModel):
     region: str = ""
 
 
+def current_officer(authorization: str | None = Header(None)) -> str:
+    """The signed-in officer's name, from their sign-in token (Authorization: Bearer <token>; tokens are issued by
+    scripts/add_officer.py). Every officer route and release depends on this; the name on the record comes from here."""
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    name = db.officer_for_token(db.connect(), token)
+    if not name:
+        raise HTTPException(401, "officer sign-in required", headers={"WWW-Authenticate": "Bearer"})
+    return name
+
+
 class Decision(BaseModel):
-    officer: str
+    officer: str | None = None  # ignored: the officer is whoever is signed in
     decision: str  # approve | edit_approve | reject | request_info
     edited_text: str | None = None
     note: str | None = None
     # The exact farmer-facing text being approved (required to approve): this, and only this, is delivered.
     farmer_text: str | None = None
+    # Approving requires the officer to confirm they checked the farmer text against the cited sources.
+    confirmed: bool = False
 
 
 class OfficerText(BaseModel):
@@ -59,13 +71,13 @@ async def ask(a: Ask):
 
 
 @app.get("/officer/queue")
-def queue():
+def queue(officer: str = Depends(current_officer)):
     con = db.connect()
     return [_case(r) for r in db.list_cases(con, "pending_review")]
 
 
 @app.get("/officer/cases/{case_id}")
-def case_detail(case_id: int):
+def case_detail(case_id: int, officer: str = Depends(current_officer)):
     con = db.connect()
     row = db.get_case(con, case_id)
     if not row:
@@ -74,16 +86,18 @@ def case_detail(case_id: int):
 
 
 @app.post("/officer/cases/{case_id}/decision")
-def decide(case_id: int, d: Decision):
+def decide(case_id: int, d: Decision, officer: str = Depends(current_officer)):
     con = db.connect()
     if d.decision in ("approve", "edit_approve") and not (d.farmer_text or "").strip():
         raise HTTPException(400, "farmer_text required: approve the exact text the farmer will receive")
+    if d.decision in ("approve", "edit_approve") and not d.confirmed:
+        raise HTTPException(400, "confirm that you checked the farmer text against the cited sources before approving")
     try:
-        row = db.officer_decide(con, case_id, officer=d.officer, decision=d.decision, edited_text=d.edited_text,
+        row = db.officer_decide(con, case_id, officer=officer, decision=d.decision, edited_text=d.edited_text,
                                 note=d.note, farmer_text=d.farmer_text)
         delivery = None
         if row["status"] == "approved":
-            row = db.release_to_farmer(con, case_id, actor=f"officer:{d.officer}")
+            row = db.release_to_farmer(con, case_id, actor=f"officer:{officer}")
             delivery = service.deliver(con, case_id, service.configured_channels())
     except db.GateError as e:
         raise HTTPException(409, str(e))
@@ -93,7 +107,7 @@ def decide(case_id: int, d: Decision):
 
 
 @app.post("/officer/cases/{case_id}/farmer-draft")
-def farmer_draft(case_id: int, body: OfficerText):
+def farmer_draft(case_id: int, body: OfficerText, officer: str = Depends(current_officer)):
     """Re-propose the farmer-facing text from the officer's (edited) text. A proposal only; nothing is saved or sent."""
     row = db.get_case(db.connect(), case_id)
     if not row:
@@ -103,11 +117,11 @@ def farmer_draft(case_id: int, body: OfficerText):
 
 
 @app.post("/cases/{case_id}/release")
-def release(case_id: int):
-    """Explicit release endpoint; refuses anything without officer approval."""
+def release(case_id: int, officer: str = Depends(current_officer)):
+    """Explicit release endpoint (signed-in officers only); refuses anything without officer approval."""
     con = db.connect()
     try:
-        row = db.release_to_farmer(con, case_id, actor="api")
+        row = db.release_to_farmer(con, case_id, actor=f"officer:{officer}")
     except db.GateError as e:
         raise HTTPException(409, str(e))
     return _case(row) | {"delivery": service.deliver(con, case_id, service.configured_channels())}
@@ -155,7 +169,7 @@ def simulator_outbox(sender: str | None = None):
 
 
 @app.get("/officer/cases/{case_id}/voice")
-def case_voice(case_id: int):
+def case_voice(case_id: int, officer: str = Depends(current_officer)):
     """How the question arrived. The sender id is masked; the officer replies through the channel, not by number."""
     c = db.get_contact(db.connect(), case_id)
     if not c:
@@ -165,7 +179,7 @@ def case_voice(case_id: int):
 
 
 @app.get("/officer/cases/{case_id}/audio")
-def case_audio(case_id: int):
+def case_audio(case_id: int, officer: str = Depends(current_officer)):
     c = db.get_contact(db.connect(), case_id)
     if not c or not c["audio_path"] or not Path(c["audio_path"]).exists():
         raise HTTPException(404, "no voice note")

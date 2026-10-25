@@ -8,8 +8,10 @@ editing and release are officer-only functions, and release requires approval.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import secrets
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -35,7 +37,7 @@ def connect(path: str | None = None) -> sqlite3.Connection:
     p = path or db_path()
     if p != ":memory:":
         Path(p).parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(p)
+    con = sqlite3.connect(p, timeout=10)
     con.row_factory = sqlite3.Row
     con.executescript(
         """
@@ -48,6 +50,8 @@ def connect(path: str | None = None) -> sqlite3.Connection:
           status TEXT NOT NULL DEFAULT 'draft',
           officer TEXT, decided_at TEXT, officer_note TEXT,
           created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS officers (
+          name TEXT PRIMARY KEY, token_sha256 TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS tool_log (
           id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL,
           case_id INTEGER, actor TEXT NOT NULL, tool TEXT NOT NULL,
@@ -148,14 +152,45 @@ def officer_decide(con, case_id: int, *, officer: str, decision: str, edited_tex
     if final is not None:
         farmer = farmer_text.strip() if farmer_text and farmer_text.strip() else final
     t = now()
-    con.execute("UPDATE cases SET status=?, final_text=?, farmer_text=?, officer=?, decided_at=?, officer_note=?,"
-                " updated_at=? WHERE id=?", (status, final, farmer, officer.strip(), t, note, t, case_id))
+    # Write only if the case is STILL pending_review: the status check above and this write are not atomic, so two
+    # officers deciding at once would otherwise both "win" (last write on the record, first text on the phone).
+    cur = con.execute("UPDATE cases SET status=?, final_text=?, farmer_text=?, officer=?, decided_at=?, officer_note=?,"
+                      " updated_at=? WHERE id=? AND status='pending_review'",
+                      (status, final, farmer, officer.strip(), t, note, t, case_id))
     con.commit()
+    if cur.rowcount != 1:
+        log(con, f"officer:{officer.strip()}", "officer_decision", {"decision": decision},
+            "BLOCKED: another decision was recorded first", ok=False, case_id=case_id)
+        raise GateError(f"case {case_id} was decided by someone else first; reload it")
     log(con, f"officer:{officer.strip()}", "officer_decision",
         {"decision": decision, "farmer_text": None if farmer is None else
          ("officer-approved farmer text" if farmer != final else "same as officer text"),
          "farmer_text_chars": len(farmer or "")}, status, case_id=case_id)
     return dict(get_case(con, case_id))
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def add_officer(con, name: str) -> str:
+    """Register a named officer (or replace their sign-in) and return a new sign-in token. Only its SHA-256 is stored,
+    so the token is shown once (scripts/add_officer.py) and cannot be read back from the database."""
+    if not name or not name.strip():
+        raise ValueError("officer name required")
+    token = secrets.token_urlsafe(24)
+    con.execute("INSERT INTO officers(name, token_sha256, created_at) VALUES (?,?,?) "
+                "ON CONFLICT(name) DO UPDATE SET token_sha256=excluded.token_sha256, created_at=excluded.created_at",
+                (name.strip(), _token_hash(token), now()))
+    con.commit()
+    return token
+
+
+def officer_for_token(con, token: str | None) -> str | None:
+    if not token:
+        return None
+    r = con.execute("SELECT name FROM officers WHERE token_sha256=?", (_token_hash(token),)).fetchone()
+    return r["name"] if r else None
 
 
 def release_to_farmer(con, case_id: int, actor: str = "system") -> dict:
@@ -166,8 +201,11 @@ def release_to_farmer(con, case_id: int, actor: str = "system") -> dict:
         log(con, actor, "release_to_farmer", {}, f"BLOCKED: status '{row['status']}', no officer approval",
             ok=False, case_id=case_id)
         raise GateError(f"case {case_id} has no officer approval (status '{row['status']}')")
-    con.execute("UPDATE cases SET status='released', updated_at=? WHERE id=?", (now(), case_id))
+    cur = con.execute("UPDATE cases SET status='released', updated_at=? WHERE id=? AND status='approved'",
+                      (now(), case_id))
     con.commit()
+    if cur.rowcount != 1:
+        raise GateError(f"case {case_id} is no longer 'approved'")
     log(con, actor, "release_to_farmer", {}, f"released; approved by {row['officer']}", case_id=case_id)
     return dict(get_case(con, case_id))
 

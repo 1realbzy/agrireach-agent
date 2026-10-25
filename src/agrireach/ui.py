@@ -42,18 +42,23 @@ with voice:
                 st.audio(m["audio"])
 
 with officer:
-    name = st.text_input("Officer name (required to decide)")
-    for c in httpx.get(f"{API}/officer/queue", timeout=10).json():
+    token = st.text_input("Officer sign-in token (from scripts/add_officer.py)", type="password")
+    H = {"Authorization": f"Bearer {token}"}
+    q = httpx.get(f"{API}/officer/queue", headers=H, timeout=10)
+    if q.status_code == 401:
+        st.info("Sign in with your officer token to see the review queue.")
+        st.stop()
+    for c in q.json():
         tag = "URGENT" if c["priority"] == "urgent" else "routine"
         with st.expander(f"[{tag}] Case {c['id']}: {c['question']}"):
             for reason in c["urgent_reasons"]:
                 st.error(reason)
-            v = httpx.get(f"{API}/officer/cases/{c['id']}/voice", timeout=10)
+            v = httpx.get(f"{API}/officer/cases/{c['id']}/voice", headers=H, timeout=10)
             if v.status_code == 200:
                 v = v.json()
                 st.caption(f"Arrived via {v['channel']} from {v['sender']}")
                 if v["has_audio"]:
-                    st.audio(httpx.get(f"{API}/officer/cases/{c['id']}/audio", timeout=30).content)
+                    st.audio(httpx.get(f"{API}/officer/cases/{c['id']}/audio", headers=H, timeout=30).content)
                     st.write(f"Machine transcript (check against the audio): {v['transcript']!r}")
             text = st.text_area("Officer draft with citations (edit before approving if needed)", c["draft"],
                                 key=f"d{c['id']}", height=220)
@@ -61,22 +66,24 @@ with officer:
             fd = c.get("farmer_draft") or {}
             if st.button("Re-propose farmer text from the officer draft above", key=f"rp{c['id']}"):
                 fd = httpx.post(f"{API}/officer/cases/{c['id']}/farmer-draft", json={"officer_text": text},
-                                timeout=60).json()
+                                headers=H, timeout=60).json()
                 st.session_state[f"f{c['id']}"] = fd.get("text", "")
             for p in fd.get("problems", []):
                 st.warning(f"Farmer text: {p}")
             farmer_txt = st.text_area("Farmer text: exactly what the farmer will receive (approve covers this text)",
                                       fd.get("text", ""), key=f"f{c['id']}", height=140)
             st.caption(f"{len(farmer_txt)} characters (aim for under 600)")
+            confirmed = st.checkbox("I checked every advice line in the farmer text against the cited sources",
+                                    key=f"ok{c['id']}")
             cols = st.columns(3)
             for col, (label, dec) in zip(cols, [("Approve & release", "approve"), ("Reject", "reject"),
                                                 ("Request info", "request_info")]):
                 if col.button(label, key=f"{dec}{c['id']}"):
                     if dec == "approve" and text != c["draft"]:
                         dec = "edit_approve"
-                    r = httpx.post(f"{API}/officer/cases/{c['id']}/decision",
-                                   json={"officer": name, "decision": dec, "edited_text": text,
-                                         "farmer_text": farmer_txt}, timeout=60)
+                    r = httpx.post(f"{API}/officer/cases/{c['id']}/decision", headers=H,
+                                   json={"decision": dec, "edited_text": text, "farmer_text": farmer_txt,
+                                         "confirmed": confirmed}, timeout=60)
                     st.write(r.json())
             if st.checkbox("Show tool-call log", key=f"l{c['id']}"):
-                st.dataframe(httpx.get(f"{API}/officer/cases/{c['id']}", timeout=10).json()["log"])
+                st.dataframe(httpx.get(f"{API}/officer/cases/{c['id']}", headers=H, timeout=10).json()["log"])
