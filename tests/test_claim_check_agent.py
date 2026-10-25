@@ -35,7 +35,9 @@ def test_persistent_unsupported_claim_falls_back_to_verbatim_and_flags_officer(m
 
 
 def test_judge_flag_triggers_regeneration(monkeypatch):
-    f5 = ("It is still worth applying the subsidised fertiliser, but the timing is not ideal. The best time for "
+    # The "still worth applying" sentence this test used is now caught by code (late-timing layer), so the judge path
+    # is exercised with a claim only the judge can catch.
+    f5 = ("Top dressing gives the same result at any time after planting. The best time for "
           "top-dressing is at 6 weeks after planting [APNI-SARI-2023-MAIZE:p13-topdress-timing].")
     good = "The best time for top-dressing is at 6 weeks after planting [APNI-SARI-2023-MAIZE:p13-topdress-timing]."
     calls = fake_llm(monkeypatch, [f5, good])
@@ -43,7 +45,7 @@ def test_judge_flag_triggers_regeneration(monkeypatch):
 
     def fake_judge(user):
         n = user.count("SENTENCE:")
-        bad = "still worth applying" in user
+        bad = "any time after planting" in user
         return json.dumps({"verdicts": [{"n": i + 1, "verdict": "not_supported" if bad and i == 0 else "supported",
                                          "why": "adds claim"} for i in range(n)]})
     monkeypatch.setattr(judge, "_call", fake_judge)
