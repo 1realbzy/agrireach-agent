@@ -37,7 +37,9 @@ def load(path: str | None = None) -> dict:
 
 
 def tokens(s: str) -> list[str]:
-    return [t for t in re.findall(r"[a-z]+", s.lower()) if t not in STOP]
+    # "top dress", "top-dress", "top dressing" and "topdress" are one term in the corpus and in farmer wording.
+    s = re.sub(r"\btop[\s-]*dress(?:ing|ed|es)?\b", "topdress", s.lower())
+    return [t for t in re.findall(r"[a-z]+", s) if t not in STOP]
 
 
 def _in_scope(p: dict, crop: str | None, region: str | None) -> bool:

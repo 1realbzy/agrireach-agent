@@ -22,20 +22,22 @@ GLOSS = [
 CROP_WORDS = r"soy(?:a)?bean|\bsoya\b|\bsoja\b"
 # Crops AgriReach can recognise in a question. Recognising a crop is not the same as covering it: coverage comes from
 # the corpus (knowledge.crops_covered()), and a recognised but uncovered crop goes to the officer.
+# Twi names verified 25 Oct 2026: aburo/aburoo maize, bankye cassava, bayerɛ yam, ɛmo rice, borɔdeɛ plantain.
+# "adua" is pea, not cowpea, so it is deliberately absent; nkateɛ (groundnut) is unconfirmed and also left out.
 CROPS = {
     "soybean": CROP_WORDS,
-    "maize": r"\bmaize\b|\bcorn\b",
+    "maize": r"\bmaize\b|\bcorn\b|\baburoo?\b",
     "cocoa": r"\bcocoa\b",
     "tomato": r"\btomato(?:es)?\b",
-    "rice": r"\brice\b",
-    "cassava": r"\bcassava\b",
-    "yam": r"\byams?\b",
+    "rice": r"\brice\b|\bɛmo\b",
+    "cassava": r"\bcassava\b|\bbankye\b",
+    "yam": r"\byams?\b|\bbayer[ɛe]\b",
     "groundnut": r"\bgroundnuts?\b|\bpeanuts?\b",
     "cowpea": r"\bcowpeas?\b",
     "pepper": r"\bpeppers?\b",
     "sorghum": r"\bsorghum\b",
     "millet": r"\bmillet\b",
-    "plantain": r"\bplantains?\b",
+    "plantain": r"\bplantains?\b|\bbor[ɔo]de[ɛe]\b",
     "cashew": r"\bcashews?\b",
     "onion": r"\bonions?\b",
 }
