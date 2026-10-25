@@ -573,15 +573,7 @@ async def run(question: str, crop: str = "", region: str = "", use_fetch: bool |
 
 def _log_usage(case_id, calls: list) -> dict:
     """Tokens and provider-reported cost of this run's model calls, logged on the case (drafter, farmer text, judge)."""
-    summary = llm.usage_summary(calls)
-    if calls and case_id:
-        from agrireach import db
-        con = db.connect()
-        cost = "unknown" if summary["cost_usd"] is None else f"${summary['cost_usd']}"
-        db.log(con, "agent", "model_usage", summary,
-               f"{summary['calls']} of {summary['attempted']} model calls succeeded, cost {cost}",
-               ok=not summary["failed"], case_id=case_id)
-    return summary
+    return llm.log_usage(case_id, calls)
 
 
 def main():
