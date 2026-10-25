@@ -27,7 +27,11 @@ farmer phone (simulated)            AgriReach                                   
 ```
 
 The officer-approval gate is unchanged: `deliver` sends nothing for a case that is not `released`, and logs the
-blocked attempt. Before approval the only automatic messages are fixed system texts: the acknowledgement, the
+blocked attempt.
+
+A failed send after release moves the case to `not_delivered`, back into the officer queue. A farmer who sent STOP,
+or whose number was removed by the retention purge, makes it `undeliverable`. So for a channel case, `released`
+always means the channel accepted the message. The full status table is in [sms-setup.md](sms-setup.md#case-statuses-all-channels). Before approval the only automatic messages are fixed system texts: the acknowledgement, the
 existing clarifying question, the consent prompt, the location question and the STOP confirmation. When an STT
 warning is raised (no speech, not English, low language confidence, a transcript that repeats itself, STT off or
 failed), no automatic clarifying question is sent: the case goes to the officer as urgent.

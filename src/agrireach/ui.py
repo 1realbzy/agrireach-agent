@@ -48,6 +48,15 @@ with officer:
     if q.status_code == 401:
         st.info("Sign in with your officer token to see the review queue.")
         st.stop()
+    with st.expander("Case history (all statuses, read-only)"):
+        pick = st.selectbox("Status", ["all", "released", "undeliverable", "not_delivered", "rejected", "needs_info",
+                                       "approved", "pending_review", "draft"], key="hist")
+        hist = httpx.get(f"{API}/officer/cases", params={} if pick == "all" else {"status": pick}, headers=H,
+                         timeout=10).json()
+        for h in hist:
+            tag = h["status"].upper().replace("_", " ")
+            st.write(f"[{tag}] Case {h['id']}: {h['question']}"
+                     + (f" ({h['delivery_problem']})" if h.get("delivery_problem") else ""))
     for c in q.json():
         tag = "URGENT" if c["priority"] == "urgent" else "routine"
         if c["status"] == "not_delivered":

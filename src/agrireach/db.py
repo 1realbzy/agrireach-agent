@@ -205,6 +205,9 @@ def release_to_farmer(con, case_id: int, actor: str = "system") -> dict:
     """approved -> released. A 'not_delivered' case (released, then the channel send failed) goes back to
     'released' so the same approved text can be sent again (a retry)."""
     st = row["status"]
+    if st == "undeliverable":
+        log(con, actor, "release_to_farmer", {}, "BLOCKED: undeliverable", ok=False, case_id=case_id)
+        raise GateError(f"case {case_id} is undeliverable: {delivery_problem(con, case_id) or 'the number was removed'}")
     if st == "released":
         log(con, actor, "release_to_farmer", {}, "BLOCKED: already released", ok=False, case_id=case_id)
         raise GateError(f"case {case_id} is already released")
@@ -229,6 +232,17 @@ def mark_not_delivered(con, case_id: int, reason: str, actor: str = "system") ->
     con.commit()
     if cur.rowcount == 1:
         log(con, actor, "mark_not_delivered", {}, f"not_delivered: {reason}", ok=False, case_id=case_id)
+    return cur.rowcount == 1
+
+
+def mark_undeliverable(con, case_id: int, reason: str, actor: str = "system") -> bool:
+    """released -> undeliverable (terminal): the approved answer can never be sent, because the farmer opted out or
+    the number was removed by the retention purge. The officer's decision and text stay on the record."""
+    cur = con.execute("UPDATE cases SET status='undeliverable', updated_at=? WHERE id=? AND status='released'",
+                      (now(), case_id))
+    con.commit()
+    if cur.rowcount == 1:
+        log(con, actor, "mark_undeliverable", {}, f"undeliverable: {reason}", ok=False, case_id=case_id)
     return cur.rowcount == 1
 
 
@@ -338,7 +352,9 @@ def _remove_audio(paths):
                 pass
 
 
-PURGED = "[removed]"
+PURGED = "[removed]"       # number removed by the retention purge
+OPTED_OUT = "[opted out]"  # number removed because the farmer sent STOP
+REMOVED = (PURGED, OPTED_OUT)
 
 
 def forget_sender(con, channel: str, sender_id: str) -> dict:
@@ -350,7 +366,7 @@ def forget_sender(con, channel: str, sender_id: str) -> dict:
                            (channel, sender_id)).fetchall()
     _remove_audio([json.loads(r["payload"]).get("audio_path") for r in held] + [r["audio_path"] for r in contacts])
     con.execute("UPDATE channel_contacts SET sender_id=?, audio_path=NULL WHERE channel=? AND sender_id=?",
-                (PURGED, channel, sender_id))
+                (OPTED_OUT, channel, sender_id))
     con.execute("DELETE FROM channel_pending WHERE channel=? AND sender_id=?", (channel, sender_id))
     con.execute("DELETE FROM channel_consent WHERE channel=? AND sender_id=?", (channel, sender_id))
     con.commit()
@@ -367,12 +383,12 @@ def purge_old(con, days: int | None = None, now_ts: str | None = None) -> dict:
     days = retention_days() if days is None else days
     ref = datetime.fromisoformat(now_ts) if now_ts else datetime.now(timezone.utc)
     cutoff = (ref - timedelta(days=days)).isoformat(timespec="seconds")
-    old = con.execute("SELECT audio_path FROM channel_contacts WHERE created_at <= ? AND sender_id != ?",
-                      (cutoff, PURGED)).fetchall()
+    old = con.execute("SELECT audio_path FROM channel_contacts WHERE created_at <= ? AND sender_id NOT IN (?,?)",
+                      (cutoff, *REMOVED)).fetchall()
     held = con.execute("SELECT payload FROM channel_pending WHERE created_at <= ?", (cutoff,)).fetchall()
     _remove_audio([r["audio_path"] for r in old] + [json.loads(r["payload"]).get("audio_path") for r in held])
-    con.execute("UPDATE channel_contacts SET sender_id=?, audio_path=NULL WHERE created_at <= ? AND sender_id != ?",
-                (PURGED, cutoff, PURGED))
+    con.execute("UPDATE channel_contacts SET sender_id=?, audio_path=NULL WHERE created_at <= ? "
+                "AND sender_id NOT IN (?,?)", (PURGED, cutoff, *REMOVED))
     con.execute("DELETE FROM channel_pending WHERE created_at <= ?", (cutoff,))
     n_consent = con.execute("DELETE FROM channel_consent WHERE COALESCE(decided_at, asked_at) <= ?", (cutoff,)).rowcount
     con.commit()

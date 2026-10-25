@@ -32,6 +32,33 @@ a real SMS. Everything below was tested only against mocked HTTP responses (`tes
   consent prompt, YES/STOP/"gyae" handling, the retention purge and de-duplication by `id` (in case Africa's
   Talking retries) all apply unchanged. Senders are masked in every log line.
 
+## Case statuses (all channels)
+
+| Status | Meaning | Who moves it on | In the officer queue? | Farmer view |
+|---|---|---|---|---|
+| `draft` | The agent asked the farmer a clarifying question, so there's no review case yet | the agent | no | waiting |
+| `pending_review` | The draft and proposed farmer text are waiting for an officer | officer: approve, edit, reject or request info | **yes** | waiting |
+| `approved` | An officer approved the exact farmer text. This is a brief state, released straight away | release | no | waiting |
+| `released` | **Channel case** (simulator, WhatsApp, SMS): the channel accepted the approved text. For SMS and WhatsApp that means the provider took it, not that the phone has it, because delivery reports aren't handled yet. **Web-form case** (`/ask`, no phone contact): AgriReach sends nothing, so it means the answer is now readable at `/farmer/cases/{id}` | none (final) | no | the approved answer |
+| `not_delivered` | Released, but the send failed: provider error, network error, outcome unknown, the SMS length backstop, or the channel not configured. The reason is in `delivery_problem` | officer: approve again (after editing if needed), or retry with `POST /cases/{id}/release` | **yes**, tagged NOT DELIVERED | "not sent yet", no text |
+| `undeliverable` | Approved, but it can never be sent, because the farmer sent STOP or the number was removed by the retention purge. The reason is in `delivery_problem`, and the officer's decision and text stay on the record | none (final). Further decisions and releases get a 409 | no. Listed in `GET /officer/cases?status=undeliverable` and the "Case history" panel | "no answer was sent", no text |
+| `rejected` | The officer rejected the draft | none (final) | no | waiting |
+| `needs_info` | The officer asked for more information | none yet (no follow-up flow built) | no | waiting |
+
+`GET /officer/cases[?status=...]` (signed-in officers) lists every case with its status and `delivery_problem`.
+`/officer/queue` lists only the actionable ones: `pending_review` and `not_delivered`.
+
+### When a failed send is "outcome unknown"
+
+A timeout or a lost reply is not proof the SMS failed. If Africa's Talking accepted the message but its reply never
+arrived (a read or write timeout, a dropped connection, or an unreadable 2xx response), the farmer may already have
+it. These failures are recorded as **"outcome unknown: … The SMS may have been sent; a retry may send it twice.
+Check with the farmer or the AT dashboard first"**. Failures where the request never reached Africa's Talking
+(connection refused, connect timeout) are recorded as "network error: … (not sent)", and a retry is safe.
+
+Future work, not built: before a retry, look up the `messageId` or the delivery report, so an accepted message is
+never sent twice.
+
 ## Length and encoding
 
 SMS has two encodings, and the adapter works out which one a message needs before it sends:
