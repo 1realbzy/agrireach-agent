@@ -324,7 +324,6 @@ def build_graph(tools: Tools):
             src = p["source"]
             if p["source_id"] in seen or p.get("kind") == "record":  # a data record, not a guide page
                 continue
-                continue
             seen.add(p["source_id"])
             try:
                 r = await asyncio.wait_for(tools.fetch.call_tool("fetch", {"url": src["landing_url"], "max_length": 20000,
