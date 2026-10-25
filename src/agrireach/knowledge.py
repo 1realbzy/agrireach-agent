@@ -70,6 +70,11 @@ def claim_keys(p: dict) -> list[str]:
     return [p["claim_key"], *p.get("also_claims", [])]
 
 
+def crops_covered() -> list[str]:
+    """Crops with at least one curated passage, sorted."""
+    return sorted({p["crop"] for p in load()["passages"]})
+
+
 def reference(passage_id: str) -> dict | None:
     kb = load()
     for p in kb["passages"]:

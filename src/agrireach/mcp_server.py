@@ -20,13 +20,13 @@ def _con():
 
 @mcp.tool()
 def search_guidance(query: str, crop: str = "soybean", region: str = "") -> str:
-    """Search the curated soybean extension corpus. Returns verbatim passages with source ids and URLs.
+    """Search the curated extension corpus (see data/knowledge.json for the crops covered). Returns verbatim passages with source ids and URLs.
     Returns an empty list when nothing matches; never invents guidance."""
     hits = knowledge.search(query, crop=crop or None, region=region or None)
     con = _con()
     db.log(con, "agent", "search_guidance", {"query": query, "crop": crop, "region": region},
            f"{len(hits)} hits: {[h['id'] for h in hits]}")
-    return json.dumps([{k: h[k] for k in ("id", "topic", "claim_key", "text", "page", "source_id", "source")}
+    return json.dumps([{k: h[k] for k in ("id", "crop", "topic", "claim_key", "text", "page", "source_id", "source")}
                        | ({"also_claims": h["also_claims"]} if h.get("also_claims") else {})
                        | ({"risk": h["risk"]} if "risk" in h else {}) for h in hits], ensure_ascii=False)
 

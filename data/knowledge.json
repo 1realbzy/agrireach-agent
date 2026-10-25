@@ -1,5 +1,5 @@
 {
- "_note": "Curated starter corpus. Every 'text' field is a VERBATIM excerpt from the cited public document (checked against the downloaded PDF on 2026-10-13). No agronomic statements were written by the AgriReach authors. 'claim_key' and 'topic' are AgriReach curation labels used for retrieval and conflict detection.",
+ "_note": "Curated starter corpus. Every 'text' field is a VERBATIM excerpt from the cited public document (checked against the downloaded source document: soybean passages on 2026-10-13, maize and aflatoxin passages on 2026-10-25; re-run scripts/verify_corpus.py). No agronomic statements were written by the AgriReach authors. 'claim_key' and 'topic' are AgriReach curation labels used for retrieval and conflict detection.",
  "sources": {
   "APNI-SARI-2023": {
    "title": "Soybean Cropping Guide: 4R Nutrient Management and Best Agronomic Practices, Northern Ghana",
@@ -18,6 +18,26 @@
    "licence": "Not stated in the document; short excerpts quoted with attribution for reference only",
    "url": "https://cgspace.cgiar.org/bitstreams/cfc71dfe-5804-4f06-9617-7165a8e44cf9/download",
    "landing_url": "https://cgspace.cgiar.org/server/api/core/bitstreams/cfc71dfe-5804-4f06-9617-7165a8e44cf9"
+  },
+  "APNI-SARI-2023-MAIZE": {
+   "title": "Maize Cropping Guide: 4R Nutrient Management and Best Agronomic Practices, Northern Ghana",
+   "publisher": "African Plant Nutrition Institute (APNI) and CSIR-Savanna Agricultural Research Institute (SARI); authors S. Njoroge, A. Haruna, A. M. Mohammed, A.L.A. Aziz, S. Zingore",
+   "year": 2023,
+   "region": "Northern Ghana",
+   "licence": "CC BY 4.0 (stated in document: '© 2023 BY 4.0')",
+   "url": "https://www.apni.net/wp-content/uploads/2023/06/4R-Maize-Guide-N-Ghana.pdf",
+   "landing_url": "https://www.apni.net/2022/05/26/new-release-4r-maize-cropping-guide-for-northern-ghana/"
+  },
+  "AGBETIAMEH-2018": {
+   "title": "Prevalence of Aflatoxin Contamination in Maize and Groundnut in Ghana: Population Structure, Distribution, and Toxigenicity of the Causal Agents",
+   "publisher": "Plant Disease (American Phytopathological Society); Agbetiameh, Ortega-Beltran, Awuah, Atehnkeng et al.; doi:10.1094/PDIS-05-17-0749-RE",
+   "year": 2018,
+   "region": "Ghana (national survey)",
+   "licence": "CC BY 4.0 (stated in article: 'open access article distributed under the CC BY 4.0 International license')",
+   "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7779968/",
+   "landing_url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC7779968/fullTextXML",
+   "verify_url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC7779968/fullTextXML",
+   "verify_format": "xml"
   }
  },
  "passages": [
@@ -49,7 +69,9 @@
    "region": "northern",
    "topic": "planting",
    "claim_key": "planting_depth",
-   "also_claims": ["plant_spacing"],
+   "also_claims": [
+    "plant_spacing"
+   ],
    "text": "To achieve the desired spacing, make planting holes that are about 5 cm deep at a spacing of 15 cm between holes."
   },
   {
@@ -162,6 +184,129 @@
    "topic": "planting",
    "claim_key": "early_planting_risk",
    "text": "Do not plant too early before the rains are well established as a prolonged dry spell after planting may cause the plants to die."
+  },
+  {
+   "id": "APNI-SARI-2023-MAIZE:p5-planting-window",
+   "source_id": "APNI-SARI-2023-MAIZE",
+   "page": "5",
+   "crop": "maize",
+   "region": "northern",
+   "topic": "planting",
+   "claim_key": "maize_planting_window",
+   "text": "Maize planting in the northern region should be done between early June and July 10th based on the onset of rains. Better yields are achieved with early planting with the first rains."
+  },
+  {
+   "id": "APNI-SARI-2023-MAIZE:p5-early-varieties",
+   "source_id": "APNI-SARI-2023-MAIZE",
+   "page": "5",
+   "crop": "maize",
+   "region": "northern",
+   "topic": "planting",
+   "claim_key": "maize_late_planting",
+   "text": "Early maturing varieties such as Ewul-Boyu and Wang Dataa can be planted up to end of July."
+  },
+  {
+   "id": "APNI-SARI-2023-MAIZE:p13-basal-timing",
+   "source_id": "APNI-SARI-2023-MAIZE",
+   "page": "13",
+   "crop": "maize",
+   "region": "northern",
+   "topic": "fertilizer",
+   "claim_key": "maize_basal_timing",
+   "text": "The first fertilizer application (basal application) should be applied shortly after germination at about two weeks after planting."
+  },
+  {
+   "id": "APNI-SARI-2023-MAIZE:p13-topdress-timing",
+   "source_id": "APNI-SARI-2023-MAIZE",
+   "page": "13",
+   "crop": "maize",
+   "region": "northern",
+   "topic": "fertilizer",
+   "claim_key": "maize_topdress_timing",
+   "text": "The Right time for application of top-dressing fertilizer is at 6 weeks after planting."
+  },
+  {
+   "id": "APNI-SARI-2023-MAIZE:p13-topdress-moisture",
+   "source_id": "APNI-SARI-2023-MAIZE",
+   "page": "13",
+   "crop": "maize",
+   "region": "northern",
+   "topic": "fertilizer",
+   "claim_key": "maize_topdress_moisture",
+   "text": "Top dressing should be done when the soil is moist, to enhance the dissolving of applied nutrients in the soil as this allows for faster uptake of nutrients. If at 6 weeks after planting maize the soil is very dry, delay the topdress fertilizer application until some rains are received."
+  },
+  {
+   "id": "APNI-SARI-2023-MAIZE:p18-scouting",
+   "source_id": "APNI-SARI-2023-MAIZE",
+   "page": "18",
+   "crop": "maize",
+   "region": "northern",
+   "topic": "pest",
+   "claim_key": "maize_scouting",
+   "text": "It is recommended to have a walk through the maize field at least once a week. When scouting, walk through the field and look out for unusual patterns such as insect damage on leaves, cobs or stems, presence of insect larvae or eggs on maize leaves, abnormal leaf colour, and stunted slow growing plants."
+  },
+  {
+   "id": "APNI-SARI-2023-MAIZE:p20-faw-prevention",
+   "source_id": "APNI-SARI-2023-MAIZE",
+   "page": "20",
+   "crop": "maize",
+   "region": "northern",
+   "topic": "pest",
+   "claim_key": "maize_faw_prevention",
+   "text": "Rotate maize with non-host plants such as groundnut to help reduce Fall Army worm infestations. Deep ploughing and burial, or burning of infested maize residues helps to reduce populations in the following season. Proper weeding of maize fields also helps to reduce infestations."
+  },
+  {
+   "id": "APNI-SARI-2023-MAIZE:p20-faw-control",
+   "source_id": "APNI-SARI-2023-MAIZE",
+   "page": "20",
+   "crop": "maize",
+   "region": "northern",
+   "topic": "pest",
+   "claim_key": "maize_faw_control",
+   "text": "Application of recommended pesticides can help to control infestations once they occur. Consult your local AEA for advice on the recommended fall army worm control pesticide in your area.",
+   "risk": "chemical"
+  },
+  {
+   "id": "APNI-SARI-2023-MAIZE:p22-drying",
+   "source_id": "APNI-SARI-2023-MAIZE",
+   "page": "22",
+   "crop": "maize",
+   "region": "northern",
+   "topic": "storage",
+   "claim_key": "maize_drying",
+   "text": "At harvesting, maize grains are usually not fully dry and have a moisture content of about 15 to 20%. Immediately after harvesting, cobs should be dried so as to reduce the grain moisture content to about 10 to 12% in readiness for storage."
+  },
+  {
+   "id": "APNI-SARI-2023-MAIZE:p22-shelling",
+   "source_id": "APNI-SARI-2023-MAIZE",
+   "page": "22",
+   "crop": "maize",
+   "region": "northern",
+   "topic": "storage",
+   "claim_key": "maize_storage_form",
+   "text": "Maize should be stored after removal of maize husks and shelling. Storing unhusked maize is not recommended as it is very difficult to detect insect infestations."
+  },
+  {
+   "id": "APNI-SARI-2023-MAIZE:p22-sacks",
+   "source_id": "APNI-SARI-2023-MAIZE",
+   "page": "22",
+   "crop": "maize",
+   "region": "northern",
+   "topic": "storage",
+   "claim_key": "maize_storage_sacks",
+   "text": "Well dried and shelled maize should be treated with recommended storage chemicals and stored in jute sacks lined with polythene bags.",
+   "risk": "chemical"
+  },
+  {
+   "id": "AGBETIAMEH-2018:aflatoxin-limits",
+   "source_id": "AGBETIAMEH-2018",
+   "page": "Materials and methods, 'Data analysis'",
+   "crop": "maize",
+   "region": "ghana",
+   "topic": "aflatoxin",
+   "claim_key": "maize_aflatoxin_limit",
+   "text": "aflatoxin limits imposed by the European Union (4 ppb), the Ghana Standards Authority (GSA; 15 ppb for maize and 20 ppb for groundnut), and the United States Food and Drugs Administration (FDA; 20 ppb)",
+   "excerpt_note": "Mid-sentence excerpt; the full sentence describes how the study grouped its samples."
   }
  ],
  "crop_calendar": [
@@ -194,6 +339,30 @@
    "region": "northern",
    "activity": "harvest",
    "passage_id": "APNI-SARI-2023:harvest"
+  },
+  {
+   "crop": "maize",
+   "region": "northern",
+   "activity": "planting",
+   "passage_id": "APNI-SARI-2023-MAIZE:p5-planting-window"
+  },
+  {
+   "crop": "maize",
+   "region": "northern",
+   "activity": "planting (early maturing varieties)",
+   "passage_id": "APNI-SARI-2023-MAIZE:p5-early-varieties"
+  },
+  {
+   "crop": "maize",
+   "region": "northern",
+   "activity": "basal fertilizer",
+   "passage_id": "APNI-SARI-2023-MAIZE:p13-basal-timing"
+  },
+  {
+   "crop": "maize",
+   "region": "northern",
+   "activity": "top-dressing fertilizer",
+   "passage_id": "APNI-SARI-2023-MAIZE:p13-topdress-timing"
   }
  ]
 }

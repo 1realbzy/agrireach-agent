@@ -21,7 +21,8 @@ def test_tools_discoverable_and_gate_enforced_over_mcp():
         ("search_guidance", {"query": "soybean seed rate per hectare"}),
         ("retrieve_reference", {"passage_id": "does-not-exist"}),
         ("create_or_update_case", {"status": "approved", "question": "x"}),
-        ("get_crop_calendar", {"crop": "maize"}),
+        ("get_crop_calendar", {"crop": "cocoa"}),
+        ("get_crop_calendar", {"crop": "maize", "region": "northern"}),
     ]))
     assert names == ["create_or_update_case", "get_crop_calendar", "retrieve_reference", "search_guidance"]
     hits = json.loads(res[0].content[0].text)
@@ -29,4 +30,6 @@ def test_tools_discoverable_and_gate_enforced_over_mcp():
     assert all(h["source"]["url"].startswith("https://") for h in hits)
     assert res[1].isError  # unknown reference is an error, never invented
     assert res[2].isError and "may only set" in res[2].content[0].text
-    assert json.loads(res[3].content[0].text) == []  # no local reference for maize
+    assert json.loads(res[3].content[0].text) == []  # no local reference for cocoa
+    maize = json.loads(res[4].content[0].text)
+    assert maize and all(r["passage"]["source_id"] == "APNI-SARI-2023-MAIZE" for r in maize)
