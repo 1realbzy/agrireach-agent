@@ -27,7 +27,7 @@ COORDS = Path(__file__).resolve().parents[2] / "data" / "district_coords.json"
 DAYS = 30
 THRESHOLD_MM = 1.0   # display convention for a "rain day" (a common wet-day threshold); NOT an onset rule
 CROSSCHECK_MIN_AGE_DAYS = 7   # and the response must be MERRA2-only (finalised), see _nasa_power
-CAVEAT = ("This is a model estimate for one point in the district, not a rain-gauge reading; estimates can differ a lot "
+CAVEAT = ("This is a model estimate for one point in the district, not a rain gauge reading; estimates can differ a lot "
           "from a local gauge and from other providers. The guides give no rainfall amount that marks onset; AgriReach "
           "does not say whether onset has been reached. The officer decides.")
 OPEN_METEO = {"provider": "Open-Meteo (model-based estimate, forecast API past days)",
