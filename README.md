@@ -99,7 +99,16 @@ Before a draft is filed for the officer, `src/agrireach/citation_check.py` (plai
 - If the model's draft fails, it is regenerated once with the list of problems. If it fails again, the officer gets the verbatim passages instead, the case is marked urgent with `citation check failed: ...`, and the rejected draft is kept in the result for review. A failing draft is never filed as if it were clean, and nothing is released without officer approval either way.
 - Retrieval is conflict-complete: if any passage on a claim is retrieved, every other source's passage on that claim is retrieved too, so a disagreement can't be hidden by ranking.
 
-Limits: the check covers figures and their limits, found from a fixed word list next to each number. A sentence without a number (e.g. "both sources agree…") is not checked. False positives fail closed: the officer gets the verbatim passages and an urgent flag. See EVALS "Known limits (after review)".
+Sentences without figures are checked by `src/agrireach/claim_check.py`, through the same regenerate-then-fallback path:
+
+- Named sources (code): a sentence that names a source ("IITA says…") must cite a passage from it.
+- Agreement claims (code): "both sources agree…" must cite at least two sources, each of which backs the sentence on its own (its figures, or at least 60% of the sentence's content words). Calling a disagreement that code detected "agreement" fails.
+- Support (code): a cited sentence must share at least one content word with the passages it cites. This catches an unrelated citation; it can't tell a paraphrase from a contradiction.
+- Optional judge: a second model (`AGRIREACH_JUDGE_MODEL`, e.g. `meta-llama/llama-3.3-70b-instruct`; different from the drafter) asked whether each cited sentence is supported. Off by default. If the judge call fails, the error is recorded on the case and nothing is rejected.
+
+Measured (EVALS "Latest"): on 69 recorded real drafts, the code layers reject 0 of 59 clean drafts and catch 5 known defects; the judge catches 5 more but rejects 8 of 59 clean drafts (13.6%). In live runs after the fixes, false rejects caused 0 of 34 fallbacks with the judge off and 2 of 47 with it on.
+
+Limits: figures are matched by a fixed word list next to each number. Uncited sentences after a paragraph's last citation are not checked by the claim check. Without the judge, an unsupported sentence that shares words with its passage passes (e.g. "mouldy maize is harmful to humans and animals" citing the aflatoxin-limit passage). False positives fail closed: the officer gets the verbatim passages and an urgent flag. See EVALS.
 
 ## MCP implementation
 
@@ -140,7 +149,8 @@ Done (13 Oct): verified corpus, MCP server, LangGraph agent, case DB and gate, A
 Done (23 Oct): citation check for dates and numbers, conflict-complete retrieval, Twi detection and officer routing (EVALS tasks 10-12).
 Done (23 Oct, review): the check also compares each figure's limit ("not deeper than", "up to", "at least"), so swapped bounds fail.
 Done (25 Oct): 14 field-evidence evals (EVALS F1-F14) from public reports, verified maize and aflatoxin passages, routing of uncovered crops and contact requests to the officer.
-Next: check sentences without figures (e.g. "both sources agree"), expand the place list into a fuller district gazetteer, record the demo video, then consider a weather tool and real Twi support with native-speaker review.
+Done (25 Oct): claim check for sentences without figures (named sources, agreement claims, lexical support) and an optional, separate judge model, with measured false-reject rates.
+Next: expand the place list into a fuller district gazetteer, record the demo video, then consider a weather tool and real Twi support with native-speaker review.
 
 ## Limitations
 
@@ -149,7 +159,7 @@ Next: check sentences without figures (e.g. "both sources agree"), expand the pl
 - The quality of recommendations depends on the authority and freshness of source material.
 - Text based advice may not be enough to diagnose a plant health issue.
 - Twi support is detection plus a keyword gloss only: AgriReach cannot translate or reply in Twi, so Twi cases go to the officer as urgent. Other local languages are not handled. Offline access and accessibility require further work.
-- The citation check confirms that every date and number in a draft, and any limit on it ("up to", "not deeper than", "at least"), appears in the passage it cites. It does not check sentences without figures, or other ways the words around a correct figure can change its meaning.
+- The citation check confirms that every date and number in a draft, and any limit on it ("up to", "not deeper than", "at least"), appears in the passage it cites. Sentences without figures get code checks (named sources, agreement claims, at least one shared word) and an optional judge model; without the judge, a sentence that shares words with its passage but says something the passage doesn't will pass.
 - Weather coverage and API access have not yet been verified.
 - The system is decision support and does not replace qualified agricultural advice.
 
