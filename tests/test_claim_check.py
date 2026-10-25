@@ -146,3 +146,22 @@ def test_judge_replay_flags_and_false_reject_rate():
     clean = 69 - len(defective)
     false_rejects = [k for k, v in JUDGE_LABELS.items() if not v]
     assert (len(false_rejects), clean) == (8, 59)  # 8/59 = 13.6% of clean drafts; 7 of the 8 are the Kumasi case
+
+
+def test_live_run_false_rejects_fixed():
+    """From the 25 Oct live runs: officer directives ("Choose one.") failed the lexical check, and list markers
+    ("1.") and "one source says X, another says Y" lines were sent to the judge and rejected."""
+    d = ("Plant 15 cm apart [APNI-SARI-2023:p11-spacing], or 10 cm apart [IITA-SSPING-2022:p17-spacing]. Choose one.\n"
+         "Choose which to follow. Rows are 50 cm apart [APNI-SARI-2023:p11-spacing].")
+    assert check(d, SPACING).ok
+    asked = []
+
+    def fake(prompt):
+        asked.append(prompt)
+        n = prompt.count(". SENTENCE: ")
+        return json.dumps({"verdicts": [{"n": i + 1, "verdict": "not_supported", "why": "x"} for i in range(n)]})
+
+    d2 = ("1. One source says 15 cm between plants [APNI-SARI-2023:p11-spacing], another says 10 cm "
+          "[IITA-SSPING-2022:p17-spacing].\n2. Plant spacing is disputed [APNI-SARI-2023:p11-spacing].")
+    r = claim_check.check_claims(d2, PS, SPACING, judge=True, judge_call=fake)
+    assert r.ok and asked == []  # nothing left to ask the judge about

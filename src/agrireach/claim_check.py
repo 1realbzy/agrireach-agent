@@ -13,8 +13,9 @@ Runs after the figure check in citation_check.py, in code, before a draft reache
    for "this is not a confirmed diagnosis"); it can NOT tell a paraphrase from a contradiction.
 
 Optional layer 4: a model judge (agrireach.judge), separate from the drafting model, asked whether each cited
-sentence is supported. Off unless AGRIREACH_JUDGE_MODEL is set. Officer-facing lines, restatements of the question
-and "the sources differ" lines are not sent to it. See judge.py.
+sentence is supported. Off unless AGRIREACH_JUDGE_MODEL is set. Officer-facing lines, restatements of the question,
+"the sources differ / one source says X, another Y" lines (conflicts are detected and their figures checked in code)
+and sentences with no content words (list markers like "1.") are not sent to it. See judge.py.
 
 Sentences attach to citations the same way figures do in citation_check: a sentence takes the citations inside
 it, or else the next citation in the same paragraph. Sentences after a paragraph's last citation are uncited and
@@ -39,7 +40,8 @@ META_RE = re.compile(r"\b(?:officer|officers|agrireach|aea)\b", re.I)
 # Lines the judge is not asked about: officer-facing instructions, restating the question, and saying the sources
 # differ (conflicts are detected by code and their figures are checked by citation_check).
 NOT_JUDGED_RE = re.compile(r"\b(?:officer|officers|agrireach|aea)\b|\bfarmer\s+(?:asks|is\s+asking|wants\s+to\s+know)\b"
-                           r"|\bsources?\b[^.]*\b(?:disagree|differ)", re.I)
+                           r"|\bsources?\b[^.]*\b(?:disagree|differ)|\bdisagree|\bdisput|\bone\s+source\b[^.]*\banother\b",
+                           re.I)
 NEGATED_AGREE = re.compile(r"\b(?:not|n't|never|dis)\s*agree|\bdo\s+not\s+agree|\bdiffer|\bdisagree", re.I)
 # Words that carry no claim of their own: function words, advisory verbs and officer-facing meta talk.
 STOP = set("""a an the is are was were be been being am of to in on at by for from with without as and or but nor so
@@ -52,7 +54,8 @@ officer officers farmer farmers agrireach source sources passage passages guide 
 reference references cited cite according says say said state states stated suggest suggests suggested recommend
 recommends recommended recommendation advise advises advised advice note notes ensure consider make sure
 help helps important best good well better ideal appropriate proper properly
-agree agrees agreed agreement consensus consistent consistently""".split())
+agree agrees agreed agreement consensus consistent consistently
+choose chose pick decide follow option options""".split())
 # An agreement claim with no figures must share at least this share of its content words with EACH cited source.
 AGREE_MIN_OVERLAP = 0.6
 _SUFFIXES = ("ations", "ation", "ments", "ment", "ings", "ing", "ness", "ies", "ied", "ers", "er", "ed", "es", "ly",
@@ -202,7 +205,8 @@ def check_claims(draft: str, passages: list[dict], conflicts: dict | None = None
             problems.append(f"'{_short(s.text)}' is not supported by its citation {[p['id'] for p in cited]} "
                             "(no shared content words)")
             continue
-        if not NOT_JUDGED_RE.search(bare):
+        # The judge is only asked about sentences with content words (not list markers like "1.").
+        if words and not NOT_JUDGED_RE.search(bare):
             to_judge.append((s, cited))
     judged = None
     from agrireach import judge as judge_mod
