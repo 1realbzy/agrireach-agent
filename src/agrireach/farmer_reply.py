@@ -202,6 +202,38 @@ def rule_rewrite(officer_text: str, max_chars: int = MAX_CHARS) -> str:
     return out
 
 
+# A short heading label opening a sentence ("**Planting Window**: ...", "1. Planting time: ..."): live run 5's Ejura
+# SMS reached the farmer as "Planting Window: The major season ...". Only 1-4 words of letters before the colon, so
+# "Spray at 6:30" and "(MoFA)." are left alone.
+_LABEL_RE = re.compile(r"(?P<pre>^|(?<=[.!?])\s)(?:\d+[.)]\s+)?[A-Z][A-Za-z]*(?:\s[A-Za-z]+){0,3}\s?:\s+(?P<c>\S)")
+
+
+def tidy(text: str) -> str:
+    """Plain farmer text: no markdown, no heading labels, single spaces, no space before punctuation. Run on the model
+    and rule texts before the checks (run 5: Ejura's SMS had "Planting Window:" labels and double spaces)."""
+    t = re.sub(r"\s+", " ", re.sub(r"\*\*|__|`", "", text)).strip()
+    t = _LABEL_RE.sub(lambda m: m.group("pre") + m.group("c").upper(), t)
+    return re.sub(r"\s+([.,;:!?])", r"\1", t)
+
+
+_STOP = {"the", "a", "an", "your", "you", "in", "on", "for", "to", "of", "and", "or", "with", "about", "at", "is",
+         "are", "be", "can", "this", "that", "any"}
+
+
+def _repeats(s: str, line: str) -> bool:
+    """s says the same as the source's safety line: the same sentence (ignoring its "(Source)", punctuation and case),
+    or another pesticide sentence sharing most of its content words. Run 5's S-Kintampo SMS ended with "Ask your local
+    Agricultural Extension Agent for advice on recommended pesticides to control Fall Armyworm." after the (APNI)
+    line, about 100 characters spent twice."""
+    def words(x: str) -> set[str]:
+        x = re.sub(r"\s*\([^)]*\)\s*[.!?]*$", "", x.lower())
+        x = re.sub(r"\bagricultur(?:al|e)\s+extension\s+(?:agent|officer)s?\b|\bextension\s+agents?\b", "aea", x)
+        x = re.sub(r"\barmy\s+worms?\b", "armyworm", x)
+        return {w[:-1] if len(w) > 3 and w.endswith("s") else w for w in re.findall(r"[a-z]+", x)} - _STOP
+    a, b = words(s), words(line)
+    return a == b or bool(SAFETY_RE.search(s) and a and len(a & b) / len(a | b) >= 0.6)
+
+
 def ensure_safety_line(text: str, passages: list[dict] | None, caveat: dict | None = None,
                        fit: bool = False, audit: dict | None = None) -> tuple[str, list[str]]:
     """The pesticide safety guarantee, applied when the farmer text is proposed (never at approval or send: the
@@ -244,7 +276,10 @@ def ensure_safety_line(text: str, passages: list[dict] | None, caveat: dict | No
 
     def key(s: str) -> str:  # the same sentence with or without its "(Source)" name
         return re.sub(r"\W+", " ", re.sub(r"\s*\([^)]*\)\s*[.!?]*$", "", s)).strip().lower()
-    body = [s for s in _sentences(text[len(head[0]) if head else 0:].strip()) if not line or key(s) != key(line)]
+    body = _sentences(text[len(head[0]) if head else 0:].strip())
+    # Repeats of the line go before the length check (they matter most under the 268-character Unicode limit).
+    repeats = [s for s in body if line and _repeats(s, line) and key(s) != key(line)]
+    body = [s for s in body if not line or not _repeats(s, line)]
     tail = [s for s in body if s == CONFIRM]
     body = [s for s in body if s != CONFIRM]
     join = lambda b: " ".join([*head, *([line] if line else []), *b, *tail])  # noqa: E731
@@ -261,6 +296,10 @@ def ensure_safety_line(text: str, passages: list[dict] | None, caveat: dict | No
                     "it is never shortened, so no SMS is proposed: the officer must write the farmer text"]
     if line and out != text:
         notes.append(f"the cited source's pesticide sentence ({src}) was put first after any caveat, word for word")
+    if repeats:
+        notes.append("removed as a repeat of the source's pesticide sentence: " + "; ".join(f"'{r}'" for r in repeats))
+        if audit is not None:
+            audit["repeats"] = list(repeats)
     if dropped:
         notes.append(f"{len(dropped)} advice sentence(s) dropped to fit the length limit; check the reply still makes "
                      "sense: " + "; ".join(f"'{d}'" for d in dropped))
@@ -381,6 +420,7 @@ def _propose(officer_text: str, question: str, language: str, conflicts: bool, c
     if llm.mode() == "llm" and not officer_text.startswith(llm.STUB_LABEL):
         try:
             text, mode = _llm_rewrite(officer_text, question, conflicts)
+            text = tidy(text)
             text = lead + text if text and caveat and not caveat_kept(text, caveat) else text
             if conflicts and text and CONFIRM not in text:
                 text = f"{text} {CONFIRM}"  # same as the rule-based path: never present the options as agreeing
@@ -398,7 +438,7 @@ def _propose(officer_text: str, question: str, language: str, conflicts: bool, c
             audit["model_error"] = f"{type(e).__name__}: {e}"[:300]
             notes.append(f"model rewrite failed ({type(e).__name__}); rule-based version shown")
     # No length cut here: ensure_safety_line(fit=True) drops whole sentences to fit and names them for the officer.
-    text = rule_rewrite(officer_text, sys.maxsize)
+    text = tidy(rule_rewrite(officer_text, sys.maxsize))
     if conflicts and text and CONFIRM not in text:
         # The options are listed with their sources; never present them as if they agree.
         text = f"{text} {CONFIRM}"

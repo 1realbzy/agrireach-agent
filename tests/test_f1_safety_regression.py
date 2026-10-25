@@ -42,6 +42,8 @@ SMS_RUN2 = ("If the worms are still a problem, talk to your local Agriculture Ex
             "infestations. Make sure to weed your maize field well. When storing your maize, dry and shell it properly, "
             "then treat it with the recommended storage chemicals. Store it in jute sacks lined with polythene bags.")
 CAVEAT = fr.zone_caveat("Adaklu")
+# The cited source's pesticide sentence, inserted word for word with its source name.
+SOURCE_LINE = "Consult your local AEA for advice on the recommended fall army worm control pesticide in your area (APNI)."
 
 
 def accepting_judge():
@@ -129,7 +131,11 @@ def test_faithful_model_sms_is_proposed_with_the_safety_line(monkeypatch, draft,
     rejected = [p for p in fd.problems if p.startswith("model rewrite rejected")]
     assert fd.mode == "rule" and rejected and "over 600" in rejected[0], fd.problems
     assert "late" not in rejected[0] and "not supported" not in rejected[0], rejected
-    assert fd.text.startswith(CAVEAT["sentence"]) and "pesticide" in fd.text and "Extension Agent" in fd.text
+    # Since fix/run5-findings (item 5b) the draft's own referral sentence is removed as a near-repeat of the source's
+    # pesticide sentence, which carries the same referral word for word; the removal is named in the officer note.
+    assert fd.text.startswith(CAVEAT["sentence"]) and SOURCE_LINE in fd.text, fd.text
+    assert any(p.startswith("removed as a repeat of the source's pesticide sentence") and "Extension Agent (AEA)" in p
+               for p in fd.problems), fd.problems
     assert not any("drops the pesticide safety line" in p for p in fd.problems), fd.problems
 
 
@@ -140,5 +146,8 @@ def test_rule_fallback_keeps_the_safety_line(monkeypatch, draft):
     monkeypatch.setattr(judge, "_call", accepting_judge()[1])
     fd = fr.propose(draft, Q, zone_caveat=CAVEAT, passages=PS)
     assert fd.mode == "rule" and fd.text.startswith(CAVEAT["sentence"])
-    assert "Extension Agent (AEA) for advice on" in fd.text and "pesticide" in fd.text, fd.text
+    # The referral is kept as the source's own sentence; the draft's paraphrase of it is removed as a repeat (item 5b).
+    assert SOURCE_LINE in fd.text, fd.text
+    assert any(p.startswith("removed as a repeat of the source's pesticide sentence") and "Extension Agent (AEA)" in p
+               for p in fd.problems), fd.problems
     assert not any("safety line" in p for p in fd.problems), fd.problems
