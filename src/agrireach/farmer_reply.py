@@ -136,7 +136,8 @@ _OPENERS = [
 
 
 # A full stop after one of these, or one followed by "(Source)", does not end a sentence: "early Sept. (MoFA)."
-_ABBREV = r"(?:Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|approx|e\.g|i\.e|No|St|Dr)\."
+_ABBREV_WORDS = r"Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|approx|e\.g|i\.e|No|St|Dr"
+_ABBREV = rf"(?:{_ABBREV_WORDS})\."
 
 
 def _sentences(text: str) -> list[str]:
@@ -384,7 +385,12 @@ def sms_claims(text: str, passages: list[dict], judge_call=None, caveat: dict | 
     if not passages:
         return [f"'{s[:80]}' has no source behind it: the case cites no passage" for s in sents]
     ids = ", ".join(p["id"] for p in passages)
-    draft = "\n".join(re.sub(r"([.!?]*)$", lambda m: f" [{ids}]{m.group(1) or '.'}", s, count=1) for s in sents)
+    # The claim check splits sentences on any ". ": an abbreviation's full stop inside one of ours ("early Sept.
+    # (MoFA).") would leave "(MoFA) [ids]." as a sentence of its own (live run 6, Ejura: "'(MoFA) .' is not
+    # supported"). Drop that full stop for the check only; each sentence is checked whole.
+    unsplit = lambda s: re.sub(rf"\b({_ABBREV_WORDS})\.(?=\s)", r"\1", s)  # noqa: E731
+    draft = "\n".join(re.sub(r"([.!?]*)$", lambda m: f" [{ids}]{m.group(1) or '.'}", unsplit(s), count=1)
+                      for s in sents)
     out = list(citation_check.check_draft(draft, passages).problems)
     out += claim_check.check_claims(draft, passages, judge=True, judge_call=judge_call).problems
     return list(dict.fromkeys(out))
