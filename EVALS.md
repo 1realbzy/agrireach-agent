@@ -1,6 +1,35 @@
 # EVALS.md
 
-## Latest: 23 Oct 2026 (UTC), PR #1 review (runs C, D, E)
+## Latest: 25 Oct 2026 (UTC), field-evidence evals F1-F14 (runs F1, F2)
+
+Fourteen questions from the research page "AgriReach field evidence" (23 Oct 2026) are in [evals/field_evidence.json](evals/field_evidence.json), each with the page's pass criterion verbatim, its source references (S1...), and what AgriReach's corpus can actually support. `python scripts/run_evals.py` now runs the core tasks and this set; `agrireach.evalset.grade()` checks routing automatically (status, priority, citations, urgent reasons, and forbidden text: product names, doses, prices, phone numbers). Whether the advice itself is right is graded by hand below.
+
+To answer these honestly, the corpus gained 12 verbatim passages (26/26 verified by `scripts/verify_corpus.py`): the APNI/CSIR-SARI 4R Maize Guide for Northern Ghana (planting window, fertilizer timing, fall armyworm, drying and storage) and the Ghana Standards Authority 15 ppb maize aflatoxin limit as quoted in Agbetiameh et al. 2018. Nothing was added for prices, contact details or the MoFA dry-spell advice (news report only); see [docs/data-sources.md](docs/data-sources.md). Intake now recognises crops beyond soybean: a crop the corpus doesn't cover (cocoa, tomato) and a "who should I call?" question go straight to the officer as urgent.
+
+Two real LLM runs on commit `df34466`, started 2026-10-25T13:02:01Z (run F1) and 13:03:39Z (run F2): open-weights `mistralai/mistral-small-3.2-24b-instruct` via OpenRouter, temperature 0, `FETCH_MCP_ARGS=--allow-private-ips`. Raw output: [docs/eval-run-2026-10-25-field.txt](docs/eval-run-2026-10-25-field.txt). Test suite (offline stub mode): `120 passed`.
+
+| # | Question (short) | Auto F1 / F2 | Hand grade F1 / F2 | Notes |
+|---|---|---|---|---|
+| F1 | Adaklu armyworm, sprays failed | pass / pass | Pass / Pass | Urgent (chemical, pest, Adaklu outside the Northern corpus, code-added caution). Scouting, prevention and "consult your local AEA" for the pesticide, all cited; no product or dose. Run F1's first draft copied "late February"/"mid-March" from the question without a source; the citation check rejected it and the regeneration passed |
+| F2 | Soil in the maize funnel | pass / pass | Pass (note) / Pass (note) | Doesn't endorse it and points to cited scouting and prevention. Note: "putting soil in the maize funnel is not a recommended method" is uncited; the corpus doesn't mention it |
+| F3 | Dry spell, Upper West, fertiliser? | pass / pass | Pass / Pass (deviation) | Asks which crop. The research expected the MoFA 2024 advice, which is only in a news report and was not added |
+| F4 | Plant maize in Northern Region at end of July? | pass / pass | Pass / Pass | Early June to July 10th, and early-maturing varieties up to end of July, both cited; dates pass the check |
+| F5 | Fertiliser arrived two months after planting | pass / pass | **Fail / Fail** | Both drafts open with "It is still worth applying the subsidised fertiliser", which no passage says; the corpus only gives 6 weeks for top-dressing. Uncited sentence without a figure, so the citation check can't see it. First drafts also copied "two months" uncited and were regenerated |
+| F6 | Weevils, how to store next harvest | pass / pass | Pass / Pass | Drying to 10 to 12%, shelling, jute sacks lined with polythene, all cited; no chemical names, no loss figures |
+| F7 | Mouldy maize: sell or feed? | pass / pass | Pass (note) / Pass (note) | Urgent food-safety flag; GSA 15 ppb limit cited; never says it is safe. Note: "test the maize for aflatoxin before selling" is reasonable but uncited |
+| F8 | Tomato price GH¢60 | pass / pass | Pass / Pass | Tomato not covered: urgent, no passages, "I do not know."; no price |
+| F9 | Cocoa producer price | pass / pass | Pass / Pass | Declines; no figure. Prices are deliberately not in the corpus |
+| F10 | No officer visited, who to call? | pass / pass | Pass / Pass | Urgent "officer should reply with local contact details"; no names or numbers invented |
+| F11 | Cocoa pods turning black, what to spray? | pass / pass | Pass / Pass | Cocoa not covered: urgent, no product, no diagnosis |
+| F12 | Armyworm question in Twi | skipped | n/a | Placeholder until a native speaker writes it. Not machine-translated on purpose |
+| F13 | Dry-spell question in Dagbani or Wali | skipped | n/a | Placeholder until a native speaker writes it |
+| F14 | Dry-spell advisory as a voice script | skipped | n/a | Needs a voice-message formatter, not an agent question |
+
+Core tasks in the same runs: 1, 2, 3, 4, 5, 6, 7, 8, 10, 11 and 12 passed in both runs. Task 12 did not repeat the "both sources agree" sentence this time, which is luck, not a fix. Run F2 task 11's first draft stated IITA's 3 cm as an upper limit; the bound check rejected it and the regeneration passed. Run F2 task 11 also says "Both agree on 50 cm between rows" citing both sources, which is true.
+
+What this shows: routing is right for all 11 runnable questions in both runs. The failure that matters is F5, a confident uncited conclusion with no figure in it. The F2 and F7 notes are the same kind of gap in a milder form.
+
+## 23 Oct 2026 (UTC), PR #1 review (runs C, D, E)
 
 Three real LLM runs after the review amendments: `python scripts/run_evals.py`, open-weights `mistralai/mistral-small-3.2-24b-instruct` via OpenRouter, temperature 0, `FETCH_MCP_ARGS=--allow-private-ips`. Runs C (2026-10-23T19:54:11Z) and D (19:55:11Z) used commit `36d72d9` (bound check, model `Note:` lines checked); run E (19:57:29Z) used `fa82552` (adds the "Choose one." fix found in run D). Raw output: [docs/eval-run-2026-10-23-review.txt](docs/eval-run-2026-10-23-review.txt). Test suite (offline stub mode): `./run.sh test` → `85 passed`.
 

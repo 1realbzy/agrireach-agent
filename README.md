@@ -12,7 +12,7 @@ Smallholder farmers in Ghana can struggle to access timely, reliable agricultura
 
 AgriReach is designed to help agricultural extension officers handle routine farmer enquiries more efficiently. A farmer submits a question. The agent identifies missing context, retrieves relevant guidance from curated agricultural references through tools, synthesises a draft advisory with its evidence, and places it in a review queue. A named extension officer must approve every advisory before it reaches a farmer. Uncertain or high-risk cases are flagged as urgent, but no case skips review. The agent should state uncertainty rather than guess.
 
-The initial scope is a narrow soybean advisory workflow in Ghana. A local MVP runs with an open-weights model or in offline stub mode (see status below); nothing is deployed.
+The initial scope is a narrow soybean advisory workflow in Ghana; on 25 Oct 2026 a small set of verified Northern Ghana maize passages and the Ghana maize aflatoxin limit were added for the field-evidence evals. Questions about other crops go straight to the officer. A local MVP runs with an open-weights model or in offline stub mode (see status below); nothing is deployed.
 
 ## Project objectives
 
@@ -110,7 +110,7 @@ Limits: the check covers figures and their limits, found from a fixed word list 
 | Component | Purpose | Status |
 |---|---|---|
 | AgriReach Knowledge MCP server (ours) | Curated corpus + case actions | **Working** (tested over MCP stdio) |
-| `search_guidance` | Search curated verbatim passages | **Working** |
+| `search_guidance` | Search curated verbatim passages (soybean, maize) | **Working** |
 | `get_crop_calendar` | Cited calendar activities; empty when no local reference | **Working** |
 | `retrieve_reference` | One passage + source metadata; errors on unknown id | **Working** |
 | `create_or_update_case` (acting tool) | File case as `draft`/`pending_review` only; `approved` is rejected | **Working** |
@@ -139,12 +139,13 @@ No advice ever reaches a farmer without approval from a named extension officer.
 Done (13 Oct): verified corpus, MCP server, LangGraph agent, case DB and gate, API/UI, tests, evals in stub mode and with an open-weights model.
 Done (23 Oct): citation check for dates and numbers, conflict-complete retrieval, Twi detection and officer routing (EVALS tasks 10-12).
 Done (23 Oct, review): the check also compares each figure's limit ("not deeper than", "up to", "at least"), so swapped bounds fail.
+Done (25 Oct): 14 field-evidence evals (EVALS F1-F14) from public reports, verified maize and aflatoxin passages, routing of uncovered crops and contact requests to the officer.
 Next: check sentences without figures (e.g. "both sources agree"), expand the place list into a fuller district gazetteer, record the demo video, then consider a weather tool and real Twi support with native-speaker review.
 
 ## Limitations
 
 - No public deployment yet; the MVP runs locally only.
-- Coverage will be limited to the selected crop, knowledge documents, and region.
+- Coverage is limited to the curated documents: Northern Ghana soybean and maize, plus the national maize aflatoxin limit. Other crops, prices and contact details are always passed to the officer.
 - The quality of recommendations depends on the authority and freshness of source material.
 - Text based advice may not be enough to diagnose a plant health issue.
 - Twi support is detection plus a keyword gloss only: AgriReach cannot translate or reply in Twi, so Twi cases go to the officer as urgent. Other local languages are not handled. Offline access and accessibility require further work.
@@ -170,7 +171,8 @@ The prototype should be evaluated on whether it retrieves relevant evidence, cit
 
 ```text
 src/agrireach/  mcp_server.py  agent.py  db.py  knowledge.py  llm.py  api.py  ui.py
-data/knowledge.json   verbatim cited passages (APNI/CSIR-SARI 2023, IITA SSPiNG 2022)
+data/knowledge.json   verbatim cited passages (APNI/CSIR-SARI 2023 soybean and maize guides, IITA SSPiNG 2022, Agbetiameh et al. 2018)
+evals/                field_evidence.json: eval questions F1-F14 with sources and expected routing
 tests/                pytest suite (offline stub mode)
 scripts/              run_evals.py, verify_corpus.py
 docs/                 architecture, MCP design, workflow, data sources, eval-run.txt
