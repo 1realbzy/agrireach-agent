@@ -109,8 +109,9 @@ RAW = {(r["run"], r["task"]): r["raw"] for r in FIX["replies"]}
 JUDGE_LABELS = {("A", "11"): True,   # "up to 5 cm but not deeper than 3 cm": flipped bound (figure check also fails it)
                 ("F1", "F5"): True, ("F2", "F5"): True,   # "It is still worth applying the subsidised fertiliser"
                 ("F1", "F7"): True, ("F2", "F7"): True,   # "should not be sold ... or used as animal feed": not in source
-                ("F1", "F2"): False,  # "Scout ... at least once a week ... for armyworm signs": supported paraphrase
-                **{(run, "10"): False for run in ("A", "B", "C", "D", "E", "F1", "F2")}}  # Kumasi: code adds caveat
+                ("F1", "F2"): False}  # "Scout ... at least once a week ... for armyworm signs": supported paraphrase
+# Before place-name masking the judge also rejected the Kumasi planting draft in all 7 runs ("Kumasi not mentioned"):
+# 8/59 false rejects. Masked, it passes; the region caveat for Kumasi is added by code, not judged.
 
 
 def test_judge_parse_requires_a_verdict_for_every_item():
@@ -145,7 +146,7 @@ def test_judge_replay_flags_and_false_reject_rate():
     defective = KNOWN_DEFECTS | {k for k, v in JUDGE_LABELS.items() if v}
     clean = 69 - len(defective)
     false_rejects = [k for k, v in JUDGE_LABELS.items() if not v]
-    assert (len(false_rejects), clean) == (8, 59)  # 8/59 = 13.6% of clean drafts; 7 of the 8 are the Kumasi case
+    assert (len(false_rejects), clean) == (1, 59)  # 1/59 = 1.7% of clean drafts (was 8/59 before masking)
 
 
 def test_live_run_false_rejects_fixed():
