@@ -54,7 +54,10 @@ class FasterWhisper(Transcriber):
         self.cache_dir = cache_dir or os.getenv("AGRIREACH_STT_DIR", str(Path.home() / ".cache/agrireach/whisper"))
 
     def transcribe(self, audio_path: str) -> Transcript:
-        segments, info = _load(self.model_name, self.cache_dir).transcribe(audio_path, beam_size=5, initial_prompt=PROMPT)
+        # temperature=0 only: faster-whisper's default falls back to random sampling (0.2 ... 1.0) on hard audio, so
+        # the same voice note could be heard as a different place on a different run. Same audio, same transcript.
+        segments, info = _load(self.model_name, self.cache_dir).transcribe(audio_path, beam_size=5, initial_prompt=PROMPT,
+                                                                           temperature=0.0)
         text = " ".join(s.text.strip() for s in segments).strip()
         return check(Transcript(text, info.language, float(info.language_probability), float(info.duration),
                                 f"faster-whisper:{self.model_name}"))
