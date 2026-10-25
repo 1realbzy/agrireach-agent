@@ -15,7 +15,8 @@ Runs after the figure check in citation_check.py, in code, before a draft reache
 Optional layer 4: a model judge (agrireach.judge), separate from the drafting model, asked whether each cited
 sentence is supported. Always on (judge.enabled()). Only sentences that are WHOLLY one of the no-advice shapes in
 NOT_JUDGED_RE (an officer inspect/visit/refer line, restating the question, "we do not know X", "the sources differ",
-"one source says X, another Y" with measurement words only) and sentences with no content words (list markers like
+"one source says X, another Y" with measurement words only, a figure-free note that a rainfall record is attached,
+optionally behind a short topic heading such as "**Planting Window:**") and sentences with no content words (list markers like
 "1.") are not sent to it; anything added to a shape is judged. See judge.py.
 
 Sentences attach to citations the same way figures do in citation_check: a sentence takes the citations inside
@@ -58,9 +59,12 @@ _THING = (r"(?:field|fields|farm|crop|crops|plants?|maize|soybeans?|cowpeas?|lea
 _PERSON = (r"(?:(?:a|an|the|your|their)\s+)?(?:local\s+|nearest\s+|district\s+)?(?:aea|aeas|agricultural\s+extension"
            r"\s+(?:agent|officer)|extension\s+(?:agent|officer)|expert|specialist|plant\s+clinic|mofa\s+office"
            r"|district\s+agricultural\s+office|agricultural\s+office)")
+# Fixed, advice-free tails (live run3 A1/A2 F6): what to look for, and "if unsure" on a referral.
 _ACT = (rf"(?:inspect|visit|examine)\s+{_DET}\s+(?:affected\s+)?{_THING}"
-        rf"|refer\s+(?:the\s+farmer|them|the\s+case|this\s+case)\s+to\s+{_PERSON}"
+        r"(?:\s+for\s+(?:signs|symptoms)\s+of\s+(?:infestation|damage|disease|pests?|attack))?"
+        rf"|refer\s+(?:(?:the\s+farmer|them|the\s+case|this\s+case)\s+)?to\s+{_PERSON}"
         r"(?:\s+for\s+(?:a\s+)?(?:proper\s+|closer\s+|full\s+)?(?:diagnosis|inspection|advice))?"
+        r"(?:\s+if\s+(?:unsure|in\s+doubt|needed|necessary))?"
         r"|confirm\s+(?:it|this|the\s+(?:window|option|choice))\s+with\s+the\s+farmer")
 # A figure-free measurement phrase for "one source says X, another says Y": only measurement words, so advice
 # ("to avoid loss of seed vigor") falls outside the shape. The figures themselves are checked by citation_check.
@@ -80,14 +84,25 @@ _SHAPES = [
     # an expert." / imperative "Refer the farmer to your local AEA."
     rf"(?:{_OFFICER})?(?:{_ACT})(?:\s+(?:and|or)\s+(?:{_ACT}))?",
     # A pure choice instruction to the officer: "The officer should choose which limit to advise the farmer to follow."
-    rf"{_OFFICER}(?:choose|decide|confirm)\s+which\s+(?:of\s+the\s+(?:two|cited)\s+)?(?:limit|spacing|window|option"
+    # / bare "Choose which planting window to follow." (live run3, core task 11)
+    rf"(?:{_OFFICER})?(?:choose|decide|confirm)\s+which\s+(?:of\s+the\s+(?:two|cited)\s+)?"
+    r"(?:(?:planting|plant|sowing|seeding|row)\s+)?(?:limit|spacing|window|option"
     r"|figure|depth|rate|source|guide|one)s?(?:\s+to\s+(?:recommend|use|follow|advise(?:\s+the\s+farmer\s+to\s+follow)?))?",
     # Choosing between the cited options: "Choose the appropriate window and confirm it with the farmer."
     rf"(?:{_OFFICER})?(?:choose|pick|select)\s+the\s+(?:appropriate|right|correct|suitable)\s+(?:window|option|limit"
     r"|figure)(?:\s+based\s+on\s+local\s+conditions)?(?:\s+and\s+confirm\s+(?:it|this)\s+with\s+the\s+farmer)?",
     # Saying what is not known: "We do not know the variety." / "We do not know if this method is effective."
+    # The if/whether clause may end in one "X or Y" pair ("safe to sell or feed"); a second clause after "or" is longer.
     rf"(?:we|i|agrireach)\s+(?:do\s+not|don't|cannot|can't)\s+(?:know|say)\s+(?:(?:if|whether)\s+{_WORDS(1, 12)}"
-    rf"|{_WORDS(1, 5)})",
+    rf"(?:\s+or\s+{_W})?|{_WORDS(1, 5)})",
+    # With no subject only "do not know if/whether ...": "Do not know if the maize is safe to sell or feed." (live
+    # run3, A2 F7). A bare imperative like "Do not say..." or "Do not confirm..." is judged.
+    rf"(?:do\s+not|don't)\s+know\s+(?:if|whether)\s+{_WORDS(1, 12)}(?:\s+or\s+{_W})?",
+    # Describing the attached rainfall record, with no figures (live run3: EJB2-4, core task 11). Its figures are never
+    # exempt: they go through the figure check and the judge like any other sentence.
+    r"(?:a|the)\s+rainfall\s+record(?:\s+for\s+" + _WORDS(1, 3) + r")?\s+is\s+(?:attached|included|provided)"
+    r"(?:\s+for\s+(?:your|the\s+officer['\u2019]s)\s+reference)?",
+    r"(?:this|the\s+rainfall\s+record|the\s+record|this\s+data)\s+is\s+a\s+model\s+estimate",
     # "The curated sources do not cover this pest."
     rf"the\s+(?:curated\s+)?(?:passages|sources)\s+do\s+not\s+(?:mention|cover|say|address|describe)\s+{_WORDS(1, 5)}",
     # "The planting window varies by source." / "Plant spacing is disputed."
@@ -99,7 +114,15 @@ _SHAPES = [
     rf"{_TOPIC}one\s+source\s+{_SAYS}\s+(?:to\s+plant\s+)?{_MEASURE}\s*,\s*(?:while\s+|and\s+)?another\s+(?:source\s+)?"
     rf"(?:{_SAYS}\s+)?(?:to\s+plant\s+)?{_MEASURE}",
 ]
-NOT_JUDGED_RE = re.compile(r"^[\s*#>\-•]*(?:\d+[.)]\s+)?(?:\*\*|__)?\s*(?:" + "|".join(_SHAPES)
+# A short topic heading in front of a shape: "- **Planting Window:** Sources disagree." (live run3, core task 12). Only
+# topic nouns, 1-4 of them, then a colon, so a heading can't carry an order ("Plant early:", "Spray now:" are judged),
+# and what follows must itself be a whole shape ("Planting window: plant in June." is judged).
+_HEAD_WORD = (r"(?:planting|plant|sowing|seed|seeds|seeding|row|rows|window|windows|depth|spacing|rate|timing|date|dates"
+              r"|season|fertili[sz]er|top|dressing|application|harvest|harvesting|storage|weather|rainfall|soil|moisture"
+              r"|pest|pests|disease|control|variety|varieties|maize|soybeans?|cowpeas?|yield|note|summary|sources?"
+              r"|conflict|options?|local|information|aflatoxin|limits?)")
+_HEADING = rf"(?:\*\*|__)?\s*{_HEAD_WORD}(?:\s+{_HEAD_WORD}){{0,3}}\s*(?:\*\*|__)?\s*:\s*(?:\*\*|__)?\s+"
+NOT_JUDGED_RE = re.compile(r"^[\s*#>\-•]*(?:\d+[.)]\s+)?(?:" + _HEADING + r")?(?:\*\*|__)?\s*(?:" + "|".join(_SHAPES)
                            + r")\s*(?:\*\*|__)?\s*[.!]?[\s*]*$", re.I)
 
 
@@ -110,8 +133,13 @@ def not_judged(bare: str) -> bool:
 
 # "It is still worth applying / not too late" answers a late-timing question. The judge accepted it live (F5) from
 # passages that only give the ideal time, so code requires a cited passage that itself speaks about late timing.
-LATE_CLAIM_RE = re.compile(r"\b(?:can|could|may|is|are)\s+still\b|\bstill\s+(?:worth|ok|okay|fine|possible|useful|"
-                           r"help|apply|plant|sow)\b|\bnot\s+too\s+late\b", re.I)
+# Only claims that a late ACTION is possible or worthwhile match: "can/could/may still <verb>", "is still worth /
+# possible / fine", "still worth", "there is still time", "not too late". A present-tense state ("the worms are still a
+# problem", "the larvae are still present") is not a timing claim (F1 live false reject, run3 on a5e9192).
+LATE_CLAIM_RE = re.compile(r"\b(?:can|could|may|might)\s+still\b"
+                           r"|\bstill\s+(?:worth|ok|okay|fine|possible|useful|in\s+time|time|help|apply|plant|sow"
+                           r"|be\s+(?:applied|planted|sown|done|used))\b"
+                           r"|\b(?:there\s+is|you\s+have)\s+still\s+time\b|\bnot\s+too\s+late\b", re.I)
 # "can be planted up to end of July" speaks about late timing; "delay ... until some rains" (moisture) does not.
 LATE_SUPPORT_RE = re.compile(r"\b(?:late|later|still|missed|up\s+to)\b", re.I)
 NEGATED_AGREE = re.compile(r"\b(?:not|n't|never|dis)\s*agree|\bdo\s+not\s+agree|\bdiffer|\bdisagree", re.I)
