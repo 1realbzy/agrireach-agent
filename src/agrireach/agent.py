@@ -19,7 +19,7 @@ from langgraph.graph import END, StateGraph
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from agrireach import citation_check, claim_check, farmer_reply, knowledge, language, llm, places, zones
+from agrireach import citation_check, claim_check, farmer_reply, knowledge, language, llm, places, rainfall, zones
 
 RISK_TERMS = {
     "chemical": ["spray", "herbicide", "pesticide", "insecticide", "fungicide", "chemical", "glyphosate", "paraquat",
@@ -86,6 +86,26 @@ def _same_figures(group: list[dict]) -> bool:
     return len(sets) == 1 and bool(next(iter(sets)))
 
 
+async def _attach_rainfall(tools, region: str, zone: dict, passages: list, notes: list) -> dict:
+    """Planting questions: the district's rainfall record (MCP get_recent_rainfall) as a citable record for the
+    officer, never as guidance. Unavailable (offline, no district) -> a note saying so and no claim."""
+    if not zone.get("district"):
+        notes.append(f"No rainfall record: rainfall is looked up per district and '{region}' is not one.")
+        return {"available": False, "reason": "rainfall unavailable: no district"}
+    try:
+        rain = await tools.call("get_recent_rainfall", {"district": region})
+    except Exception as e:
+        rain = {"available": False, "reason": f"rainfall unavailable: {str(e)[:120]}"}
+    if rain.get("available"):
+        passages.append(rainfall.as_passage(rain, zone["zone"]))
+        notes.append("A rainfall record is attached for the officer. The guides give no rainfall amount that marks "
+                     "onset, so AgriReach does not say whether the guides' condition is met; the officer decides.")
+    else:
+        notes.append(f"Rainfall unavailable ({rain.get('reason', '').removeprefix('rainfall unavailable: ')}); no "
+                     "claim about recent rain is made.")
+    return rain
+
+
 def _crops_covered() -> list[str]:
     """Crops in the corpus. Empty if the corpus can't be read; retrieval then reports the tool error itself."""
     try:
@@ -133,6 +153,7 @@ class S(TypedDict, total=False):
     zone: dict
     zone_mismatch: bool
     mismatch_zones: str
+    rainfall: dict
     citation_check: dict
     source_checks: list
     status: str
@@ -278,6 +299,9 @@ def build_graph(tools: Tools):
                 conflicts[k] = group
                 reasons.append(f"sources differ on {k.replace('_', ' ')}: {', '.join(sorted(srcs))}")
                 notes.append(f"Sources give different figures for {k.replace('_', ' ')}; officer should choose.")
+        rain = None
+        if PLANTING_Q.search(query) and zone and not errors:
+            rain = await _attach_rainfall(tools, region, zone, passages, notes)
         if s.get("language") == "twi":
             notes.append("The farmer wrote in Twi. This draft is in English for the officer, who must reply in Twi.")
         if any(p.get("risk") == "chemical" for p in passages) or any("chemical" in r for r in reasons):
@@ -288,7 +312,7 @@ def build_graph(tools: Tools):
             notes.append("Possible food-safety risk (mould/aflatoxin): AgriReach cannot clear produce for sale, food "
                          "or feed. Officer should advise.")
         return {"passages": passages, "calendar": cal, "errors": errors, "notes": notes, "conflicts": conflicts,
-                "zone": zone, "zone_mismatch": bool(mismatched), "mismatch_zones": where,
+                "zone": zone, "zone_mismatch": bool(mismatched), "mismatch_zones": where, "rainfall": rain,
                 "urgent_reasons": sorted(set(reasons), key=reasons.index)}
 
     async def check_sources(s: S) -> S:
@@ -298,7 +322,8 @@ def build_graph(tools: Tools):
         seen = set()
         for p in s["passages"]:
             src = p["source"]
-            if p["source_id"] in seen:
+            if p["source_id"] in seen or p.get("kind") == "record":  # a data record, not a guide page
+                continue
                 continue
             seen.add(p["source_id"])
             try:
@@ -337,7 +362,7 @@ def build_graph(tools: Tools):
             # The code-built stub quotes passages verbatim, so it is not sent to the (optional, paid) judge.
             claims = claim_check.check_claims(text, s["passages"], conflicts, ignore_prefixes=skip,
                                               judge=False if used.startswith("stub") else None)
-            problems = res.problems + claims.problems
+            problems = res.problems + claims.problems + rainfall.draft_problems(text)
             attempts.append({"draft_mode": used, "ok": not problems, "problems": problems,
                              "figures_checked": res.checked, "sentences_checked": claims.checked,
                              **({"judge": {k: v for k, v in claims.judge.items() if k != "raw"}} if claims.judge else {})})
@@ -428,6 +453,7 @@ async def run(question: str, crop: str = "", region: str = "", use_fetch: bool |
         # True when the farmer's place is known and some passage used is for another agroecological zone (or the
         # place's zone is unknown). The officer screen and the farmer reply use it.
         "zone_mismatch": bool(out.get("zone_mismatch")),
+        "rainfall": out.get("rainfall"),
         "zone": (out.get("zone") or {}).get("zone"),
         "priority": "urgent" if out.get("urgent_reasons") else "routine",
         "sources": [p["id"] for p in out.get("passages") or []]}

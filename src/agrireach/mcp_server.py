@@ -1,6 +1,7 @@
 """AgriReach Agricultural Knowledge MCP server (official Python MCP SDK, stdio).
 
-Tools: search_guidance, get_crop_calendar, get_zone_planting_guidance, retrieve_reference, create_or_update_case.
+Tools: search_guidance, get_crop_calendar, get_zone_planting_guidance, get_recent_rainfall, retrieve_reference,
+create_or_update_case.
 create_or_update_case is the acting tool; it can only set 'draft' or 'pending_review'.
 """
 from __future__ import annotations
@@ -9,7 +10,7 @@ import json
 
 from mcp.server.fastmcp import FastMCP
 
-from agrireach import db, knowledge, zones
+from agrireach import db, knowledge, rainfall, zones
 
 mcp = FastMCP("agrireach-knowledge")
 
@@ -48,6 +49,19 @@ def get_zone_planting_guidance(crop: str, place: str, season: str = "") -> str:
     db.log(_con(), "agent", "get_zone_planting_guidance", {"crop": crop, "place": place, "season": season},
            f"zone {(out['zone'] or {}).get('zone')}: {[p['id'] for p in out['passages']]}")
     return json.dumps(out, ensure_ascii=False)
+
+
+@mcp.tool()
+def get_recent_rainfall(district: str, days: int = 30, threshold_mm: float = 1.0) -> str:
+    """Daily rainfall for a Ghana district (or district capital) over the last `days` complete days: daily mm,
+    days with at least `threshold_mm`, missing days, provider, licence and retrieval time. Read-only and cached.
+    A model/satellite estimate, not a rain gauge, and not advice: it never says whether onset has been reached.
+    Offline or unknown district: {"available": false, "reason": "rainfall unavailable: ..."}."""
+    r = rainfall.recent(district, days=max(1, min(int(days), 92)), threshold_mm=threshold_mm)
+    db.log(_con(), "agent", "get_recent_rainfall", {"district": district, "days": days},
+           f"{r.get('district')}: " + (f"{r['rain_days']} rain days, {r['missing_days']} missing"
+                                         if r.get("available") else r.get("reason", "")))
+    return json.dumps(r, ensure_ascii=False)
 
 
 @mcp.tool()

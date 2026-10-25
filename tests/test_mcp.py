@@ -24,8 +24,8 @@ def test_tools_discoverable_and_gate_enforced_over_mcp():
         ("get_crop_calendar", {"crop": "cocoa"}),
         ("get_crop_calendar", {"crop": "maize", "region": "northern"}),
     ]))
-    assert names == ["create_or_update_case", "get_crop_calendar", "get_zone_planting_guidance", "retrieve_reference",
-                     "search_guidance"]
+    assert names == ["create_or_update_case", "get_crop_calendar", "get_recent_rainfall", "get_zone_planting_guidance",
+                     "retrieve_reference", "search_guidance"]
     hits = json.loads(res[0].content[0].text)
     assert {h["source_id"] for h in hits} == {"APNI-SARI-2023", "IITA-SSPING-2022"}
     assert all(h["source"]["url"].startswith("https://") for h in hits)
