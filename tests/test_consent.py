@@ -61,11 +61,13 @@ def test_stop_after_an_answer_was_filed_removes_the_number_and_blocks_delivery()
     con = db.connect()
     assert db.get_contact(con, cid)["sender_id"] == SENDER
     send("stop")
-    assert db.get_contact(con, cid)["sender_id"] == db.PURGED
+    assert db.get_contact(con, cid)["sender_id"] == db.OPTED_OUT
     assert SENDER not in {r[0] for r in con.execute("SELECT sender_id FROM channel_consent")}
     r = simulator.officer_approve(cid, officer="Ama Mensah", farmer_text="Harvest at 9 of 10 brown pods.")
-    assert r["ok"] is False and "removed" in r["detail"]
-    assert db.get_case(con, cid)["status"] == "released"  # the officer's record stays; only the number is gone
+    assert r["ok"] is False and "opted out" in r["detail"]
+    # The officer's record stays (approved text, officer); the case is 'undeliverable', never 'released'.
+    row = db.get_case(con, cid)
+    assert row["status"] == "undeliverable" and row["farmer_text"] == "Harvest at 9 of 10 brown pods."
 
 
 def test_retention_purge_removes_old_numbers_and_audio_but_keeps_case_text(monkeypatch):

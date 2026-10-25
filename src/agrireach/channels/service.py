@@ -221,10 +221,13 @@ def deliver(con, case_id: int, channels: dict[str, Channel]) -> dict | None:
                f"BLOCKED: case is '{row['status'] if row else 'missing'}', not released after officer approval",
                ok=False, case_id=case_id)
         return {"ok": False, "detail": "not released after officer approval"}
-    if contact["sender_id"] == db.PURGED:
-        db.log(con, f"channel:{contact['channel']}", "send_answer", {}, "BLOCKED: the farmer opted out or the "
-               "number was removed by the retention purge", ok=False, case_id=case_id)
-        return {"ok": False, "detail": "sender removed (opt-out or retention purge)"}
+    if contact["sender_id"] in db.REMOVED:
+        why = ("not sent: the farmer opted out (STOP)" if contact["sender_id"] == db.OPTED_OUT
+               else "not sent: the number was removed by the retention purge")
+        db.record_delivery(con, case_id, contact["channel"], "answer", False, why)
+        db.log(con, f"channel:{contact['channel']}", "send_answer", {}, f"BLOCKED: {why}", ok=False, case_id=case_id)
+        db.mark_undeliverable(con, case_id, why, actor=f"channel:{contact['channel']}")  # never left 'released'
+        return {"ok": False, "detail": why}
     if db.answer_delivered(con, case_id):
         return {"ok": True, "detail": "already delivered"}
     ch = channels.get(contact["channel"])

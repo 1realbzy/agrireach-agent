@@ -57,7 +57,7 @@ def _case(row) -> dict:
     d["sources"] = json.loads(d["sources"] or "[]")
     d["urgent_reasons"] = json.loads(d["urgent_reasons"] or "[]")
     d["farmer_draft"] = json.loads(d.get("farmer_draft") or "null")
-    if d.get("status") == "not_delivered":  # released, then the channel send failed: shown to the officer with why
+    if d.get("status") in ("not_delivered", "undeliverable"):  # the send failed or can never happen: say why
         d["delivery_problem"] = db.delivery_problem(db.connect(), d["id"]) or "the send failed"
     return d
 
@@ -79,6 +79,18 @@ async def ask(a: Ask):
 def queue(officer: str = Depends(current_officer)):
     con = db.connect()
     return [_case(r) for r in db.list_cases(con, ("pending_review", "not_delivered"))]
+
+
+CASE_STATUSES = ("draft", "pending_review", "approved", "released", "not_delivered", "undeliverable", "rejected",
+                 "needs_info")
+
+
+@app.get("/officer/cases")
+def case_list(status: str | None = None, officer: str = Depends(current_officer)):
+    """Every case (history), newest status included; filter with ?status=undeliverable etc. Read-only."""
+    if status is not None and status not in CASE_STATUSES:
+        raise HTTPException(400, f"status must be one of {', '.join(CASE_STATUSES)}")
+    return [_case(r) for r in db.list_cases(db.connect(), status)]
 
 
 @app.get("/officer/cases/{case_id}")
@@ -184,6 +196,9 @@ def farmer_view(case_id: int):
     row = db.get_case(con, case_id)
     if not row:
         raise HTTPException(404, "not found")
+    if row["status"] == "undeliverable":  # approved, but the number was removed (STOP or retention purge)
+        return {"case_id": case_id, "status": "undeliverable", "answer": None,
+                "message": "No answer was sent: this number was removed from AgriReach."}
     if row["status"] == "not_delivered":  # approved, but the channel send failed: no answer has reached the farmer
         return {"case_id": case_id, "status": "not_delivered", "answer": None,
                 "message": "Your answer has not been sent yet. An extension officer is working on it."}

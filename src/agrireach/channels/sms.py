@@ -41,6 +41,10 @@ SANDBOX_BASE = "https://api.sandbox.africastalking.com"
 MAX_BODY_BYTES = 16_000      # an incoming-SMS callback is a short form; anything bigger is refused
 ACCEPTED = {100: "Processed", 101: "Sent", 102: "Queued"}  # accepted by AT, not yet delivered to the handset
 PHONE_RE = re.compile(r"^\+\d{7,15}$")
+# Failures after the request may have reached Africa's Talking: the SMS may have gone out even though we got no
+# usable reply, so a retry can send it twice. (Future: look up the messageId / delivery report before retrying.)
+UNKNOWN_OUTCOME = (httpx.ReadTimeout, httpx.WriteTimeout, httpx.ReadError, httpx.WriteError, httpx.RemoteProtocolError)
+MAYBE_SENT = "The SMS may have been sent; a retry may send it twice. Check with the farmer or the AT dashboard first"
 
 # GSM 03.38 basic character set (without the escape character) and its extension table (two units each).
 GSM7_BASIC = set("@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -178,8 +182,10 @@ class SmsChannel:
         try:
             r = self.client.post(f"{self.cfg.base_url}/version1/messaging", data=form,
                                  headers={"apiKey": self.cfg.api_key, "Accept": "application/json"})
-        except httpx.HTTPError as e:
-            return SendResult(False, f"network error: {type(e).__name__}")
+        except UNKNOWN_OUTCOME as e:  # the request may have reached AT: it may have been sent
+            return SendResult(False, f"outcome unknown: {type(e).__name__}. {MAYBE_SENT}")
+        except httpx.HTTPError as e:   # never reached AT (connect error/timeout): not sent
+            return SendResult(False, f"network error: {type(e).__name__} (not sent)")
         scrub = lambda s: str(s).replace(recipient_id, mask_sender(recipient_id))[:160]  # noqa: E731
         if r.status_code >= 400:
             return SendResult(False, f"HTTP {r.status_code}: {scrub(r.text)}")
@@ -187,7 +193,8 @@ class SmsChannel:
             data = r.json()["SMSMessageData"]
             rec = (data.get("Recipients") or [{}])[0]
         except (ValueError, KeyError, TypeError, AttributeError):
-            return SendResult(False, f"unreadable response from Africa's Talking (HTTP {r.status_code})")
+            return SendResult(False, f"outcome unknown: unreadable response from Africa's Talking "
+                                     f"(HTTP {r.status_code}). {MAYBE_SENT}")
         code = rec.get("statusCode")
         if code in ACCEPTED:
             return SendResult(True, f"accepted by Africa's Talking (status {code} {ACCEPTED[code]}; "
