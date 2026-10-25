@@ -104,6 +104,9 @@ def deliver(con, case_id: int, channels: dict[str, Channel]) -> dict | None:
 
 
 def configured_channels() -> dict[str, Channel]:
-    from agrireach.channels import simulator
+    from agrireach.channels import simulator, whatsapp
 
-    return {"simulator": simulator.SimulatorChannel()}
+    chans: dict[str, Channel] = {"simulator": simulator.SimulatorChannel()}
+    if whatsapp.enabled():
+        chans["whatsapp"] = whatsapp.WhatsAppChannel(whatsapp.Config.from_env())
+    return chans
