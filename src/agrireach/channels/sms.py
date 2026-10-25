@@ -227,9 +227,10 @@ async def process(cfg: Config, items: list[dict], channel: SmsChannel | None = N
                 continue
             msg = InboundMessage("sms", sender, text=it["text"], message_id=it.get("message_id"))
             results.append(await service.handle_inbound(msg, channel=ch, transcriber=transcriber, con=con))
-        except Exception as e:
+        except Exception as e:  # each sub-exception is already logged with its traceback (service.log_failure)
+            kinds = ", ".join(type(x).__name__ for x in service._leaves(e))
             db.log(con, "channel:sms", "inbound_message", {"from": mask_sender(sender)},
-                   f"FAILED: {type(e).__name__}", ok=False)
+                   f"FAILED: {type(e).__name__} ({kinds})", ok=False)
     return results
 
 

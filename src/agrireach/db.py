@@ -280,6 +280,22 @@ def save_contact(con, case_id: int, *, channel: str, sender_id: str, audio_path:
     con.commit()
 
 
+def queue_with_contact(con, case_id: int, *, channel: str, sender_id: str, audio_path: str | None = None,
+                       transcript: str | None = None, stt: dict | None = None):
+    """Save a channel case's contact and move the case from 'draft' to the officer queue in one transaction: a case
+    is never in the queue without the contact its approved answer goes back to (live run 5 lost one that way)."""
+    with con:  # commits both, or rolls both back
+        con.execute("INSERT OR REPLACE INTO channel_contacts(case_id,channel,sender_id,audio_path,transcript,stt,"
+                    "created_at) VALUES (?,?,?,?,?,?,?)", (case_id, channel, sender_id, audio_path, transcript,
+                                                           json.dumps(stt or {}), now()))
+        cur = con.execute("UPDATE cases SET status='pending_review', updated_at=? WHERE id=? AND status='draft'",
+                          (now(), case_id))
+        if cur.rowcount != 1:
+            raise GateError(f"case {case_id} is not a draft; not queued")
+    log(con, f"channel:{channel}", "queue_case", {"case_id": case_id}, "contact saved; case queued for review",
+        case_id=case_id)
+
+
 def get_contact(con, case_id: int):
     return con.execute("SELECT * FROM channel_contacts WHERE case_id=?", (case_id,)).fetchone()
 

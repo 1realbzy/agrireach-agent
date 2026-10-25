@@ -197,6 +197,7 @@ class S(TypedDict, total=False):
     search_query: str
     skip_retrieval: bool
     extra_urgent_reasons: list
+    queue: bool  # False: file_case leaves the case as 'draft' and the caller queues it (channels: with its contact)
     conflicts: dict
     zone: dict
     zone_mismatch: bool
@@ -422,7 +423,10 @@ async def write(s: S, tools: Tools) -> S:
     text, used = "", ""
     for _ in range(MAX_DRAFT_ATTEMPTS):
         try:
-            text, used = llm.draft(s["question"], s["passages"], notes, conflicts=conflicts, feedback=feedback)
+            # Model calls are synchronous: run them off the event loop. On the loop they blocked every other
+            # farmer's run, whose MCP calls then timed out (live run 5: a case queued with no contact or ack).
+            text, used = await asyncio.to_thread(llm.draft, s["question"], s["passages"], notes, conflicts=conflicts,
+                                                 feedback=feedback)
         except Exception as e:
             text, used = llm.stub_draft(s["question"], s["passages"], notes + [f"LLM call failed: {e}"]), "stub(llm-error)"
         # Only the code-built stub has trusted "Note:" lines (system notes such as an error message). A model
@@ -431,8 +435,8 @@ async def write(s: S, tools: Tools) -> S:
         res = citation_check.check_draft(text, s["passages"], conflicts, ignore_prefixes=skip)
         # Sentences without figures: named sources, agreement claims, lexical support, model judge (always on, fails closed).
         # The code-built stub quotes passages verbatim, so it is not sent to the judge.
-        claims = claim_check.check_claims(text, s["passages"], conflicts, ignore_prefixes=skip,
-                                          judge=False if used.startswith("stub") else None)
+        claims = await asyncio.to_thread(claim_check.check_claims, text, s["passages"], conflicts,  # judge call
+                                         ignore_prefixes=skip, judge=False if used.startswith("stub") else None)
         problems = res.problems + claims.problems + rainfall.draft_problems(text)
         attempts.append({"draft_mode": used, "ok": not problems, "problems": problems,
                          "figures_checked": res.checked, "sentences_checked": claims.checked,
@@ -477,8 +481,9 @@ async def file_case(s: S, tools: Tools) -> S:
     caveat = (farmer_reply.zone_caveat(s["region"], s.get("mismatch_zones") or "")
               if s.get("region") and s.get("zone_mismatch") else None)
     officer_text = "\n".join(l for l in s["draft"].splitlines() if not l.startswith(OFFICER_FACT))
-    fd = farmer_reply.propose(officer_text, s["question"], s.get("language", "en"), conflicts=conflicts,
-                              zone_caveat=caveat, passages=s.get("passages") or [])
+    fd = await asyncio.to_thread(  # model SMS rewrite and judge calls: off the event loop (see write)
+        farmer_reply.propose, officer_text, s["question"], s.get("language", "en"), conflicts=conflicts,
+        zone_caveat=caveat, passages=s.get("passages") or [])
     from agrireach import db
     db.log(db.connect(), "agent", "farmer_text_proposal", *farmer_reply.audit_entry(fd), case_id=s["case_id"])
     if fd.text and (go := rainfall.draft_problems(fd.text)):
@@ -490,7 +495,7 @@ async def file_case(s: S, tools: Tools) -> S:
     # season_prompt is stored with the proposal so a re-proposed SMS (api.py) keeps the prompt.
     stored = asdict(fd) | ({"season_prompt": s["season_prompt"]} if s.get("season_prompt") else {})
     r = await tools.call("create_or_update_case", {
-        "status": "pending_review", "case_id": s["case_id"], "draft": s["draft"],
+        "status": "pending_review" if s.get("queue", True) else "draft", "case_id": s["case_id"], "draft": s["draft"],
         "source_ids": [p["id"] for p in s["passages"]], "priority": "urgent" if reasons else "routine",
         "urgent_reasons": reasons, "farmer_draft": json.dumps(stored, ensure_ascii=False)})
     return {"status": r["status"], "farmer_draft": stored}
@@ -530,8 +535,10 @@ def build_graph(tools: Tools):
 
 
 async def run(question: str, crop: str = "", region: str = "", use_fetch: bool | None = None,
-              extra_urgent_reasons: list[str] | None = None) -> dict:
-    """extra_urgent_reasons: reasons found before the agent ran (e.g. an unreliable voice-note transcript)."""
+              extra_urgent_reasons: list[str] | None = None, queue: bool = True) -> dict:
+    """extra_urgent_reasons: reasons found before the agent ran (e.g. an unreliable voice-note transcript).
+    queue=False: the case is filed as 'draft' (not in the officer queue); the caller queues it, e.g. a channel saves
+    the farmer's contact and queues the case in one transaction (db.queue_with_contact)."""
     if use_fetch is None:
         use_fetch = os.getenv("AGRIREACH_SOURCE_CHECK", "1") == "1"
     own_p, fetch_p = _server_params()
@@ -550,7 +557,7 @@ async def run(question: str, crop: str = "", region: str = "", use_fetch: bool |
         graph = build_graph(Tools(own, fetch))
         calls = llm.start_usage()
         out = await graph.ainvoke({"question": question, "crop": crop, "region": region,
-                                   "extra_urgent_reasons": list(extra_urgent_reasons or [])})
+                                   "extra_urgent_reasons": list(extra_urgent_reasons or []), "queue": queue})
     return {k: out.get(k) for k in ("case_id", "status", "crop", "region", "clarification", "draft", "draft_mode",
                                      "urgent_reasons", "source_checks", "errors", "language",
                                      "citation_check", "farmer_draft")} | {
