@@ -266,10 +266,14 @@ def source_safety_line(passages: list[dict] | None) -> tuple[str | None, str | N
 def drops_safety_line(text: str, passages: list[dict] | None, proposal: str = "") -> bool:
     """At approval: the farmer text has no pesticide sentence although the case needs one. Needed means a case passage
     carries the pesticide sentence the proposal guarantees, or the original proposal had one. Never decided from the
-    officer's draft: in live run 6 (F1-b) the officer removed the sentence from the draft too, so no warning came."""
-    if SAFETY_RE.search(text or ""):
+    officer's draft: in live run 6 (F1-b) the officer removed the sentence from the draft too, so no warning came.
+    Kept means the text still has that same sentence, or the same referral reworded (_repeats); any other pesticide
+    sentence does not count (Scoffer, d37b84b: "Spray pesticide every week." in place of the AEA line warned nothing)."""
+    line = source_safety_line(passages)[0]
+    needed = [line] if line else [x for x in _sentences(proposal or "") if SAFETY_RE.search(x)]
+    if not needed:
         return False
-    return bool(source_safety_line(passages)[0] or SAFETY_RE.search(proposal or ""))
+    return not any(_repeats(s, n) for s in _sentences(text or "") for n in needed)
 
 
 def ensure_safety_line(text: str, passages: list[dict] | None, caveat: dict | None = None,
