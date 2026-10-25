@@ -17,7 +17,26 @@ def load(path: Path | str = PATH) -> list[dict]:
 
 
 def runnable(evals: list[dict]) -> list[dict]:
-    return [e for e in evals if not e.get("skip")]
+    """Evals that are agent questions (run through agent.run)."""
+    return [e for e in evals if not e.get("skip") and e.get("kind", "agent") == "agent"]
+
+
+def grade_voice_script(e: dict, officer: str = "Ama Mensah") -> list[str]:
+    """F14-style evals: build the voice script for the cited advisory and check opening, length and figures."""
+    from agrireach import citation_check, knowledge, voice_script
+
+    advisory = " ".join(f"{knowledge.reference(i)['text']} [{i}]" for i in e["advisory_passages"])
+    s = voice_script.build(advisory, officer, "maize fertilizer")
+    x, problems = e["expect"], list(s.problems)
+    first = s.text.split("\n\n")[0]
+    problems += [f"opening lacks {w!r}" for w in x.get("opening_contains", []) if w not in first]
+    if s.seconds > x.get("max_seconds", voice_script.MAX_SECONDS):
+        problems.append(f"{s.seconds} s is over {x['max_seconds']} s")
+    if x.get("keep_figures"):
+        key = lambda t: sorted((f.kind, f.value, f.unit, f.bound) for f in citation_check.extract_figures(t))
+        if key(voice_script.speakable(advisory)) != key(citation_check.CITE_RE.sub("", advisory)):
+            problems.append("a figure was lost or changed")
+    return problems
 
 
 def grade(e: dict, out: dict) -> list[str]:

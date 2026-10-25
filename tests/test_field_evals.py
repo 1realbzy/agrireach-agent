@@ -14,7 +14,8 @@ def test_set_has_the_14_research_questions_with_sources():
     for e in EVALS:
         assert e["research_expectation"] and e["sources"]
         assert all(url.split()[-1].startswith("https://") for url in e["sources"].values())
-        assert e.get("skip") or (e["question"] and e["expect"]["outcome"] in {"pending_review", "clarify"})
+        assert e.get("skip") or e.get("kind") == "voice_script" or \
+            (e["question"] and e["expect"]["outcome"] in {"pending_review", "clarify"})
 
 
 def test_language_placeholders_are_skipped_and_have_no_invented_wording():

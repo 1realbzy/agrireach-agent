@@ -274,7 +274,19 @@
     "S23": "GSMA, Farmerline's voice services for farmers https://www.gsma.com/solutions-and-impact/connectivity-for-good/mobile-for-development/programme/agritech/creating-whats-next-for-ict4ag-farmerlines-voice-services-for-farmers/",
     "S22": "MEAS, University of Illinois, Aug 2015, Agricultural call centres: infrastructure and demand audit (Esoko) https://meas.illinois.edu/wp-content/uploads/2015/04/MEAS-EVAL-Esoko-Call-Center-Aug-2015.pdf"
    },
-   "skip": "Needs the voice-message formatter (planned in the voice-note channel work); not an agent question."
+   "kind": "voice_script",
+   "agrireach_expectation": "Code, not the model: voice_script.build() turns an officer-approved advisory (here the maize guide's dry-soil top-dressing passage) into a script that opens with AgriReach and the approving officer, fits in 150 seconds at 130 words a minute, and keeps every figure; citation brackets are dropped for speech.",
+   "advisory_passages": [
+    "APNI-SARI-2023-MAIZE:p13-topdress-moisture"
+   ],
+   "expect": {
+    "max_seconds": 150,
+    "opening_contains": [
+     "AgriReach",
+     "extension officer"
+    ],
+    "keep_figures": true
+   }
   }
  ]
 }

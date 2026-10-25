@@ -29,3 +29,9 @@ def test_overlong_advice_is_flagged_not_cut():
 def test_needs_a_named_officer():
     with pytest.raises(ValueError):
         voice_script.build(DRY_SPELL, " ")
+
+
+def test_f14_is_now_a_runnable_eval():
+    e = next(x for x in evalset.load() if x["id"] == "F14")
+    assert not e.get("skip") and e["kind"] == "voice_script"
+    assert evalset.grade_voice_script(e) == []

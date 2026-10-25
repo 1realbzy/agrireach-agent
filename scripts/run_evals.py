@@ -37,6 +37,12 @@ async def field():
         if e.get("skip"):
             print(json.dumps({"task": e["id"], "skipped": e["skip"]}, ensure_ascii=False))
             continue
+        if e.get("kind") == "voice_script":
+            problems = evalset.grade_voice_script(e)
+            passed, failed = passed + (not problems), failed + bool(problems)
+            print(json.dumps({"task": e["id"], "auto": "pass" if not problems else "FAIL", "auto_problems": problems,
+                              "kind": "voice_script (code, no model)"}))
+            continue
         o = await agent.run(e["question"])
         problems = evalset.grade(e, o)
         passed, failed = passed + (not problems), failed + bool(problems)
