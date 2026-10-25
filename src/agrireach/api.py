@@ -127,11 +127,12 @@ def decide(case_id: int, d: Decision, officer: str = Depends(current_officer)):
                          for p in farmer_reply.sms_claims(d.farmer_text, ps, caveat=caveat)]
             # The proposal carries the source's pesticide line (farmer_reply.ensure_safety_line); an officer who takes
             # it out is warned and logged, and the line is never put back: what is approved is what is sent.
-            # Checked against the case's own draft and passages, not the officer's edited text: in live run 5
-            # (F1-b) the edit removed the line from both, so a check against the edit never warned.
-            reference = "\n".join([current["draft"] or ""] + [p["text"] for p in ps if p and p.get("text")])
-            warnings += [f"approved farmer text {p}" for p in farmer_reply.check(d.farmer_text, reference)
-                         if "pesticide safety line" in p]
+            # Whether a line is needed comes from the case's passages and original proposal, never from the officer's
+            # (editable) draft: in live runs 5 and 6 (F1-b) the officer removed it from both texts and got no warning.
+            proposal = (json.loads(current["farmer_draft"] or "null") or {}).get("text") or ""
+            if farmer_reply.drops_safety_line(d.farmer_text, ps, proposal):
+                warnings.append("approved farmer text drops the pesticide safety line: the case's sources (or the "
+                                "proposed text) carry one on pesticides or spraying; keep it")
     try:
         row = db.officer_decide(con, case_id, officer=officer, decision=d.decision, edited_text=d.edited_text,
                                 note=d.note, farmer_text=d.farmer_text)

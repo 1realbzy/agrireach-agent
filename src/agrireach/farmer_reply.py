@@ -234,6 +234,31 @@ def _repeats(s: str, line: str) -> bool:
     return a == b or bool(SAFETY_RE.search(s) and a and len(a & b) / len(a | b) >= 0.6)
 
 
+def source_safety_line(passages: list[dict] | None) -> tuple[str | None, str | None]:
+    """The first case passage's pesticide safety sentence (a referral to the AEA preferred), as "<sentence> (Source).",
+    and the source's name; (None, None) if no passage has one. The rainfall record is never a source."""
+    for p in passages or []:
+        pid = str(p.get("id", "")) if p else ""
+        if not p or pid.startswith("RAINFALL-"):
+            continue
+        cands = [s for s in _sentences(p.get("text") or "") if SAFETY_RE.search(s) and not LIMIT_RE.search(s)
+                 and not OFFICER_RE.search(ALLOWED_OFFICER.sub("", s))]
+        cands.sort(key=lambda s: not ALLOWED_OFFICER.search(s))  # "consult your local AEA" is the safety advice
+        if cands:
+            src = SOURCE_NAMES.get(pid.split("-")[0], pid.split(":")[0])
+            return f"{re.sub(r'[.!?]+$', '', cands[0])} ({src}).", src
+    return None, None
+
+
+def drops_safety_line(text: str, passages: list[dict] | None, proposal: str = "") -> bool:
+    """At approval: the farmer text has no pesticide sentence although the case needs one. Needed means a case passage
+    carries the pesticide sentence the proposal guarantees, or the original proposal had one. Never decided from the
+    officer's draft: in live run 6 (F1-b) the officer removed the sentence from the draft too, so no warning came."""
+    if SAFETY_RE.search(text or ""):
+        return False
+    return bool(source_safety_line(passages)[0] or SAFETY_RE.search(proposal or ""))
+
+
 def ensure_safety_line(text: str, passages: list[dict] | None, caveat: dict | None = None,
                        fit: bool = False, audit: dict | None = None) -> tuple[str, list[str]]:
     """The pesticide safety guarantee, applied when the farmer text is proposed (never at approval or send: the
@@ -256,18 +281,7 @@ def ensure_safety_line(text: str, passages: list[dict] | None, caveat: dict | No
     still can't fit, the text is "" with a note: no SMS is proposed and the officer writes it.
     The rainfall record is never a source. Returns (text, notes for the officer); `audit`, if given, gets the
     dropped sentences and the safety line's source."""
-    line = src = None
-    for p in passages or []:
-        pid = str(p.get("id", "")) if p else ""
-        if not p or pid.startswith("RAINFALL-"):
-            continue
-        cands = [s for s in _sentences(p.get("text") or "") if SAFETY_RE.search(s) and not LIMIT_RE.search(s)
-                 and not OFFICER_RE.search(ALLOWED_OFFICER.sub("", s))]
-        cands.sort(key=lambda s: not ALLOWED_OFFICER.search(s))  # "consult your local AEA" is the safety advice
-        if cands:
-            src = SOURCE_NAMES.get(pid.split("-")[0], pid.split(":")[0])
-            line = f"{re.sub(r'[.!?]+$', '', cands[0])} ({src})."
-            break
+    line, src = source_safety_line(passages)
     if audit is not None:
         audit.update(dropped=[], safety_line=src)
     if not text or (not line and not fit):
