@@ -126,3 +126,69 @@ def test_officer_facts_never_reach_a_rule_based_sms_even_from_the_full_officer_t
     assert agent.OFFICER_FACT in out["draft"]
     sms = farmer_reply.rule_rewrite(out["draft"])
     assert sms and "Question received" not in sms and "Rainfall" not in sms and "officer only" not in sms
+
+
+# --- Approval prompt when the received date is outside every cited window --------------------------------------
+
+def _received_on(monkeypatch, iso):
+    """Simulate a case created on `iso`: the agent reads the date from create_or_update_case's created_at."""
+    real = agent.Tools.call
+
+    async def call(self, name, args):
+        out = await real(self, name, args)
+        if name == "create_or_update_case" and isinstance(out, dict) and "created_at" in out:
+            out["created_at"] = iso
+        return out
+    monkeypatch.setattr(agent.Tools, "call", call)
+
+
+KUMASI_MINOR = "When should I plant maize in the minor season in Kumasi?"
+
+
+def test_prompt_wording_is_a_fact_without_advice():
+    p = season.prompt(date(2026, 10, 25))
+    assert p == ("season check: the question was received on 25 Oct 2026, which is outside every planting window "
+                 "cited in the draft; check the timing before approving")
+    assert not ADVICE.search(p) and rainfall.draft_problems(p) == []
+
+
+def test_prompt_only_when_every_window_is_read_and_none_contains_the_date():
+    assert season.outside(date(2026, 10, 25), TRANSITION) is True
+    assert season.outside(date(2026, 8, 1), TRANSITION) is False
+    assert season.outside(date(2026, 10, 25), [P["APNI-SARI-2023-MAIZE:p13-topdress-moisture"]]) is False
+    unreadable = dict(TRANSITION[0], id="X:unreadable", cells=["Major season", "Transition", "after the rains"])
+    assert season.window(unreadable) is None
+    assert season.outside(date(2026, 10, 25), [unreadable, TRANSITION[1]]) is False  # keeps "could not read"
+
+
+def test_kumasi_minor_season_in_late_october_gets_the_approval_prompt(monkeypatch):
+    _received_on(monkeypatch, "2026-10-25T09:00:00+00:00")
+    out = run(KUMASI_MINOR)
+    assert any(p.get("season") == "minor" for p in (knowledge.reference(i) or {} for i in out["sources"]))
+    fd = out["farmer_draft"]
+    assert season.prompt(date(2026, 10, 25)) in fd["problems"]
+    assert "Question received 25 Oct 2026" in out["draft"] and "outside the cited windows" in out["draft"]
+    for t in ("season check", "received on", "outside every planting window", "check the timing"):
+        assert t not in fd["text"]
+    assert out["status"] == "pending_review"
+
+
+def test_in_window_date_gets_no_prompt(monkeypatch):
+    _received_on(monkeypatch, "2026-08-01T09:00:00+00:00")
+    out = run(KUMASI_MINOR)
+    assert not any(p.startswith("season check") for p in out["farmer_draft"]["problems"])
+    assert "outside the cited windows" not in out["draft"]
+
+
+def test_reproposed_sms_keeps_the_prompt_and_never_carries_it(monkeypatch):
+    # The officer screen can re-propose the SMS (api.py); the prompt must stay a prompt, never SMS text.
+    from fastapi.testclient import TestClient
+    from agrireach import api
+    _received_on(monkeypatch, "2026-10-25T09:00:00+00:00")
+    out = run(KUMASI_MINOR)
+    h = {"Authorization": f"Bearer {db.add_officer(db.connect(), 'Ama Mensah')}"}
+    r = TestClient(api.app).post(f"/officer/cases/{out['case_id']}/farmer-draft", json={"officer_text": out["draft"]},
+                                 headers=h)
+    fd = r.json()
+    assert r.status_code == 200 and season.prompt(date(2026, 10, 25)) in fd["problems"]
+    assert "season check" not in fd["text"] and "outside every planting window" not in fd["text"]

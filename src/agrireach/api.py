@@ -123,8 +123,11 @@ def farmer_draft(case_id: int, body: OfficerText, officer: str = Depends(current
     if not row:
         raise HTTPException(404, "not found")
     stored = json.loads(row["farmer_draft"] or "null") or {}
-    return asdict(farmer_reply.propose(body.officer_text, row["question"], stored.get("language", "en"),
-                                       zone_caveat=stored.get("zone_caveat")))
+    fd = asdict(farmer_reply.propose(body.officer_text, row["question"], stored.get("language", "en"),
+                                     zone_caveat=stored.get("zone_caveat")))
+    if stored.get("season_prompt"):  # received date outside every cited window: keep prompting the officer
+        fd["problems"] = fd["problems"] + [stored["season_prompt"]]
+    return fd
 
 
 @app.post("/cases/{case_id}/release")

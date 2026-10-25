@@ -173,6 +173,7 @@ class S(TypedDict, total=False):
     rainfall: dict
     officer_facts: list
     received: str
+    season_prompt: str
     citation_check: dict
     source_checks: list
     status: str
@@ -323,9 +324,13 @@ def build_graph(tools: Tools):
         topdress = TOPDRESS_Q.search(query) or any("topdress" in p.get("claim_key", "") for p in passages)
         if (PLANTING_Q.search(query) or topdress) and passages and not errors:
             rain = await _attach_rainfall(tools, region, zone, passages, notes, facts)
+        season_prompt = ""
         if PLANTING_Q.search(query) and s.get("received"):
-            if fact := season.fact(datetime.fromisoformat(s["received"]).date(), passages):
+            received = datetime.fromisoformat(s["received"]).date()
+            if fact := season.fact(received, passages):
                 facts.insert(0, f"{OFFICER_FACT} {fact}")
+            if season.outside(received, passages):
+                season_prompt = season.prompt(received)
         if s.get("language") == "twi":
             notes.append("The farmer wrote in Twi. This draft is in English for the officer, who must reply in Twi.")
         if any(p.get("risk") == "chemical" for p in passages) or any("chemical" in r for r in reasons):
@@ -337,7 +342,7 @@ def build_graph(tools: Tools):
                          "or feed. Officer should advise.")
         return {"passages": passages, "calendar": cal, "errors": errors, "notes": notes, "conflicts": conflicts,
                 "zone": zone, "zone_mismatch": bool(mismatched), "mismatch_zones": where, "rainfall": rain,
-                "officer_facts": facts,
+                "officer_facts": facts, "season_prompt": season_prompt,
                 "urgent_reasons": sorted(set(reasons), key=reasons.index)}
 
     async def check_sources(s: S) -> S:
@@ -434,11 +439,15 @@ def build_graph(tools: Tools):
             # Never "rains are good, plant now" in the SMS: withhold it and let the officer write it.
             fd.text, fd.needs_officer_text = "", True
             fd.problems = list(fd.problems) + [f"proposed SMS withheld: {'; '.join(go)}"]
+        if s.get("season_prompt"):  # an approval prompt like "sources differ"; never SMS text
+            fd.problems = list(fd.problems) + [s["season_prompt"]]
+        # season_prompt is stored with the proposal so a re-proposed SMS (api.py) keeps the prompt.
+        stored = asdict(fd) | ({"season_prompt": s["season_prompt"]} if s.get("season_prompt") else {})
         r = await tools.call("create_or_update_case", {
             "status": "pending_review", "case_id": s["case_id"], "draft": s["draft"],
             "source_ids": [p["id"] for p in s["passages"]], "priority": "urgent" if reasons else "routine",
-            "urgent_reasons": reasons, "farmer_draft": json.dumps(asdict(fd), ensure_ascii=False)})
-        return {"status": r["status"], "farmer_draft": asdict(fd)}
+            "urgent_reasons": reasons, "farmer_draft": json.dumps(stored, ensure_ascii=False)})
+        return {"status": r["status"], "farmer_draft": stored}
 
     async def clarify(s: S) -> S:
         return {"status": "draft", "draft": s["clarification"], "draft_mode": "rule"}
