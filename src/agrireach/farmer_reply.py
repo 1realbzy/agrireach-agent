@@ -482,6 +482,12 @@ def _propose(officer_text: str, question: str, language: str, conflicts: bool, c
                 problems = sms_claims(text, passages, caveat=caveat)
             if not problems:
                 return FarmerDraft(text, mode, notes + safety)
+            # sms.length_prompt is the approval prompt for the officer's own text ("Shorten it ... Nothing is cut
+            # automatically"); for a rejected model SMS it read as an instruction, next to a rule text that did drop
+            # sentences. Say what happened instead.
+            problems = [re.sub(r"\. Shorten it to (\d+) characters or fewer before approving \(it is (\d+) now\)\. "
+                               r"Nothing is cut automatically\.$", r", \1 characters (it is \2 now); a model SMS is never "
+                               r"shortened", p) for p in problems]
             audit["model_rejected"] = list(problems)
             notes.append(f"model rewrite rejected ({'; '.join(problems)}); rule-based version shown")
         except Exception as e:
