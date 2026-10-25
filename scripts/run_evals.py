@@ -27,8 +27,13 @@ RUNS: list[dict] = []  # usage of every agent run, for the cost line and the no-
 
 async def _run(q: str, **k) -> dict:
     o = await agent.run(q, **k)
-    RUNS.append(o.get("usage") or {"calls": 0, "by_role": {}, "cost_usd": None})
+    RUNS.append(o.get("usage") or {"attempted": 0, "calls": 0, "failed": 0, "by_role": {}, "cost_usd": None})
     return o
+
+
+def _drafted_by(o: dict) -> str:
+    """'model' only when the draft came from a model call; every stub (offline, model error, check fallback) says so."""
+    return "model" if str(o.get("draft_mode") or "").startswith("llm") else "stub"
 
 
 def _record(o: dict) -> dict:
@@ -36,7 +41,8 @@ def _record(o: dict) -> dict:
             "urgent_reasons": o["urgent_reasons"], "sources": o["sources"],
             "source_checks": [(c["source_id"], c["reachable"]) for c in o["source_checks"] or []],
             "errors": o["errors"], "draft_mode": o["draft_mode"], "language": o["language"],
-            "citation_check": o["citation_check"], "draft": o["draft"], "usage": o.get("usage")}
+            "citation_check": o["citation_check"], "draft": o["draft"], "drafted_by": _drafted_by(o),
+            "usage": o.get("usage")}
 
 
 async def field():
@@ -68,12 +74,15 @@ async def main():
     if which in ("all", "field"):
         await field()
     calls = sum(u["calls"] for u in RUNS)
+    attempted = sum(u.get("attempted", u["calls"]) for u in RUNS)
     costs = [u["cost_usd"] for u in RUNS if u["calls"]]
-    print(json.dumps({"usage_summary": {"runs": len(RUNS), "model_calls": calls,
+    print(json.dumps({"usage_summary": {"runs": len(RUNS), "model_calls_succeeded": calls,
+                                        "model_calls_attempted": attempted,
                                         "cost_usd": round(sum(costs), 6) if costs and None not in costs else None}}))
-    if llm.mode() == "llm" and RUNS and calls == 0:
-        # e.g. every call refused with 402: the drafts above are offline stubs, not a model run.
-        sys.exit("FAILED: a model is configured but no model call succeeded; this run is NOT a live run")
+    if llm.mode() == "llm" and RUNS and (calls == 0 or calls < attempted):
+        # e.g. 402s: some or all drafts above are offline stubs, so this is not a clean live run.
+        sys.exit(f"FAILED: {attempted - calls} of {attempted} model calls failed; tasks marked drafted_by=stub "
+                 "are not model output. This run is NOT a clean live run")
 
 
 async def core():
@@ -83,7 +92,8 @@ async def core():
                           "clarification": o["clarification"], "urgent_reasons": o["urgent_reasons"],
                           "sources": o["sources"], "source_checks": [(c["source_id"], c["reachable"]) for c in o["source_checks"] or []],
                           "errors": o["errors"], "draft_mode": o["draft_mode"], "language": o["language"],
-                          "citation_check": o["citation_check"], "draft": o["draft"]}, ensure_ascii=False))
+                          "citation_check": o["citation_check"], "draft": o["draft"], "drafted_by": _drafted_by(o),
+                          "usage": o.get("usage")}, ensure_ascii=False))
     # 7: tool failure
     os.environ["AGRIREACH_KNOWLEDGE"] = "/nonexistent.json"
     o = await agent.run("When should I harvest soybean in Tamale?", use_fetch=False)

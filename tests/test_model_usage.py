@@ -59,3 +59,20 @@ def test_cost_is_unknown_when_provider_does_not_report_it_and_no_extra_body_off_
     assert llm.usage_summary(calls)["cost_usd"] is None
     _JUDGE_CALL("items")
     assert fake_openai[0]["extra_body"] == {}
+
+
+def test_a_failed_call_counts_as_attempted_not_succeeded(fake_openai, monkeypatch):
+    class Refused(Exception):
+        pass
+
+    def boom(self, **k):
+        raise Refused("402")
+
+    calls = llm.start_usage()
+    _JUDGE_CALL("items")
+    monkeypatch.setattr(_FakeOpenAI, "_create", boom)
+    with pytest.raises(Refused):
+        _JUDGE_CALL("items")
+    s = llm.usage_summary(calls)
+    assert (s["attempted"], s["calls"], s["failed"], s["errors"]) == (2, 1, 1, ["Refused"])
+    assert s["cost_usd"] == pytest.approx(0.0004)  # cost of the call that ran

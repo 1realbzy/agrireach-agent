@@ -58,11 +58,8 @@ def _call(user: str) -> str:
     client = OpenAI(base_url=base,
                     api_key=os.getenv("AGRIREACH_JUDGE_API_KEY") or os.getenv("LLM_API_KEY", "none"),
                     timeout=float(os.getenv("LLM_TIMEOUT", "60")))
-    r = client.chat.completions.create(model=model(), temperature=0, max_tokens=llm.max_tokens("judge"),
-                                       extra_body=llm.extra_body(base),
-                                       messages=[{"role": "system", "content": PROMPT},
-                                                 {"role": "user", "content": user}])
-    llm.record_usage("judge", model(), r)
+    r = llm.create("judge", model(), client, temperature=0, extra_body=llm.extra_body(base),
+                   messages=[{"role": "system", "content": PROMPT}, {"role": "user", "content": user}])
     return r.choices[0].message.content or ""
 
 

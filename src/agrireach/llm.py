@@ -29,7 +29,7 @@ def start_usage() -> list:
 
 def record_usage(role: str, model: str, response) -> dict:
     u = getattr(response, "usage", None)
-    entry = {"role": role, "model": model,
+    entry = {"role": role, "model": model, "ok": True,
              "prompt_tokens": getattr(u, "prompt_tokens", None), "completion_tokens": getattr(u, "completion_tokens", None),
              "cost_usd": getattr(u, "cost", None) if u is not None else None}
     calls = _usage.get()
@@ -38,16 +38,34 @@ def record_usage(role: str, model: str, response) -> dict:
     return entry
 
 
+def create(role: str, model: str, client, **kw):
+    """client.chat.completions.create with the role's max_tokens, recording the attempt whether or not it succeeds
+    (a 402 or timeout is recorded as a failed call, then re-raised)."""
+    try:
+        r = client.chat.completions.create(model=model, max_tokens=max_tokens(role), **kw)
+    except Exception as e:
+        calls = _usage.get()
+        if calls is not None:
+            calls.append({"role": role, "model": model, "ok": False, "error": type(e).__name__,
+                          "prompt_tokens": None, "completion_tokens": None, "cost_usd": None})
+        raise
+    record_usage(role, model, r)
+    return r
+
+
 def usage_summary(calls: list) -> dict:
     """Totals for one run. cost_usd is the provider's own figure; None if it didn't report one for every call."""
     by_role: dict = {}
+    failed = [c for c in calls if c.get("ok") is False]
+    calls = [c for c in calls if c.get("ok") is not False]
     for c in calls:
         r = by_role.setdefault(c["role"], {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0})
         r["calls"] += 1
         r["prompt_tokens"] += c["prompt_tokens"] or 0
         r["completion_tokens"] += c["completion_tokens"] or 0
     costs = [c["cost_usd"] for c in calls]
-    return {"calls": len(calls), "by_role": by_role,
+    return {"attempted": len(calls) + len(failed), "calls": len(calls), "failed": len(failed),
+            "errors": sorted({c["error"] for c in failed}), "by_role": by_role,
             "cost_usd": round(sum(costs), 6) if costs and all(isinstance(x, (int, float)) for x in costs) else None}
 
 STUB_LABEL = "[OFFLINE STUB DRAFT - no language model was used; text is assembled from retrieved passages]"
@@ -112,8 +130,6 @@ def draft(question: str, passages: list[dict], notes: list[str], conflicts: dict
                 "\nRewrite it so every figure is copied from the passage cited right after it, every conflict "
                 "side is stated with its own citation, and every sentence is supported by the passage it cites "
                 "(remove any sentence no passage supports).")
-    r = client.chat.completions.create(model=os.environ["LLM_MODEL"], temperature=0, max_tokens=max_tokens("draft"),
-                                       extra_body=extra_body(os.environ["LLM_BASE_URL"]),
-                                       messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": msg}])
-    record_usage("draft", os.environ["LLM_MODEL"], r)
+    r = create("draft", os.environ["LLM_MODEL"], client, temperature=0, extra_body=extra_body(os.environ["LLM_BASE_URL"]),
+               messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": msg}])
     return r.choices[0].message.content.strip(), f"llm:{os.environ['LLM_MODEL']}"

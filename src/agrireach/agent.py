@@ -569,8 +569,9 @@ def _log_usage(case_id, calls: list) -> dict:
         from agrireach import db
         con = db.connect()
         cost = "unknown" if summary["cost_usd"] is None else f"${summary['cost_usd']}"
-        db.log(con, "agent", "model_usage", summary, f"{summary['calls']} model calls, cost {cost}",
-               case_id=case_id)
+        db.log(con, "agent", "model_usage", summary,
+               f"{summary['calls']} of {summary['attempted']} model calls succeeded, cost {cost}",
+               ok=not summary["failed"], case_id=case_id)
     return summary
 
 
