@@ -1,6 +1,6 @@
 """AgriReach Agricultural Knowledge MCP server (official Python MCP SDK, stdio).
 
-Tools: search_guidance, get_crop_calendar, retrieve_reference, create_or_update_case.
+Tools: search_guidance, get_crop_calendar, get_zone_planting_guidance, retrieve_reference, create_or_update_case.
 create_or_update_case is the acting tool; it can only set 'draft' or 'pending_review'.
 """
 from __future__ import annotations
@@ -9,7 +9,7 @@ import json
 
 from mcp.server.fastmcp import FastMCP
 
-from agrireach import db, knowledge
+from agrireach import db, knowledge, zones
 
 mcp = FastMCP("agrireach-knowledge")
 
@@ -37,6 +37,17 @@ def get_crop_calendar(crop: str, region: str = "") -> str:
     rows = knowledge.calendar(crop, region or None)
     db.log(_con(), "agent", "get_crop_calendar", {"crop": crop, "region": region}, f"{len(rows)} rows")
     return json.dumps(rows, ensure_ascii=False)
+
+
+@mcp.tool()
+def get_zone_planting_guidance(crop: str, place: str, season: str = "") -> str:
+    """Planting-time passages (verbatim, with source and page) that apply in the agroecological zone of a Ghana
+    region, district or town: the zone's planting-window rows, only for the season asked ('major' or 'minor') if one
+    is given, plus national planting rules. Read-only. Unknown place or crop: {"zone": null, "passages": []}."""
+    out = zones.planting_passages(crop, place, season if season in ("major", "minor") else "")
+    db.log(_con(), "agent", "get_zone_planting_guidance", {"crop": crop, "place": place, "season": season},
+           f"zone {(out['zone'] or {}).get('zone')}: {[p['id'] for p in out['passages']]}")
+    return json.dumps(out, ensure_ascii=False)
 
 
 @mcp.tool()

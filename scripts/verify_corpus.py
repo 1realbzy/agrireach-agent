@@ -1,4 +1,4 @@
-"""Check that every passage in data/knowledge.json appears verbatim in its source document.
+"""Check that every passage (or, for a table row, every cell) in data/knowledge.json appears verbatim in its source document.
 
 Usage: python scripts/verify_corpus.py   (needs network + pdftotext from poppler-utils)
 A source is read from `verify_url` if set, else `url`. `verify_format` is "pdf" (default) or "xml"
@@ -26,14 +26,21 @@ def source_text(src: dict) -> str:
     with tempfile.TemporaryDirectory() as td:
         pdf = Path(td) / "s.pdf"
         pdf.write_bytes(raw)
-        return norm(subprocess.run(["pdftotext", "-layout", str(pdf), "-"], capture_output=True, text=True).stdout)
+        # Layout mode keeps table rows together; raw mode keeps multi-line table cells together. Check both.
+        return " \n ".join(norm(subprocess.run(["pdftotext", *mode, str(pdf), "-"], capture_output=True, text=True).stdout)
+                            for mode in (["-layout"], []))
 
 
 fail = 0
 for sid, src in d["sources"].items():
     text = source_text(src)
     for p in [p for p in d["passages"] if p["source_id"] == sid]:
-        ok = norm(p["text"]) in text
+        if p.get("form") == "table_row":  # every cell (or each PDF line of a split cell) must be verbatim
+            split = p.get("pdf_lines", {})
+            parts = [line for c in p["cells"] for line in split.get(c, [c])]
+            ok = all(norm(c) in text for c in parts) and " | ".join(p["cells"]) == p["text"]
+        else:
+            ok = norm(p["text"]) in text
         fail += not ok
         print("OK  " if ok else "MISS", p["id"])
 sys.exit(1 if fail else 0)

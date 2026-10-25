@@ -1,5 +1,6 @@
 """LangGraph orchestration. All tool use goes through MCP clients:
-  - own server: agrireach.mcp_server (search_guidance, get_crop_calendar, retrieve_reference, create_or_update_case)
+  - own server: agrireach.mcp_server (search_guidance, get_crop_calendar, get_zone_planting_guidance,
+    retrieve_reference, create_or_update_case)
   - third-party server: mcp-server-fetch (reference MCP server, not written by us) to check cited source pages are reachable.
 The graph ends after filing the case as pending_review. It has no path to approve or release.
 """
@@ -18,7 +19,7 @@ from langgraph.graph import END, StateGraph
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from agrireach import citation_check, claim_check, farmer_reply, knowledge, language, llm, places
+from agrireach import citation_check, claim_check, farmer_reply, knowledge, language, llm, places, zones
 
 RISK_TERMS = {
     "chemical": ["spray", "herbicide", "pesticide", "insecticide", "fungicide", "chemical", "glyphosate", "paraquat",
@@ -34,6 +35,8 @@ CONTACT_RE = re.compile(r"\bwho\s+(?:should|can|do|could)\s+i\s+(?:call|contact|
 # region clarification. Nor does "when" used as a conjunction ("arrived when the maize is knee-high").
 AFTER_PLANTING = re.compile(r"\b(?:after|since)\s+(?:planting|sowing)\b")
 ASKS_WHEN = re.compile(r"^\W*when\b|\bwhen\s+(?:should|can|could|do|does|is|to|will|must)\b")
+# Questions about when or how to plant get the farmer's zone's planting windows ("when to harvest" does not).
+PLANTING_Q = re.compile(r"\b(?:plant|planting|sow|sowing)\b", re.I)
 REGION_DEPENDENT = {"planting", "spacing", "seed"}
 NORTHERN = ["northern", "north", "tamale", "savannah", "upper east", "upper west", "north east", "bolgatanga",
             "wa", "yendi", "nyankpala", "damongo", "walewale"]
@@ -42,7 +45,7 @@ MAX_DRAFT_ATTEMPTS = 2
 # Cap on the citation-check problems copied into an urgent reason, so the officer's queue stays readable
 # (the full list is kept in the result's citation_check.attempts).
 MAX_REASON_CHARS = 600
-OTHER_REGIONS = ["ashanti", "kumasi", "volta", "accra", "greater accra", "eastern", "western", "central", "bono",
+OTHER_REGIONS = ["brong ahafo", "brong-ahafo", "ashanti", "kumasi", "volta", "accra", "greater accra", "eastern", "western", "central", "bono",
                  "ahafo", "oti", "cape coast", "takoradi", "ho", "adaklu"]
 
 
@@ -62,6 +65,18 @@ def _is_northern(region: str) -> bool:
         return True
     g = places.gazetteer().get(region.strip().lower())  # any of Ghana's 261 districts, regions or their capitals
     return bool(g and places.is_northern(g["region"]))
+
+
+def _fit_to_zone(passages: list[dict], zone: dict | None, season: str) -> list[dict]:
+    """Keep the farmer's zone's guidance. A passage for other zones is dropped only when a passage on the same topic
+    written for the farmer's zone is present (so nothing is silently lost); window rows for the season not asked are
+    dropped."""
+    if season:
+        passages = [p for p in passages if not p.get("season") or p["season"] == season]
+    if not zone:
+        return passages
+    local_topics = {p["topic"] for p in passages if zones.covers(p, zone["zones"]) and zones.zone_specific(p)}
+    return [p for p in passages if zones.covers(p, zone["zones"]) or p["topic"] not in local_topics]
 
 
 def _crops_covered() -> list[str]:
@@ -108,6 +123,8 @@ class S(TypedDict, total=False):
     skip_retrieval: bool
     extra_urgent_reasons: list
     conflicts: dict
+    zone: dict
+    zone_mismatch: bool
     citation_check: dict
     source_checks: list
     status: str
@@ -190,15 +207,23 @@ def build_graph(tools: Tools):
     async def retrieve(s: S) -> S:
         errors, notes, reasons = list(s["errors"]), list(s["notes"]), list(s["urgent_reasons"])
         region = s["region"]
-        if region and not _is_northern(region):
-            reasons.append(f"no local reference for region '{region}' (corpus covers Northern Ghana only)")
-            notes.append(f"The curated sources are for Northern Ghana; they may not apply in {region}.")
+        zone = zones.zone_for(region) if region else None
+        if zone is None and region and _is_northern(region):
+            zone = zones.zone_for("northern ghana")
+        if region and zone is None:
+            reasons.append(f"no local reference for region '{region}' (agroecological zone unknown; corpus covers "
+                           "Northern Ghana only for most topics)")
+            notes.append(f"AgriReach does not know which agroecological zone {region} is in; officer should confirm.")
+        elif zone and zone["boundary"]:
+            notes.append(f"{region.title()} is near the edge of the {zones.label(zone['zone'])} zone (AgriReach's "
+                         "approximate zone map): officer should confirm which zone's timing applies.")
         passages, cal = [], []
         if s.get("skip_retrieval"):
             # Uncovered crop or a contact request: searching another crop's guidance would only mislead.
             reasons.append("no grounded evidence found in corpus")
             return {"passages": [], "calendar": [], "errors": errors, "notes": notes, "conflicts": {},
-                    "urgent_reasons": sorted(set(reasons), key=reasons.index)}
+                    "zone": zone, "zone_mismatch": False, "urgent_reasons": sorted(set(reasons), key=reasons.index)}
+        query = s.get("search_query") or s["question"]
         try:
             passages = await tools.call("search_guidance", {"query": s.get("search_query") or s["question"],
                                                              "crop": s["crop"] or "soybean", "region": ""})
@@ -206,7 +231,13 @@ def build_graph(tools: Tools):
             for p in passages:
                 verified.append(await tools.call("retrieve_reference", {"passage_id": p["id"]}))
             passages = verified
-            if re.search(r"\b(when|calendar|season)\b", (s.get("search_query") or s["question"]).lower()):
+            if zone and PLANTING_Q.search(query):
+                # The farmer's own zone's planting windows (verbatim table rows), whatever the keyword search found.
+                got = await tools.call("get_zone_planting_guidance", {"crop": s["crop"] or "soybean", "place": region,
+                                                                       "season": zones.detect_season(query)})
+                have = {p["id"] for p in passages}
+                passages += [p for p in got["passages"] if p["id"] not in have]
+            if re.search(r"\b(when|calendar|season)\b", query.lower()):
                 cal = await tools.call("get_crop_calendar", {"crop": s["crop"] or "soybean", "region": "northern"})
         except Exception as e:  # tool failure: never invent results
             errors.append(str(e))
@@ -214,6 +245,18 @@ def build_graph(tools: Tools):
             reasons.append("tool error during retrieval")
         if not passages and not errors:
             reasons.append("no grounded evidence found in corpus")
+        passages = _fit_to_zone(passages, zone, zones.detect_season(query))
+        mismatched = [p for p in passages if region and (zone is None or not zones.covers(p, zone["zones"]))]
+        if zone and mismatched:
+            where = _join(sorted({zones.label(z) for p in mismatched for z in p.get("zones") or zones.NORTHERN_ZONES}))
+            if all(set(p.get("zones") or zones.NORTHERN_ZONES) <= zones.NORTHERN_ZONES for p in mismatched):
+                reasons.append(f"no local reference for region '{region}' ({zones.label(zone['zone'])} zone; corpus "
+                               "covers Northern Ghana only for this question)")
+                notes.append(f"The curated sources are for Northern Ghana; they may not apply in {region}.")
+            else:
+                reasons.append(f"no local reference for region '{region}' ({zones.label(zone['zone'])} zone; the "
+                               f"passages found are for the {where} zone)")
+                notes.append(f"The passages found are for the {where} zone; they may not apply in {region}.")
         by_key: dict = {}
         for p in passages:
             for k in knowledge.claim_keys(p):
@@ -235,6 +278,7 @@ def build_graph(tools: Tools):
             notes.append("Possible food-safety risk (mould/aflatoxin): AgriReach cannot clear produce for sale, food "
                          "or feed. Officer should advise.")
         return {"passages": passages, "calendar": cal, "errors": errors, "notes": notes, "conflicts": conflicts,
+                "zone": zone, "zone_mismatch": bool(mismatched),
                 "urgent_reasons": sorted(set(reasons), key=reasons.index)}
 
     async def check_sources(s: S) -> S:
@@ -299,7 +343,7 @@ def build_graph(tools: Tools):
             check["rejected_draft"] = rejected
             reasons.append("citation check failed: " + "; ".join(attempts[-1]["problems"])[:MAX_REASON_CHARS])
         region = s.get("region") or ""
-        if region and not _is_northern(region) and not text.startswith(llm.STUB_LABEL):
+        if region and s.get("zone_mismatch") and not text.startswith(llm.STUB_LABEL):
             # Added by code, not left to the model: the guidance below is from Northern Ghana sources.
             text = (f"Caution: the curated sources cover Northern Ghana only. The guidance below comes from them and "
                     f"may not apply in {region.title()}; the officer should confirm local timing.\n\n{text}")
@@ -357,6 +401,10 @@ async def run(question: str, crop: str = "", region: str = "", use_fetch: bool |
     return {k: out.get(k) for k in ("case_id", "status", "crop", "region", "clarification", "draft", "draft_mode",
                                      "urgent_reasons", "source_checks", "errors", "language",
                                      "citation_check", "farmer_draft")} | {
+        # True when the farmer's place is known and some passage used is for another agroecological zone (or the
+        # place's zone is unknown). The officer screen and the farmer reply use it.
+        "zone_mismatch": bool(out.get("zone_mismatch")),
+        "zone": (out.get("zone") or {}).get("zone"),
         "priority": "urgent" if out.get("urgent_reasons") else "routine",
         "sources": [p["id"] for p in out.get("passages") or []]}
 

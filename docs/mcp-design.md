@@ -14,6 +14,7 @@
 |---|---|---|---|
 | `search_guidance` | Query, crop, region, topic | Ranked references and passages | Return source identifiers and metadata |
 | `get_crop_calendar` | Crop, region, season | Relevant calendar guidance | Indicate when no local reference exists |
+| `get_zone_planting_guidance` | Crop, Ghana place (region, district or town), optional season (major or minor) | The zone (from `data/zones.json`) and verbatim planting passages for it, with source and page | Read-only; unknown place or crop returns no passages, never a guess |
 | `retrieve_reference` | Reference identifier | Source passage and metadata | Never invent a source |
 | `create_or_update_case` | Case fields and status | Stored case identifier | Validate fields and record changes; the agent may only set draft or pending-review status, and approval is reserved for the officer |
 | `get_weather` | Coordinates or locality | Forecast data and timestamp | Optional; only after provider verification |
