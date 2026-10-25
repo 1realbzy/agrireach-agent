@@ -130,6 +130,9 @@ def propose(officer_text: str, question: str = "", language: str = "en", conflic
     if not officer_text.strip():
         return FarmerDraft("", "none", ["no officer text yet"], needs_officer_text=True)
     notes = ["sources differ: edit to keep only the option you choose"] if conflicts else []
+    if "cover Northern Ghana only" in officer_text:
+        notes.append("the guidance is from Northern Ghana sources and the farmer is elsewhere: say so in the farmer "
+                     "text, or adjust it, before approving")
     if llm.mode() == "llm" and not officer_text.startswith(llm.STUB_LABEL):
         try:
             text, mode = _llm_rewrite(officer_text, question, conflicts)

@@ -32,3 +32,12 @@ def test_bad_model_rewrite_falls_back_to_rule_text(monkeypatch):
     monkeypatch.setattr(fr.llm, "mode", lambda: "llm")
     d = fr.propose(OFFICER, "When should I harvest soybean?", "en")
     assert d.mode == "rule" and "80" not in d.text and "[" not in d.text and d.problems
+
+
+def test_region_caution_is_raised_to_the_officer_not_silently_dropped():
+    officer = ("Caution: the curated sources cover Northern Ghana only. The guidance below comes from them and may not "
+               "apply in Kumasi; the officer should confirm local timing.\n\nPlant when the rains are well "
+               "established [IITA-SSPING-2022:p18-moisture].")
+    d = fr.propose(officer, "When should I plant soybean in Kumasi?", "en")
+    assert "Caution" not in d.text and "officer" not in d.text.lower()
+    assert any("Northern Ghana" in p for p in d.problems)
