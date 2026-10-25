@@ -333,16 +333,16 @@ def build_graph(tools: Tools):
             # draft is checked in full, so it cannot slip an unchecked figure past the check behind "Note:".
             skip = ("Note:", llm.STUB_LABEL) if used.startswith("stub") else ()
             res = citation_check.check_draft(text, s["passages"], conflicts, ignore_prefixes=skip)
-            # Sentences without figures: named sources, agreement claims, lexical support, optional model judge.
-            # The code-built stub quotes passages verbatim, so it is not sent to the (optional, paid) judge.
+            # Sentences without figures: named sources, agreement claims, lexical support, model judge (always on, fails closed).
+            # The code-built stub quotes passages verbatim, so it is not sent to the judge.
             claims = claim_check.check_claims(text, s["passages"], conflicts, ignore_prefixes=skip,
                                               judge=False if used.startswith("stub") else None)
             problems = res.problems + claims.problems
             attempts.append({"draft_mode": used, "ok": not problems, "problems": problems,
                              "figures_checked": res.checked, "sentences_checked": claims.checked,
                              **({"judge": {k: v for k, v in claims.judge.items() if k != "raw"}} if claims.judge else {})})
-            if not problems or used.startswith("stub"):
-                break
+            if not problems or used.startswith("stub") or claims.judge_failed:
+                break  # regenerating can't help when the source check itself couldn't run
             feedback = problems
         check = {"ok": attempts[-1]["ok"], "attempts": attempts}
         if not check["ok"]:

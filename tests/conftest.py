@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 from pathlib import Path
@@ -21,4 +22,13 @@ def isolated(tmp_path, monkeypatch):
     for k in ("WHATSAPP_ENABLED", "AGRIREACH_TTS"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).resolve().parents[1] / "src"))
+    # The judge is always on for model drafts and fails closed. Tests that fake a model draft get an offline judge
+    # that supports every sentence; tests about the judge itself replace this (judge_call=, or patch judge._call).
+    from agrireach import judge
+
+    def _offline_judge_supports_all(user):
+        n = user.count(". SENTENCE: ")
+        return json.dumps({"verdicts": [{"n": i + 1, "verdict": "supported", "why": "offline test judge"}
+                                        for i in range(n)]})
+    monkeypatch.setattr(judge, "_call", _offline_judge_supports_all)
     yield

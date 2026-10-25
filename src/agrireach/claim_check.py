@@ -39,7 +39,10 @@ AGREE_RE = re.compile(
 META_RE = re.compile(r"\b(?:officer|officers|agrireach|aea)\b", re.I)
 # Lines the judge is not asked about: officer-facing instructions, restating the question, and saying the sources
 # differ (conflicts are detected by code and their figures are checked by citation_check).
-NOT_JUDGED_RE = re.compile(r"\b(?:officer|officers|agrireach|aea)\b|\bfarmer\s+(?:asks|is\s+asking|wants\s+to\s+know)\b"
+# Uncited lines exempt from the lexical layer (still judged): notes and lines about the reply's language.
+UNCITED_META_RE = re.compile(r"^\W*note\b|\b(?:twi|dagbani|wali|ewe|hausa|language|respond|reply)\b", re.I)
+# Officer-addressed lines ARE judged: "the officer should tell the farmer it is safe to sell" is still advice.
+NOT_JUDGED_RE = re.compile(r"\bfarmer\s+(?:asks|is\s+asking|wants\s+to\s+know)\b"
                            r"|\bsources?\b[^.]*\b(?:disagree|differ)|\bdisagree|\bdisput|\bone\s+source\b[^.]*\banother\b",
                            re.I)
 NEGATED_AGREE = re.compile(r"\b(?:not|n't|never|dis)\s*agree|\bdo\s+not\s+agree|\bdiffer|\bdisagree", re.I)
@@ -121,6 +124,7 @@ class ClaimResult:
     problems: list[str] = field(default_factory=list)
     checked: int = 0
     judge: dict | None = None  # {"model":..., "verdicts":[...]} or {"error":...} when the judge ran
+    judge_failed: bool = False  # the judge was required but could not give a verdict (the check then fails)
 
 
 def source_aliases(passages: list[dict]) -> dict[str, set[str]]:
@@ -155,7 +159,8 @@ def _backs(sentence: str, ps: list[dict]) -> bool:
 
 def check_claims(draft: str, passages: list[dict], conflicts: dict | None = None, judge: bool | None = None,
                  ignore_prefixes: tuple[str, ...] = (), judge_call=None) -> ClaimResult:
-    """judge: None = on if AGRIREACH_JUDGE_MODEL is set; judge_call replaces the judge's network call (tests)."""
+    """judge: None = judge.enabled() (always on); False only for code-built verbatim drafts. judge_call replaces the
+    judge's network call (tests). Uncited sentences are checked against every passage the draft cites."""
     if ignore_prefixes:
         draft = "\n".join(l for l in draft.splitlines() if not l.strip().startswith(ignore_prefixes))
     by_id = {p["id"]: p for p in passages}
@@ -164,7 +169,9 @@ def check_claims(draft: str, passages: list[dict], conflicts: dict | None = None
     problems: list[str] = []
     checked = 0
     to_judge: list[tuple[Sentence, list[dict]]] = []
-    for s in sentences(draft):
+    ss = sentences(draft)
+    all_cited = [by_id[i] for i in dict.fromkeys(i for s in ss for i in s.ids) if i in by_id]
+    for s in ss:
         cited = [by_id[i] for i in dict.fromkeys(s.ids) if i in by_id]
         bare = CITE_RE.sub(" ", s.text)
         low = bare.lower()
@@ -173,6 +180,18 @@ def check_claims(draft: str, passages: list[dict], conflicts: dict | None = None
             if re.search(rf"(?<![a-z]){re.escape(alias)}(?![a-z])", low) and not any(p["source_id"] in srcs for p in cited):
                 problems.append(f"'{_short(s.text)}' names {alias.upper()} but cites no {alias.upper()} passage")
         if not cited:
+            # An uncited sentence (after a paragraph's last citation, or in a paragraph with none) can still add a
+            # claim. Check it against everything the draft cites; headings ("...:") carry no claim.
+            words = content_words(bare)
+            plain = re.sub(r"\*\*|__|`", "", bare).strip()
+            if not all_cited or not words or plain.endswith(":") or NOT_JUDGED_RE.search(bare):
+                continue
+            checked += 1
+            if not META_RE.search(bare) and not UNCITED_META_RE.search(plain) and not words & content_words(" ".join(p["text"] for p in all_cited)):
+                problems.append(f"'{_short(s.text)}' has no citation and is not supported by any cited passage "
+                                "(no shared content words)")
+                continue
+            to_judge.append((s, all_cited))
             continue
         checked += 1
         by_src: dict[str, list[dict]] = {}
@@ -216,6 +235,8 @@ def check_claims(draft: str, passages: list[dict], conflicts: dict | None = None
         # "For soybean planting in Kumasi, ..." on that ground alone (7 of its 8 replay false rejects).
         items = [(places.mask(s.text, keep=" ".join(p["text"] for p in cited)), cited) for s, cited in to_judge]
         judged = judge_mod.judge(items, call=judge_call)
+        if judged.get("error"):
+            problems.append(f"source check couldn't run: the judge model gave no verdict ({judged['error'][:120]})")
         for v, (s, _c) in zip(judged.get("verdicts", []), to_judge):
             if v["sentence"] != s.text:
                 v["sent_to_judge"], v["sentence"] = v["sentence"], s.text
@@ -223,4 +244,5 @@ def check_claims(draft: str, passages: list[dict], conflicts: dict | None = None
             if v["verdict"] == "not_supported":
                 problems.append(f"'{_short(v['sentence'])}' is not supported by its citation according to the judge "
                                 f"model: {v.get('why', '')}".rstrip(": "))
-    return ClaimResult(ok=not problems, problems=list(dict.fromkeys(problems)), checked=checked, judge=judged)
+    return ClaimResult(ok=not problems, problems=list(dict.fromkeys(problems)), checked=checked, judge=judged,
+                       judge_failed=bool(judged and judged.get("error")))

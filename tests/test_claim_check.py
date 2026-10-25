@@ -123,12 +123,26 @@ def test_judge_parse_requires_a_verdict_for_every_item():
     assert [v["verdict"] for v in out] == ["supported", "not_supported"]
 
 
-def test_judge_error_is_recorded_and_rejects_nothing():
+def test_judge_error_is_recorded_and_fails_closed():
+    # Changed 25 Oct (review item 2): a judge outage used to reject nothing; it now fails the check.
     def boom(_):
         raise TimeoutError("provider down")
     d = "Plant when the rains are well established [IITA-SSPING-2022:p18-moisture]."
     r = claim_check.check_claims(d, PS, judge=True, judge_call=boom)
-    assert r.ok and "provider down" in r.judge["error"]
+    assert not r.ok and r.judge_failed and "provider down" in r.judge["error"]
+
+
+def _replay_judge(raw):
+    """Recorded verdicts for the sentences the judge was asked about when the reply was recorded. Since 25 Oct the
+    judge also gets officer-addressed and uncited sentences; the recordings have no verdict for those, so they are
+    answered 'supported' here. Their false-reject rate is measured live (EVALS.md), not by this offline replay."""
+    recorded = {int(v["n"]): v for v in json.loads(raw[raw.find("{"):])["verdicts"]}
+
+    def call(user):
+        n = user.count(". SENTENCE: ")
+        return json.dumps({"verdicts": [recorded.get(i + 1, {"n": i + 1, "verdict": "supported", "why": "unrecorded"})
+                                        for i in range(n)]})
+    return call
 
 
 def test_judge_replay_flags_and_false_reject_rate():
@@ -138,7 +152,7 @@ def test_judge_replay_flags_and_false_reject_rate():
         ps, conflicts = replay_drafts.passages_and_conflicts(r["sources"])
         raw = RAW.get((r["run"], r["task"]))
         res = claim_check.check_claims(r["draft"], ps, conflicts, judge=raw is not None,
-                                       judge_call=(lambda _u, raw=raw: raw))
+                                       judge_call=_replay_judge(raw) if raw else None)
         assert not (res.judge or {}).get("error")
         if any("judge model" in p for p in res.problems):
             flagged_by_judge.add(key)
