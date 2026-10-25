@@ -21,7 +21,8 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("AGRIREACH_RAINFALL", "off")  # no live weather calls; test_rainfall.py uses recorded fixtures
     monkeypatch.setenv("AGRIREACH_RAINFALL_CACHE", str(tmp_path / "rain-cache"))
     monkeypatch.setenv("AGRIREACH_STT", "none")  # tests pass a fake transcriber; test_stt_real.py opts in
-    for k in ("WHATSAPP_ENABLED", "AGRIREACH_TTS"):
+    for k in ("WHATSAPP_ENABLED", "AGRIREACH_TTS", "SMS_ENABLED", "AT_USERNAME", "AT_API_KEY", "AT_SENDER_ID",
+              "AT_SANDBOX", "SMS_WEBHOOK_TOKEN", "SMS_MAX_SEGMENTS"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).resolve().parents[1] / "src"))
     # The judge is always on for model drafts and fails closed. Tests that fake a model draft get an offline judge

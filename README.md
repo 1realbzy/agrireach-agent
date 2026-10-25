@@ -153,6 +153,7 @@ Done (23 Oct, review): the check also compares each figure's limit ("not deeper 
 Done (25 Oct): 14 field-evidence evals (EVALS F1-F14) from public reports, verified maize and aflatoxin passages, routing of uncovered crops and contact requests to the officer.
 Done (25 Oct): claim check for sentences without figures (named sources, agreement claims, lexical support) and an optional, separate judge model, with measured false-reject rates.
 Done (25 Oct, local only): voice-note channel. A voice note or text with a sender id goes through local speech-to-text (faster-whisper) into a case; the officer-approved answer goes back through the same channel as text, optionally with a Piper voice. A local simulator (CLI and Streamlit tab) stands in for the phone. A WhatsApp Cloud API adapter exists as code only, off by default and never registered or deployed. See [docs/voice-channel.md](docs/voice-channel.md) and [docs/whatsapp-setup.md](docs/whatsapp-setup.md).
+Done (25 Oct, local only): an SMS adapter for Africa's Talking, code only and off by default. There is no account, it has only been tested against mocked responses, and it has never sent or received a real SMS. Over-long texts are refused for the officer to shorten, never cut. See [docs/sms-setup.md](docs/sms-setup.md).
 Done (25 Oct, local only): farmer-facing reply (the officer approves the exact plain text that is sent; citations stay in the officer view), place-name confirm-back after speech-to-text using a gazetteer of Ghana's 261 districts, first-contact consent, STOP and a retention purge.
 
 Next: test speech-to-text on real, consented voice notes, record the demo video, then consider a weather tool and real Twi support with native-speaker review.
@@ -164,7 +165,7 @@ Next: test speech-to-text on real, consented voice notes, record the demo video,
 - Rainfall is a model estimate for one point per district (Open-Meteo), not a gauge reading, and the guides give no rainfall amount for onset, so AgriReach shows the record and the officer decides. Open-Meteo's free API is for non-commercial use only. Other crops, prices and contact details are always passed to the officer.
 - The quality of recommendations depends on the authority and freshness of source material.
 - Text based advice may not be enough to diagnose a plant health issue.
-- Voice notes: speech-to-text was tested on synthetic US-English clips and on 10 Ghanaian broadcast-English clips (run S1: 52.5% word error rate with Whisper "base", language mis-detected in 7/10; all 10 flagged for the officer). It is not tested on real farmer voice notes, and Whisper does not support Twi, Dagbani or Wali; such notes are flagged for the officer to listen to. Misheard place names ("Wa" -> "war") are confirmed back with the farmer, not corrected silently. The consent wording has had no legal review. The WhatsApp adapter has never sent or received a real message.
+- Voice notes: speech-to-text was tested on synthetic US-English clips and on 10 Ghanaian broadcast-English clips (run S1: 52.5% word error rate with Whisper "base", language mis-detected in 7/10; all 10 flagged for the officer). It is not tested on real farmer voice notes, and Whisper does not support Twi, Dagbani or Wali; such notes are flagged for the officer to listen to. Misheard place names ("Wa" -> "war") are confirmed back with the farmer, not corrected silently. The consent wording has had no legal review. The WhatsApp and SMS adapters have never sent or received a real message.
 - Twi support is detection plus a keyword gloss only: AgriReach cannot translate or reply in Twi, so Twi cases go to the officer as urgent. Other local languages are not handled. Offline access and accessibility require further work.
 - The citation check confirms that every date and number in a draft, and any limit on it ("up to", "not deeper than", "at least"), appears in the passage it cites. Sentences without figures get code checks (named sources, agreement claims, at least one shared word) and a judge model that fails closed; without it (offline stub mode), a sentence that shares words with its passage but says something the passage doesn't will pass.
 - Weather coverage and API access have not yet been verified.
@@ -188,7 +189,7 @@ The prototype should be evaluated on whether it retrieves relevant evidence, cit
 
 ```text
 src/agrireach/  mcp_server.py  agent.py  db.py  knowledge.py  llm.py  claim_check.py  judge.py  voice_script.py  api.py  ui.py
-src/agrireach/channels/  base.py  service.py  stt.py  tts.py  simulator.py  whatsapp.py (code only, off by default)
+src/agrireach/channels/  base.py  service.py  stt.py  tts.py  simulator.py  whatsapp.py  sms.py (both code only, off by default)
 data/knowledge.json   verbatim cited passages (APNI/CSIR-SARI 2023 soybean and maize guides, IITA SSPiNG 2022, Agbetiameh et al. 2018)
 evals/                field_evidence.json: eval questions F1-F14 with sources and expected routing
 tests/                pytest suite (offline stub mode)
