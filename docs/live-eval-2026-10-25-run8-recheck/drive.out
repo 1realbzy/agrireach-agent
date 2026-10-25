@@ -1,0 +1,14 @@
+F1-a 1 pending_review 200 True 16.7
+F1-b 2 pending_review 200 True 12.6
+F1-c 3 pending_review 200 True 18.1
+ASH-a 4 pending_review 200 True 16.3
+SW1 5 pending_review 200 True 12.5
+SW2 6 pending_review 200 True 16.7
+SW3 7 pending_review 200 True 20.7
+SW4 8 pending_review 200 True 21.1
+SW5 9 pending_review 200 True 24.7
+RW 10 pending_review 200 True 20.6
+BD 11 pending_review 200 True 16.7
+ADD 12 pending_review 200 True 15.3
+NEG 13 pending_review 200 True 15.5
+F9 14 pending_review 200 True 5.1
