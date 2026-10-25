@@ -6,6 +6,7 @@ nothing about Ghanaian-accented English, Twi, Dagbani or Wali.
 """
 import asyncio
 import json
+import re
 import os
 from pathlib import Path
 
@@ -82,3 +83,14 @@ def test_round_trip_piper_answer_is_understood_by_whisper(whisper, tmp_path, mon
     back = whisper.transcribe(wav).text.lower()
     assert "agrireach" in back.replace(" ", "") or "agri" in back
     assert "pods" in back and "brown" in back
+
+
+def test_misheard_wa_is_confirmed_back_not_guessed(whisper):
+    """The real Whisper 'base' model hears the synthetic 'at Wa' clip as 'war': the farmer is asked, then it's used."""
+    out = asyncio.run(simulator.ask("sim:farmer-2", audio=str(AUDIO / "en_plant_wa_piper.wav"), transcriber=whisper))
+    if out["status"] != "awaiting_location":
+        pytest.skip(f"this Whisper build transcribed the clip as {out.get('transcript')!r}")
+    assert "Wa (Upper West Region)" in out["message"]
+    done = asyncio.run(simulator.ask("sim:farmer-2", text="yes"))
+    assert re.search(r"\bWa\b", done["question"]) and "war" not in done["question"].lower()
+    assert db.get_case(db.connect(), done["case_id"])["region"].lower() == "wa"

@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 AGENT_STATUSES = {"draft", "pending_review"}
@@ -61,6 +61,12 @@ def connect(path: str | None = None) -> sqlite3.Connection:
           channel TEXT NOT NULL, kind TEXT NOT NULL, ok INTEGER NOT NULL, detail TEXT, ts TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS channel_inbound_seen (
           channel TEXT NOT NULL, message_id TEXT NOT NULL, ts TEXT NOT NULL, PRIMARY KEY (channel, message_id));
+        CREATE TABLE IF NOT EXISTS channel_consent (
+          channel TEXT NOT NULL, sender_id TEXT NOT NULL, status TEXT NOT NULL, asked_at TEXT NOT NULL,
+          decided_at TEXT, PRIMARY KEY (channel, sender_id));
+        CREATE TABLE IF NOT EXISTS channel_pending (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, channel TEXT NOT NULL, sender_id TEXT NOT NULL,
+          kind TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL);
         """
     )
     cols = {r[1] for r in con.execute("PRAGMA table_info(cases)")}
@@ -218,3 +224,89 @@ def first_time_seen(con, channel: str, message_id: str) -> bool:
     except sqlite3.IntegrityError:
         con.rollback()  # the failed INSERT opened a transaction; release its write lock
         return False
+
+
+# --- Consent, held messages, and retention for channel senders ------------------------------------------------------
+
+def get_consent(con, channel: str, sender_id: str) -> str | None:
+    r = con.execute("SELECT status FROM channel_consent WHERE channel=? AND sender_id=?", (channel, sender_id)).fetchone()
+    return r["status"] if r else None
+
+
+def set_consent(con, channel: str, sender_id: str, status: str):
+    """status: 'asked' (prompt sent, waiting) or 'yes'."""
+    con.execute("INSERT INTO channel_consent(channel,sender_id,status,asked_at,decided_at) VALUES (?,?,?,?,?) "
+                "ON CONFLICT(channel,sender_id) DO UPDATE SET status=excluded.status, decided_at=excluded.decided_at",
+                (channel, sender_id, status, now(), None if status == "asked" else now()))
+    con.commit()
+
+
+def hold(con, channel: str, sender_id: str, kind: str, payload: dict) -> int:
+    """Keep an inbound message until the farmer answers a question (kind: 'consent' or 'location')."""
+    cur = con.execute("INSERT INTO channel_pending(channel,sender_id,kind,payload,created_at) VALUES (?,?,?,?,?)",
+                      (channel, sender_id, kind, json.dumps(payload), now()))
+    con.commit()
+    return cur.lastrowid
+
+
+def take_held(con, channel: str, sender_id: str, kind: str) -> list[dict]:
+    rows = con.execute("SELECT id, payload FROM channel_pending WHERE channel=? AND sender_id=? AND kind=? ORDER BY id",
+                       (channel, sender_id, kind)).fetchall()
+    con.execute("DELETE FROM channel_pending WHERE channel=? AND sender_id=? AND kind=?", (channel, sender_id, kind))
+    con.commit()
+    return [json.loads(r["payload"]) for r in rows]
+
+
+def has_held(con, channel: str, sender_id: str, kind: str) -> bool:
+    return con.execute("SELECT 1 FROM channel_pending WHERE channel=? AND sender_id=? AND kind=?",
+                       (channel, sender_id, kind)).fetchone() is not None
+
+
+def _remove_audio(paths):
+    for p in paths:
+        if p:
+            try:
+                Path(p).unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+PURGED = "[removed]"
+
+
+def forget_sender(con, channel: str, sender_id: str) -> dict:
+    """The farmer said STOP: drop their number, held messages, voice notes and consent. Cases stay (anonymised) so
+    the officer's record of the advice given is kept, but nothing can be sent to this sender any more."""
+    held = con.execute("SELECT payload FROM channel_pending WHERE channel=? AND sender_id=?",
+                       (channel, sender_id)).fetchall()
+    contacts = con.execute("SELECT audio_path FROM channel_contacts WHERE channel=? AND sender_id=?",
+                           (channel, sender_id)).fetchall()
+    _remove_audio([json.loads(r["payload"]).get("audio_path") for r in held] + [r["audio_path"] for r in contacts])
+    con.execute("UPDATE channel_contacts SET sender_id=?, audio_path=NULL WHERE channel=? AND sender_id=?",
+                (PURGED, channel, sender_id))
+    con.execute("DELETE FROM channel_pending WHERE channel=? AND sender_id=?", (channel, sender_id))
+    con.execute("DELETE FROM channel_consent WHERE channel=? AND sender_id=?", (channel, sender_id))
+    con.commit()
+    return {"contacts": len(contacts), "held": len(held)}
+
+
+def retention_days() -> int:
+    return int(os.getenv("AGRIREACH_RETENTION_DAYS", "90"))
+
+
+def purge_old(con, days: int | None = None, now_ts: str | None = None) -> dict:
+    """Remove sender numbers, voice notes, held messages and consent records older than `days`
+    (AGRIREACH_RETENTION_DAYS, default 90). Case text and the officer's decision are kept, anonymised."""
+    days = retention_days() if days is None else days
+    ref = datetime.fromisoformat(now_ts) if now_ts else datetime.now(timezone.utc)
+    cutoff = (ref - timedelta(days=days)).isoformat(timespec="seconds")
+    old = con.execute("SELECT audio_path FROM channel_contacts WHERE created_at <= ? AND sender_id != ?",
+                      (cutoff, PURGED)).fetchall()
+    held = con.execute("SELECT payload FROM channel_pending WHERE created_at <= ?", (cutoff,)).fetchall()
+    _remove_audio([r["audio_path"] for r in old] + [json.loads(r["payload"]).get("audio_path") for r in held])
+    con.execute("UPDATE channel_contacts SET sender_id=?, audio_path=NULL WHERE created_at <= ? AND sender_id != ?",
+                (PURGED, cutoff, PURGED))
+    con.execute("DELETE FROM channel_pending WHERE created_at <= ?", (cutoff,))
+    n_consent = con.execute("DELETE FROM channel_consent WHERE COALESCE(decided_at, asked_at) <= ?", (cutoff,)).rowcount
+    con.commit()
+    return {"contacts": len(old), "held": len(held), "consent": n_consent, "cutoff": cutoff}

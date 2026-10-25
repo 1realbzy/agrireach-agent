@@ -18,7 +18,7 @@ from langgraph.graph import END, StateGraph
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from agrireach import citation_check, claim_check, farmer_reply, knowledge, language, llm
+from agrireach import citation_check, claim_check, farmer_reply, knowledge, language, llm, places
 
 RISK_TERMS = {
     "chemical": ["spray", "herbicide", "pesticide", "insecticide", "fungicide", "chemical", "glyphosate", "paraquat",
@@ -58,7 +58,10 @@ def _place_in_question(place: str, q: str) -> bool:
 
 def _is_northern(region: str) -> bool:
     """True if the region is covered by the Northern Ghana corpus (whole-token match, so 'Kwahu' is not 'Wa')."""
-    return any(_place_in_question(n, region.lower()) for n in NORTHERN)
+    if any(_place_in_question(n, region.lower()) for n in NORTHERN):
+        return True
+    g = places.gazetteer().get(region.strip().lower())  # any of Ghana's 261 districts, regions or their capitals
+    return bool(g and places.is_northern(g["region"]))
 
 
 def _crops_covered() -> list[str]:
@@ -83,7 +86,8 @@ def _detect_region(q: str) -> str:
     for r in sorted(NORTHERN + OTHER_REGIONS, key=lambda s: (-len(s), s)):
         if _place_in_question(r, q):
             return r.strip()
-    return ""
+    found = places.find(q)  # fall back to the full gazetteer (e.g. "Lawra", "Sawla", "Techiman")
+    return found[0]["name"].lower() if found else ""
 
 
 class S(TypedDict, total=False):
