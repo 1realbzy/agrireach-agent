@@ -53,13 +53,12 @@ def zone_for(place: str) -> dict | None:
     if key in d["alias"]:
         a = d["alias"][key]
         return {"zone": a["zone"], "zones": a.get("zones", [a["zone"]]), "region": a["region"], "district": "",
-                "boundary": bool(a.get("boundary"))}
+                "boundary": False}  # only a district can be on a zone edge, never a region name
     regions = {r.lower(): r for r in d["region_default"]}
     if key in regions:
         region = regions[key]
         zone = d["region_default"][region]
-        boundary = any(d["district_override"].get(x) for x in _districts_in(region))
-        return {"zone": zone, "zones": [zone], "region": region, "district": "", "boundary": boundary}
+        return {"zone": zone, "zones": [zone], "region": region, "district": "", "boundary": False}
     hit = _district_of().get(key) or _district_of().get(place.strip().lower())
     if not hit:
         return None
@@ -69,10 +68,6 @@ def zone_for(place: str) -> dict | None:
         return None
     return {"zone": zone, "zones": [zone], "region": region, "district": district,
             "boundary": district in d["boundary"]}
-
-
-def _districts_in(region: str) -> list[str]:
-    return [dist for dist, reg in _district_of().values() if reg == region]
 
 
 def covers(passage: dict, zones: list[str] | set[str]) -> bool:

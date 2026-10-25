@@ -1,5 +1,5 @@
 {
- "_source": "AgriReach curation, 25 Oct 2026. APPROXIMATE: no official district-to-zone table was found. Each region gets a default zone from the broad agroecological zone map of Ghana (Sudan savannah, Guinea savannah, transition, deciduous/semi-deciduous forest, rain forest, coastal savannah); districts known to lie in another zone get an override. 'boundary' marks districts that straddle two zones: the officer should confirm which zone the farm is in. District names follow data/gazetteer.json. To be checked by an extension officer before relying on it.",
+ "_source": "AgriReach curation, 25 Oct 2026. APPROXIMATE: no official district-to-zone table was found. Each region gets a default zone from the broad agroecological zone map of Ghana (Sudan savannah, Guinea savannah, transition, deciduous/semi-deciduous forest, rain forest, coastal savannah); districts known to lie in another zone get an override. 'boundary' marks districts (never regions) that straddle two zones: the officer should confirm which zone the farm is in. District names follow data/gazetteer.json. To be checked by an extension officer before relying on it.",
  "zones": {
   "sudan_savannah": "Sudan savannah",
   "guinea_savannah": "Guinea savannah",
@@ -115,13 +115,11 @@
  "alias": {
   "brong ahafo": {
    "region": "Brong Ahafo (former region, now Bono, Bono East and Ahafo)",
-   "zone": "transition",
-   "boundary": true
+   "zone": "transition"
   },
   "brong-ahafo": {
    "region": "Brong Ahafo (former region, now Bono, Bono East and Ahafo)",
-   "zone": "transition",
-   "boundary": true
+   "zone": "transition"
   },
   "north": {
    "region": "Northern Ghana",
