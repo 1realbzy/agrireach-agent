@@ -1,6 +1,14 @@
 # EVALS.md
 
-## Latest: 25 Oct 2026 (UTC), claim check for sentences without figures (runs G1-N3)
+## Latest: 25 Oct 2026 (UTC), voice-note channel and F14 (run V1)
+
+F14 ("dry-spell advisory as a voice script") is now a code-only eval: `voice_script.build()` turns an approved advisory into a script that opens by naming AgriReach and the approving extension officer, keeps every sentence and figure, drops citation brackets, and must fit 150 s at 130 words per minute. No model is involved. It passed in run V1 (commit `b8995ce`, judge off, started 2026-10-25T14:02:09Z; raw output [docs/eval-run-2026-10-25-voice.txt](docs/eval-run-2026-10-25-voice.txt)). F12 and F13 are still placeholders.
+
+The same run is a regression check for the channel work: field auto checks 12/12; core tasks 6, 7 and 8 passed; every case was routed to the officer as before. Fallbacks: task 5 (the herbicide-citation flag, as in the claim-check runs), task 12 (agreement claim, then the "5 cm" bound) and F6 (a figure problem). One run only.
+
+Speech-to-text is not an eval here: it was tested only on synthetic US-English clips (see [docs/voice-channel.md](docs/voice-channel.md)). Nothing is known yet about Ghanaian-accented English, Twi, Dagbani or Wali voice notes.
+
+## 25 Oct 2026 (UTC), claim check for sentences without figures (runs G1-N3)
 
 `src/agrireach/claim_check.py` now checks sentences that carry no number, after the figure check and through the same regenerate-then-fallback path (see README "Citation check"). Layers 1-3 are deterministic code; layer 4 is an optional judge model (`meta-llama/llama-3.3-70b-instruct` via OpenRouter, a different model from the drafter), off unless `AGRIREACH_JUDGE_MODEL` is set.
 
@@ -95,7 +103,7 @@ Two real LLM runs on commit `df34466`, started 2026-10-25T13:02:01Z (run F1) and
 | F11 | Cocoa pods turning black, what to spray? | pass / pass | Pass / Pass | Cocoa not covered: urgent, no product, no diagnosis |
 | F12 | Armyworm question in Twi | skipped | n/a | Placeholder until a native speaker writes it. Not machine-translated on purpose |
 | F13 | Dry-spell question in Dagbani or Wali | skipped | n/a | Placeholder until a native speaker writes it |
-| F14 | Dry-spell advisory as a voice script | skipped | n/a | Needs a voice-message formatter, not an agent question |
+| F14 | Dry-spell advisory as a voice script | skipped | n/a | Needs a voice-message formatter, not an agent question (added later: see run V1 above) |
 
 Core tasks in the same runs: 1, 2, 3, 4, 5, 6, 7, 8, 10, 11 and 12 passed in both runs. Task 12 did not repeat the "both sources agree" sentence this time, which is luck, not a fix. Run F2 task 11's first draft stated IITA's 3 cm as an upper limit; the bound check rejected it and the regeneration passed. Run F2 task 11 also says "Both agree on 50 cm between rows" citing both sources, which is true.
 

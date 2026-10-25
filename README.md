@@ -150,7 +150,8 @@ Done (23 Oct): citation check for dates and numbers, conflict-complete retrieval
 Done (23 Oct, review): the check also compares each figure's limit ("not deeper than", "up to", "at least"), so swapped bounds fail.
 Done (25 Oct): 14 field-evidence evals (EVALS F1-F14) from public reports, verified maize and aflatoxin passages, routing of uncovered crops and contact requests to the officer.
 Done (25 Oct): claim check for sentences without figures (named sources, agreement claims, lexical support) and an optional, separate judge model, with measured false-reject rates.
-Next: expand the place list into a fuller district gazetteer, record the demo video, then consider a weather tool and real Twi support with native-speaker review.
+Done (25 Oct, local only): voice-note channel. A voice note or text with a sender id goes through local speech-to-text (faster-whisper) into a case; the officer-approved answer goes back through the same channel as text, optionally with a Piper voice. A local simulator (CLI and Streamlit tab) stands in for the phone. A WhatsApp Cloud API adapter exists as code only, off by default and never registered or deployed. See [docs/voice-channel.md](docs/voice-channel.md) and [docs/whatsapp-setup.md](docs/whatsapp-setup.md).
+Next: test speech-to-text on real, consented voice notes; expand the place list into a fuller district gazetteer, record the demo video, then consider a weather tool and real Twi support with native-speaker review.
 
 ## Limitations
 
@@ -158,6 +159,7 @@ Next: expand the place list into a fuller district gazetteer, record the demo vi
 - Coverage is limited to the curated documents: Northern Ghana soybean and maize, plus the national maize aflatoxin limit. Other crops, prices and contact details are always passed to the officer.
 - The quality of recommendations depends on the authority and freshness of source material.
 - Text based advice may not be enough to diagnose a plant health issue.
+- Voice notes: speech-to-text was tested only on synthetic US-English clips. It is not tested on Ghanaian-accented English, and Whisper does not support Twi, Dagbani or Wali; such notes are flagged for the officer to listen to. The town name "Wa" is transcribed as "war". The WhatsApp adapter has never sent or received a real message.
 - Twi support is detection plus a keyword gloss only: AgriReach cannot translate or reply in Twi, so Twi cases go to the officer as urgent. Other local languages are not handled. Offline access and accessibility require further work.
 - The citation check confirms that every date and number in a draft, and any limit on it ("up to", "not deeper than", "at least"), appears in the passage it cites. Sentences without figures get code checks (named sources, agreement claims, at least one shared word) and an optional judge model; without the judge, a sentence that shares words with its passage but says something the passage doesn't will pass.
 - Weather coverage and API access have not yet been verified.
@@ -180,7 +182,8 @@ The prototype should be evaluated on whether it retrieves relevant evidence, cit
 ## Repository structure
 
 ```text
-src/agrireach/  mcp_server.py  agent.py  db.py  knowledge.py  llm.py  api.py  ui.py
+src/agrireach/  mcp_server.py  agent.py  db.py  knowledge.py  llm.py  claim_check.py  judge.py  voice_script.py  api.py  ui.py
+src/agrireach/channels/  base.py  service.py  stt.py  tts.py  simulator.py  whatsapp.py (code only, off by default)
 data/knowledge.json   verbatim cited passages (APNI/CSIR-SARI 2023 soybean and maize guides, IITA SSPiNG 2022, Agbetiameh et al. 2018)
 evals/                field_evidence.json: eval questions F1-F14 with sources and expected routing
 tests/                pytest suite (offline stub mode)
