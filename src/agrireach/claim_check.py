@@ -43,6 +43,10 @@ META_RE = re.compile(r"\b(?:officer|officers|agrireach|aea)\b", re.I)
 UNCITED_META_RE = re.compile(r"^\W*note\b|\b(?:twi|dagbani|wali|ewe|hausa|language|respond|reply)\b", re.I)
 # Officer-addressed lines ARE judged: "the officer should tell the farmer it is safe to sell" is still advice.
 NOT_JUDGED_RE = re.compile(r"\bfarmer\s+(?:asks|is\s+asking|wants\s+to\s+know)\b"
+                           # A pure choice instruction to the officer ("The officer should choose which limit to advise
+                           # the farmer to follow.") gives no advice; the judge rejected it live on 25 Oct.
+                           r"|^\W*(?:the\s+)?(?:extension\s+)?officer\s+(?:should|must|can|may)\s+(?:choose|decide|confirm)"
+                           r"\s+which\b[^0-9]*$"
                            r"|\bsources?\b[^.]*\b(?:disagree|differ)|\bdisagree|\bdisput|\bone\s+source\b[^.]*\banother\b",
                            re.I)
 NEGATED_AGREE = re.compile(r"\b(?:not|n't|never|dis)\s*agree|\bdo\s+not\s+agree|\bdiffer|\bdisagree", re.I)

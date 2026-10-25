@@ -92,3 +92,11 @@ def test_agent_accepts_a_model_draft_the_judge_supports(monkeypatch):
     monkeypatch.setattr(judge, "_call", call)
     out = asyncio.run(agent.run("When should I top dress my maize in Tamale?", use_fetch=False))
     assert out["citation_check"]["ok"] and out["draft"].split("\n\n" + agent.OFFICER_FACT)[0] == GOOD and seen
+
+
+def test_a_pure_choice_instruction_to_the_officer_is_not_judged():
+    from agrireach import claim_check
+    assert claim_check.NOT_JUDGED_RE.search("The officer should choose which limit to advise the farmer to follow.")
+    # advice to pass on, or one with a figure, is still judged
+    assert not claim_check.NOT_JUDGED_RE.search("The officer should tell the farmer it is safe to sell.")
+    assert not claim_check.NOT_JUDGED_RE.search("The officer should choose which of 15 ppb or 4 ppb applies.")
