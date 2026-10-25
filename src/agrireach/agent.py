@@ -11,6 +11,7 @@ import json
 import os
 import re
 import sys
+from datetime import datetime
 from contextlib import AsyncExitStack
 from dataclasses import asdict
 from typing import TypedDict
@@ -19,7 +20,7 @@ from langgraph.graph import END, StateGraph
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from agrireach import citation_check, claim_check, farmer_reply, knowledge, language, llm, places, zones
+from agrireach import citation_check, claim_check, farmer_reply, knowledge, language, llm, places, rainfall, season, zones
 
 RISK_TERMS = {
     "chemical": ["spray", "herbicide", "pesticide", "insecticide", "fungicide", "chemical", "glyphosate", "paraquat",
@@ -37,6 +38,10 @@ AFTER_PLANTING = re.compile(r"\b(?:after|since)\s+(?:planting|sowing)\b")
 ASKS_WHEN = re.compile(r"^\W*when\b|\bwhen\s+(?:should|can|could|do|does|is|to|will|must)\b")
 # Questions about when or how to plant get the farmer's zone's planting windows ("when to harvest" does not).
 PLANTING_Q = re.compile(r"\b(?:plant|planting|sow|sowing)\b", re.I)
+# Top dressing depends on soil moisture ("if the soil is very dry, delay"), so it gets the rainfall record too.
+TOPDRESS_Q = re.compile(r"\btop[\s-]?dress(?:ing|ed)?\b", re.I)
+# Code-built lines added to the officer draft after the checks; never part of the farmer SMS.
+OFFICER_FACT = "Note: (officer only)"
 REGION_DEPENDENT = {"planting", "spacing", "seed"}
 NORTHERN = ["northern", "north", "tamale", "savannah", "upper east", "upper west", "north east", "bolgatanga",
             "wa", "yendi", "nyankpala", "damongo", "walewale"]
@@ -86,6 +91,38 @@ def _same_figures(group: list[dict]) -> bool:
     return len(sets) == 1 and bool(next(iter(sets)))
 
 
+async def _attach_rainfall(tools, region: str, zone: dict | None, passages: list, notes: list, facts: list) -> dict:
+    """Planting and top-dressing questions: the district's rainfall record (MCP get_recent_rainfall) as a citable
+    record for the officer, never as guidance. No district or unavailable -> an officer fact saying why, no claim."""
+    if not region:
+        why = "the question names no district; ask the farmer which district they farm in"
+    elif not (zone and zone.get("district")):
+        why = (f"rainfall is looked up per district and '{region.title()}' is not a district AgriReach knows; ask the "
+               "farmer which district they farm in")
+    else:
+        why = ""
+    if why:
+        facts.append(f"{OFFICER_FACT} No rainfall record: {why}.")
+        return {"available": False, "reason": f"rainfall unavailable: {why}"}
+    try:
+        rain = await tools.call("get_recent_rainfall", {"district": region})
+    except Exception as e:
+        rain = {"available": False, "reason": f"rainfall unavailable: {str(e)[:120]}"}
+    if rain.get("available"):
+        passages.append(rainfall.as_passage(rain, zone["zone"]))
+        notes.append("A rainfall record is attached for the officer. The guides give no rainfall amount that marks "
+                     "onset, so AgriReach does not say whether the guides' condition is met; the officer decides.")
+        p = rain["period"]
+        facts.append(f"{OFFICER_FACT} Rainfall record [{rain['record_id']}] for {rain['district']}, {p['start']} to "
+                     f"{p['end']}: {rain['rain_days']} rain days (at least {rain['threshold_mm']:g} mm), "
+                     f"{rain['total_mm']:g} mm in total, {rain['missing_days']} days missing ({rain['provider']}). "
+                     f"{rain['caveat']}")
+    else:
+        facts.append(f"{OFFICER_FACT} Rainfall unavailable ({rain.get('reason', '').removeprefix('rainfall unavailable: ')}); "
+                     "no claim about recent rain is made.")
+    return rain
+
+
 def _crops_covered() -> list[str]:
     """Crops in the corpus. Empty if the corpus can't be read; retrieval then reports the tool error itself."""
     try:
@@ -133,6 +170,9 @@ class S(TypedDict, total=False):
     zone: dict
     zone_mismatch: bool
     mismatch_zones: str
+    rainfall: dict
+    officer_facts: list
+    received: str
     citation_check: dict
     source_checks: list
     status: str
@@ -210,6 +250,7 @@ def build_graph(tools: Tools):
                                                           "region": region})
         return {"crop": crop, "region": region, "urgent_reasons": reasons, "clarification": clar, "language": lang,
                 "search_query": search_query, "case_id": case["case_id"], "notes": [], "errors": [],
+                "received": case.get("created_at", ""),
                 "skip_retrieval": uncovered or (contact and not crop)}
 
     async def retrieve(s: S) -> S:
@@ -278,6 +319,13 @@ def build_graph(tools: Tools):
                 conflicts[k] = group
                 reasons.append(f"sources differ on {k.replace('_', ' ')}: {', '.join(sorted(srcs))}")
                 notes.append(f"Sources give different figures for {k.replace('_', ' ')}; officer should choose.")
+        rain, facts = None, []
+        topdress = TOPDRESS_Q.search(query) or any("topdress" in p.get("claim_key", "") for p in passages)
+        if (PLANTING_Q.search(query) or topdress) and passages and not errors:
+            rain = await _attach_rainfall(tools, region, zone, passages, notes, facts)
+        if PLANTING_Q.search(query) and s.get("received"):
+            if fact := season.fact(datetime.fromisoformat(s["received"]).date(), passages):
+                facts.insert(0, f"{OFFICER_FACT} {fact}")
         if s.get("language") == "twi":
             notes.append("The farmer wrote in Twi. This draft is in English for the officer, who must reply in Twi.")
         if any(p.get("risk") == "chemical" for p in passages) or any("chemical" in r for r in reasons):
@@ -288,7 +336,8 @@ def build_graph(tools: Tools):
             notes.append("Possible food-safety risk (mould/aflatoxin): AgriReach cannot clear produce for sale, food "
                          "or feed. Officer should advise.")
         return {"passages": passages, "calendar": cal, "errors": errors, "notes": notes, "conflicts": conflicts,
-                "zone": zone, "zone_mismatch": bool(mismatched), "mismatch_zones": where,
+                "zone": zone, "zone_mismatch": bool(mismatched), "mismatch_zones": where, "rainfall": rain,
+                "officer_facts": facts,
                 "urgent_reasons": sorted(set(reasons), key=reasons.index)}
 
     async def check_sources(s: S) -> S:
@@ -298,7 +347,7 @@ def build_graph(tools: Tools):
         seen = set()
         for p in s["passages"]:
             src = p["source"]
-            if p["source_id"] in seen:
+            if p["source_id"] in seen or p.get("kind") == "record":  # a data record, not a guide page
                 continue
             seen.add(p["source_id"])
             try:
@@ -337,7 +386,7 @@ def build_graph(tools: Tools):
             # The code-built stub quotes passages verbatim, so it is not sent to the judge.
             claims = claim_check.check_claims(text, s["passages"], conflicts, ignore_prefixes=skip,
                                               judge=False if used.startswith("stub") else None)
-            problems = res.problems + claims.problems
+            problems = res.problems + claims.problems + rainfall.draft_problems(text)
             attempts.append({"draft_mode": used, "ok": not problems, "problems": problems,
                              "figures_checked": res.checked, "sentences_checked": claims.checked,
                              **({"judge": {k: v for k, v in claims.judge.items() if k != "raw"}} if claims.judge else {})})
@@ -367,6 +416,8 @@ def build_graph(tools: Tools):
                 text = f"{label}\n{caution}\n{rest}"
             else:
                 text = f"{caution}\n\n{text}"
+        if s.get("officer_facts"):  # code-built facts (date vs windows, rainfall), after the checks like the caution
+            text = text.rstrip() + "\n\n" + "\n".join(s["officer_facts"])
         return {"draft": text, "draft_mode": used, "citation_check": check,
                 "urgent_reasons": sorted(set(reasons), key=reasons.index)}
 
@@ -376,8 +427,13 @@ def build_graph(tools: Tools):
         # Keyed on the zone_mismatch flag, not on the caution's wording.
         caveat = (farmer_reply.zone_caveat(s["region"], s.get("mismatch_zones") or "")
                   if s.get("region") and s.get("zone_mismatch") else None)
-        fd = farmer_reply.propose(s["draft"], s["question"], s.get("language", "en"), conflicts=conflicts,
+        officer_text = "\n".join(l for l in s["draft"].splitlines() if not l.startswith(OFFICER_FACT))
+        fd = farmer_reply.propose(officer_text, s["question"], s.get("language", "en"), conflicts=conflicts,
                                   zone_caveat=caveat)
+        if fd.text and (go := rainfall.draft_problems(fd.text)):
+            # Never "rains are good, plant now" in the SMS: withhold it and let the officer write it.
+            fd.text, fd.needs_officer_text = "", True
+            fd.problems = list(fd.problems) + [f"proposed SMS withheld: {'; '.join(go)}"]
         r = await tools.call("create_or_update_case", {
             "status": "pending_review", "case_id": s["case_id"], "draft": s["draft"],
             "source_ids": [p["id"] for p in s["passages"]], "priority": "urgent" if reasons else "routine",
@@ -428,6 +484,7 @@ async def run(question: str, crop: str = "", region: str = "", use_fetch: bool |
         # True when the farmer's place is known and some passage used is for another agroecological zone (or the
         # place's zone is unknown). The officer screen and the farmer reply use it.
         "zone_mismatch": bool(out.get("zone_mismatch")),
+        "rainfall": out.get("rainfall"),
         "zone": (out.get("zone") or {}).get("zone"),
         "priority": "urgent" if out.get("urgent_reasons") else "routine",
         "sources": [p["id"] for p in out.get("passages") or []]}

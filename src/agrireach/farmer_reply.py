@@ -118,6 +118,8 @@ def rule_rewrite(officer_text: str, max_chars: int = MAX_CHARS) -> str:
     rows, keep = [], []
     for line in officer_text.splitlines():
         l = line.strip()
+        if "[RAINFALL-" in l:
+            continue  # the rainfall record is an input for the officer, not advice for the farmer
         sent = row_sentence(re.sub(r"^[-*•]\s+", "", l))
         if sent:
             if sent not in rows:

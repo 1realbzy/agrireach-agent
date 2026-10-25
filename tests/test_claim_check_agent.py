@@ -23,7 +23,7 @@ def test_agreement_claim_is_regenerated_with_feedback(monkeypatch):
     calls = fake_llm(monkeypatch, [GOOD_TWI + "\n" + BOTH_AGREE, GOOD_TWI])
     out = asyncio.run(agent.run("Bere ben na menndua soya wo Tamale?", use_fetch=False))
     assert len(calls) == 2 and any("cites only IITA" in f for f in calls[1])
-    assert out["draft"] == GOOD_TWI and out["citation_check"]["ok"] and out["status"] == "pending_review"
+    assert out["draft"].split("\n\n" + agent.OFFICER_FACT)[0] == GOOD_TWI and out["citation_check"]["ok"] and out["status"] == "pending_review"
 
 
 def test_persistent_unsupported_claim_falls_back_to_verbatim_and_flags_officer(monkeypatch):
@@ -50,7 +50,7 @@ def test_judge_flag_triggers_regeneration(monkeypatch):
     out = asyncio.run(agent.run("Subsidised fertiliser arrived when the maize is knee-high, about two months after "
                                 "planting. Is it still worth applying?", use_fetch=False))
     assert len(calls) == 2 and any("judge model" in f for f in calls[1])
-    assert out["draft"] == good and out["citation_check"]["ok"]
+    assert out["draft"].split("\n\n" + agent.OFFICER_FACT)[0] == good and out["citation_check"]["ok"]
     assert out["citation_check"]["attempts"][0]["judge"]["model"] == "fake-judge"
 
 

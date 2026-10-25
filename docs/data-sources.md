@@ -25,6 +25,22 @@ Every passage has a `zones` tag: the six zones (Sudan savannah, Guinea savannah,
 
 `data/zones.json` maps the 16 regions and 261 districts (and the old name "Brong Ahafo") to a zone. **It is AgriReach's own approximate curation**, not an official table: no published district-to-zone list was found. Each region has a default zone and some districts an override; districts that straddle two zones are marked `boundary`, and the officer is asked to confirm the zone for them. An extension officer should check this file before it is relied on.
 
+## Rainfall and district coordinates (25 Oct 2026)
+
+Rainfall is data, not guidance; it is never a corpus passage.
+- **Open-Meteo** (default): daily `precipitation_sum` for the district's point, past 30 complete days, from the
+  forecast API's past days (model-based). Data CC BY 4.0, attribution "Weather data by Open-Meteo.com"
+  (https://open-meteo.com/en/license). The free API is for non-commercial use only (https://open-meteo.com/en/terms).
+- **NASA POWER** (opt-in cross-check): daily `PRECTOTCORR`. "No restrictions on the use, access, and/or download";
+  NASA asks to be cited. Only MERRA2-only responses for days at least 7 days old are used (see
+  [rainfall-live-2026-10-25.md](rainfall-live-2026-10-25.md) for why).
+- Not used: CHIRPS (public domain, but raster files; better for season comparisons than for the last 30 days).
+- **District coordinates** (`data/district_coords.json`): one point per district, the district capital where found.
+  256 from GeoNames (www.geonames.org, CC BY 4.0): 240 capitals matched by name in their region, 15 district (ADM2)
+  points, 1 capital whose GeoNames region code is the old one (Likpe-Mate, Guan). 5 capitals not in GeoNames (Jinijini,
+  Sagnarigu, Tatale, Ave-Dakpa, Essam-Debiso) were looked up once on OpenStreetMap Nominatim (data (c) OpenStreetMap
+  contributors, ODbL 1.0). Each entry records its source and match method. Approximate and not checked on the ground.
+
 ## Place names (25 Oct 2026)
 
 `data/gazetteer.json`: Ghana's 16 regions and 261 districts with their capitals, parsed from Wikipedia's "Districts of

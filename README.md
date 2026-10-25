@@ -87,7 +87,7 @@ Verified in this build: Python 3.13, official MCP Python SDK (`mcp` 1.30, FastMC
 
 ## Agent architecture
 
-A LangGraph state graph (`src/agrireach/agent.py`): `intake` (crop/region detection, risk terms, opens a `draft` case) → either `clarify` (end) or `retrieve` (MCP: `search_guidance`, `retrieve_reference` for each hit, `get_zone_planting_guidance` for planting questions, `get_crop_calendar`; guidance for other agroecological zones is dropped when the farmer's zone has its own, otherwise kept with a caution, an urgent reason and `zone_mismatch`; conflict and risk flags) → `check_sources` (third-party fetch MCP server checks the cited source pages are reachable) → `write` (LLM or stub draft, then the code citation check below) → `file_case` (MCP: `create_or_update_case` to `pending_review`, urgent or routine) → end. The graph has no node that can approve or release. Intake and routing are rule-based; the LLM is only used to word the draft.
+A LangGraph state graph (`src/agrireach/agent.py`): `intake` (crop/region detection, risk terms, opens a `draft` case) → either `clarify` (end) or `retrieve` (MCP: `search_guidance`, `retrieve_reference` for each hit, `get_zone_planting_guidance` for planting questions, `get_recent_rainfall` for planting and top-dressing questions, `get_crop_calendar`; guidance for other agroecological zones is dropped when the farmer's zone has its own, otherwise kept with a caution, an urgent reason and `zone_mismatch`; conflict and risk flags) → `check_sources` (third-party fetch MCP server checks the cited source pages are reachable) → `write` (LLM or stub draft, then the code citation check below) → `file_case` (MCP: `create_or_update_case` to `pending_review`, urgent or routine) → end. The graph has no node that can approve or release. Intake and routing are rule-based; the LLM is only used to word the draft.
 
 ## Citation check
 
@@ -122,8 +122,9 @@ Limits: figures are matched by a fixed word list next to each number. Uncited se
 | `search_guidance` | Search curated verbatim passages (soybean, maize) | **Working** |
 | `get_crop_calendar` | Cited calendar activities; empty when no local reference | **Working** |
 | `get_zone_planting_guidance` | Planting-window rows and national planting rules for the zone of a Ghana place, for the season asked (read-only) | **Working** (tested over MCP stdio) |
+| `get_recent_rainfall` | Last 30 days of daily rainfall for a district (Open-Meteo model estimate, CC BY 4.0), rain days, missing days, provider, licence, retrieval time; cached; offline says "rainfall unavailable". Attached to planting and top-dressing cases as a cited record for the officer, plus an officer-only line with the figures; with only a region or no place, the officer line says why there is no record and to ask the farmer for the district. Never says onset has been reached or "rains are good, plant now" (draft and SMS are both checked) | **Working** (recorded-response tests; one live run on 25 Oct 2026, [docs/rainfall-live-2026-10-25.md](docs/rainfall-live-2026-10-25.md)) |
 | `retrieve_reference` | One passage + source metadata; errors on unknown id | **Working** |
-| `create_or_update_case` (acting tool) | File case as `draft`/`pending_review` only; `approved` is rejected | **Working** |
+| `create_or_update_case` (acting tool) | File case as `draft`/`pending_review` only; `approved` is rejected. Returns the case's `created_at`, which the agent puts next to the cited planting windows as an officer-only fact ("Question received 25 Oct 2026. Windows cited: … The date is outside the cited windows."); no next window is inferred | **Working** |
 | `mcp-server-fetch` (third-party, not ours) | Check that cited source pages are reachable | **Working** (needs `--allow-private-ips` on networks with fake-IP DNS; runs with `raw=true` because its HTML extractor failed on Node 20) |
 | Weather tool | Forecasts | Not built |
 
@@ -159,7 +160,8 @@ Next: test speech-to-text on real, consented voice notes, record the demo video,
 ## Limitations
 
 - No public deployment yet; the MVP runs locally only.
-- Coverage is limited to the curated documents: Northern Ghana soybean and maize, maize planting windows for every agroecological zone, plus the national maize aflatoxin limit. The district-to-zone map (`data/zones.json`) is approximate and not yet checked by an extension officer. Other crops, prices and contact details are always passed to the officer.
+- Coverage is limited to the curated documents: Northern Ghana soybean and maize, maize planting windows for every agroecological zone, plus the national maize aflatoxin limit. The district-to-zone map (`data/zones.json`) is approximate and not yet checked by an extension officer.
+- Rainfall is a model estimate for one point per district (Open-Meteo), not a gauge reading, and the guides give no rainfall amount for onset, so AgriReach shows the record and the officer decides. Open-Meteo's free API is for non-commercial use only. Other crops, prices and contact details are always passed to the officer.
 - The quality of recommendations depends on the authority and freshness of source material.
 - Text based advice may not be enough to diagnose a plant health issue.
 - Voice notes: speech-to-text was tested on synthetic US-English clips and on 10 Ghanaian broadcast-English clips (run S1: 52.5% word error rate with Whisper "base", language mis-detected in 7/10; all 10 flagged for the officer). It is not tested on real farmer voice notes, and Whisper does not support Twi, Dagbani or Wali; such notes are flagged for the officer to listen to. Misheard place names ("Wa" -> "war") are confirmed back with the farmer, not corrected silently. The consent wording has had no legal review. The WhatsApp adapter has never sent or received a real message.

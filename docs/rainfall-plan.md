@@ -1,8 +1,27 @@
-# Rainfall signal: plan (25 Oct 2026, not built yet)
+# Rainfall signal: plan (25 Oct 2026) and what was built
+
+**Status (25 Oct 2026, later):** built on branch `feat/rainfall-signal` as the read-only MCP tool `get_recent_rainfall`
+(`src/agrireach/rainfall.py`). What differs from the plan below:
+- Provider: Herbert first chose NASA POWER, then asked to keep it off the default path. Default is **Open-Meteo**
+  (CC BY 4.0; free API for non-commercial use, which fits a non-commercial challenge entry). NASA POWER is an opt-in
+  cross-check (`AGRIREACH_RAINFALL_CROSSCHECK=nasa_power`) that only uses days at least 7 days old and only
+  MERRA2-only responses: responses that mix in near-real-time GEOSIT days came back 24 times larger for the same day.
+- Window: the last 30 complete days (UTC), not 14 days plus a forecast. No forecast is shown.
+- Coordinates: `data/district_coords.json` (GeoNames CC BY 4.0, 5 points from OpenStreetMap Nominatim, ODbL).
+- The record IS shown to the drafting model, as a citable record (`RAINFALL-OPEN-METEO:<district>:<date>`), because
+  the challenge brief asks recommendations to cite a rainfall record. A code check rejects any draft that says onset
+  has been reached; the farmer text leaves the record out.
+- The "~10x disagreement" below came from such a mixed NASA POWER response (71.28 / 24 = 2.97 mm); see
+  [rainfall-live-2026-10-25.md](rainfall-live-2026-10-25.md).
+
+The original plan follows.
 
 Goal: show the extension officer recent and forecast rainfall for the farmer's place, next to the cited planting
 guidance, so the officer can judge whether the guide's onset condition looks met. The tool informs the officer. It
 never decides, never changes the guide's window, and never reaches the farmer without the officer's approval.
+
+
+**Update (25 Oct 2026, after review):** top-dressing questions now get the rainfall record too, because the guide says to delay top dressing when the soil is very dry (APNI-SARI-2023-MAIZE p13). When the question gives only a region, or no place, no record is attached. Instead an officer-only line says why and asks the officer to get the district from the farmer. Planting questions also get an officer-only line with the case's received date next to the cited windows, plus a flag when the date is outside all of them (`src/agrireach/season.py`). These lines start with `Note: (officer only)`, are added after the citation checks, and are stripped before the SMS is proposed. A proposed SMS that reads as "rains are good, plant now" is withheld, so the officer writes it. A live check with the real model is in [season-fact-live-2026-10-25.md](season-fact-live-2026-10-25.md).
 
 ## What the cited guides say about onset (verbatim)
 
