@@ -100,3 +100,13 @@ def test_mouldy_maize_sms_never_quotes_aflatoxin_limits_and_the_officer_writes_i
 def test_model_sms_quoting_a_limit_is_rejected():
     assert any("regulatory limit" in p for p in fr.check("Do not eat maize above 15 ppb of aflatoxin.",
                                                        "maize limit 15 ppb [AGBETIAMEH-2018:aflatoxin-limits]"))
+
+
+def test_proposed_text_uses_plain_punctuation_so_sms_stays_gsm7(monkeypatch):
+    monkeypatch.setattr(llm, "mode", lambda: "llm")
+    monkeypatch.setattr(fr, "_llm_rewrite", lambda *a, **k: (
+        "Plant when the rains are well established \u2014 that\u2019s when the soil is moist\u2026", "llm:fake"))
+    officer = "Plant when the rains are well established [IITA-SSPING-2022:p18-moisture]."
+    fd = fr.propose(officer, "When do I plant soybean?", passages=PS)
+    assert fd.mode == "llm:fake" and fd.text == "Plant when the rains are well established - that's when the soil is moist..."
+    assert all(ord(ch) < 128 for ch in fd.text)

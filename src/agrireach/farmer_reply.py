@@ -214,12 +214,23 @@ def sms_claims(text: str, passages: list[dict], judge_call=None, caveat: dict | 
     return list(dict.fromkeys(out))
 
 
+# Typographic punctuation outside the GSM-7 SMS alphabet: one curly apostrophe switches the whole SMS to Unicode
+# (67 characters a part instead of 153). Proposed text uses the plain equivalents; officer edits are left alone.
+_PLAIN = str.maketrans({"\u2018": "'", "\u2019": "'", "\u201a": "'", "\u201c": '"', "\u201d": '"', "\u201e": '"',
+                        "\u2013": "-", "\u2014": "-", "\u2026": "...", "\u00a0": " "})
+
+
+def plain_punctuation(text: str) -> str:
+    return text.translate(_PLAIN)
+
+
 def propose(officer_text: str, question: str = "", language: str = "en", conflicts: bool = False,
             zone_caveat: dict | None = None, passages: list[dict] | None = None) -> FarmerDraft:
     """passages: the case's sources. When given, a model-written SMS must pass sms_claims or it is replaced by the
     rule-based version (fail closed)."""
     fd = _propose(officer_text, question, language, conflicts, zone_caveat, passages)
     fd.zone_caveat = zone_caveat
+    fd.text = plain_punctuation(fd.text)
     return fd
 
 
