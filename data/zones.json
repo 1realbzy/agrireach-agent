@@ -1,0 +1,155 @@
+{
+ "_source": "AgriReach curation, 25 Oct 2026. APPROXIMATE: no official district-to-zone table was found. Each region gets a default zone from the broad agroecological zone map of Ghana (Sudan savannah, Guinea savannah, transition, deciduous/semi-deciduous forest, rain forest, coastal savannah); districts known to lie in another zone get an override. 'boundary' marks districts that straddle two zones: the officer should confirm which zone the farm is in. District names follow data/gazetteer.json. To be checked by an extension officer before relying on it.",
+ "zones": {
+  "sudan_savannah": "Sudan savannah",
+  "guinea_savannah": "Guinea savannah",
+  "transition": "transition",
+  "deciduous_forest": "deciduous forest",
+  "rain_forest": "rain forest",
+  "coastal_savannah": "coastal savannah"
+ },
+ "region_default": {
+  "Upper East": "sudan_savannah",
+  "Upper West": "guinea_savannah",
+  "Northern": "guinea_savannah",
+  "Savannah": "guinea_savannah",
+  "North East": "guinea_savannah",
+  "Oti": "guinea_savannah",
+  "Bono East": "transition",
+  "Bono": "transition",
+  "Ahafo": "deciduous_forest",
+  "Ashanti": "deciduous_forest",
+  "Eastern": "deciduous_forest",
+  "Greater Accra": "coastal_savannah",
+  "Volta": "coastal_savannah",
+  "Central": "deciduous_forest",
+  "Western": "rain_forest",
+  "Western North": "deciduous_forest"
+ },
+ "district_override": {
+  "Biakoye": "deciduous_forest",
+  "Guan": "deciduous_forest",
+  "Jasikan": "deciduous_forest",
+  "Kadjebi": "deciduous_forest",
+  "Dormaa Central": "deciduous_forest",
+  "Dormaa East": "deciduous_forest",
+  "Dormaa West": "deciduous_forest",
+  "Ejura/Sekyedumase": "transition",
+  "Sekyere Afram Plains": "transition",
+  "Kwahu Afram Plains North": "transition",
+  "Kwahu Afram Plains South": "transition",
+  "Lower Manya Krobo": "coastal_savannah",
+  "Asuogyaman": "coastal_savannah",
+  "Hohoe": "deciduous_forest",
+  "Afadzato South": "deciduous_forest",
+  "Kpando": "deciduous_forest",
+  "North Dayi": "deciduous_forest",
+  "South Dayi": "deciduous_forest",
+  "Ho West": "deciduous_forest",
+  "Cape Coast": "coastal_savannah",
+  "Effutu": "coastal_savannah",
+  "Ekumfi": "coastal_savannah",
+  "Gomoa East": "coastal_savannah",
+  "Gomoa Central": "coastal_savannah",
+  "Gomoa West": "coastal_savannah",
+  "Komenda/Edina/Eguafo/Abirem": "coastal_savannah",
+  "Mfantsiman": "coastal_savannah",
+  "Awutu Senya East": "coastal_savannah",
+  "Awutu Senya West": "coastal_savannah",
+  "Abura/Asebu/Kwamankese": "coastal_savannah",
+  "Amenfi Central": "deciduous_forest",
+  "Wassa Amenfi East": "deciduous_forest",
+  "Amenfi West": "deciduous_forest",
+  "Aowin": "rain_forest",
+  "Suaman": "rain_forest"
+ },
+ "boundary": [
+  "Biakoye",
+  "Guan",
+  "Jasikan",
+  "Kadjebi",
+  "Krachi East",
+  "Krachi West",
+  "Krachi Nchumuru",
+  "Pru East",
+  "Pru West",
+  "Sene East",
+  "Sene West",
+  "Kintampo North",
+  "Atebubu-Amantin",
+  "Dormaa Central",
+  "Dormaa East",
+  "Dormaa West",
+  "Banda",
+  "Wenchi",
+  "Tain",
+  "Offinso North",
+  "Mampong",
+  "Sekyere Central",
+  "Sekyere Kumawu",
+  "Ejura/Sekyedumase",
+  "Lower Manya Krobo",
+  "Asuogyaman",
+  "Kwahu Afram Plains North",
+  "Kwahu Afram Plains South",
+  "Hohoe",
+  "Afadzato South",
+  "Kpando",
+  "North Dayi",
+  "South Dayi",
+  "Ho West",
+  "Ho",
+  "Amenfi Central",
+  "Wassa Amenfi East",
+  "Amenfi West",
+  "Aowin",
+  "Suaman",
+  "Awutu Senya East",
+  "Awutu Senya West",
+  "Lawra",
+  "Nandom",
+  "Lambussie Karni",
+  "Sissala East",
+  "Sissala West"
+ ],
+ "alias": {
+  "brong ahafo": {
+   "region": "Brong Ahafo (former region, now Bono, Bono East and Ahafo)",
+   "zone": "transition",
+   "boundary": true
+  },
+  "brong-ahafo": {
+   "region": "Brong Ahafo (former region, now Bono, Bono East and Ahafo)",
+   "zone": "transition",
+   "boundary": true
+  },
+  "north": {
+   "region": "Northern Ghana",
+   "zone": "guinea_savannah",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
+  },
+  "northern ghana": {
+   "region": "Northern Ghana",
+   "zone": "guinea_savannah",
+   "zones": [
+    "guinea_savannah",
+    "sudan_savannah"
+   ]
+  },
+  "nyankpala": {
+   "region": "Northern",
+   "zone": "guinea_savannah"
+  },
+  "bolga": {
+   "region": "Upper East",
+   "zone": "sudan_savannah"
+  },
+  "takoradi": {
+   "region": "Western",
+   "zone": "rain_forest"
+  }
+ }
+}

@@ -55,7 +55,12 @@ def test_maize_planting_in_northern_region_retrieves_maize_window_only():
     out = run("Rains came late. Can I still plant maize in Northern Region at the end of July?")
     assert out["region"] == "northern" and out["status"] == "pending_review"
     assert "APNI-SARI-2023-MAIZE:p5-planting-window" in out["sources"]
-    assert all(s.startswith("APNI-SARI-2023-MAIZE:") for s in out["sources"])
+    # Maize sources only (no soybean). Since 25 Oct 2026 the Guinea savannah window rows from the MoFA and IITA maize
+    # guides are added too, and their different dates are flagged for the officer.
+    assert all(s.split(":")[0] in ("APNI-SARI-2023-MAIZE", "MOFA-MAIZE", "IITA-MAIZE-2025") for s in out["sources"])
+    assert "MOFA-MAIZE:p12-guinea-sudan-major" in out["sources"] and out["zone_mismatch"] is False
+    assert not any(s.endswith(("forest-major", "transition-major", "coastal-major")) for s in out["sources"])
+    assert any(r.startswith("sources differ on maize planting window") for r in out["urgent_reasons"])
 
 
 def test_mouldy_maize_is_urgent_food_safety_with_aflatoxin_limit():
