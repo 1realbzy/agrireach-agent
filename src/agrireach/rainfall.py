@@ -6,7 +6,7 @@ amount for that, so AgriReach never says whether onset has been reached. See doc
 
 Default provider: Open-Meteo (model-based daily precipitation for past days; data CC BY 4.0; free API for
 non-commercial use). Optional cross-check: NASA POWER (AGRIREACH_RAINFALL_CROSSCHECK=nasa_power), only days at least
-7 days old. Values that are negative (NASA POWER's -999 fill value) or null are missing: never shown, counted.
+7 days old and only MERRA2-only responses (mixed MERRA2+GEOSIT responses came back 24 times larger). Values that are negative (NASA POWER's -999 fill value) or null are missing: never shown, counted.
 
 AGRIREACH_RAINFALL: "open-meteo" (default) | "off" | "fixture:<dir>" (recorded responses, for tests and demos).
 """
@@ -26,11 +26,10 @@ from agrireach import places
 COORDS = Path(__file__).resolve().parents[2] / "data" / "district_coords.json"
 DAYS = 30
 THRESHOLD_MM = 1.0   # display convention for a "rain day" (a common wet-day threshold); NOT an onset rule
-CROSSCHECK_MIN_AGE_DAYS = 7
-CAVEAT = ("Model and satellite rainfall estimates for one point per district can differ a lot from a local rain gauge "
-          "and from each other (for Kumasi on 11 Oct 2026, Open-Meteo gave 5.6 mm and NASA POWER 71.28 mm). The guides "
-          "give no rainfall amount that marks onset; AgriReach does not say whether onset has been reached. The officer "
-          "decides.")
+CROSSCHECK_MIN_AGE_DAYS = 7   # and the response must be MERRA2-only (finalised), see _nasa_power
+CAVEAT = ("This is a model estimate for one point in the district, not a rain-gauge reading; estimates can differ a lot "
+          "from a local gauge and from other providers. The guides give no rainfall amount that marks onset; AgriReach "
+          "does not say whether onset has been reached. The officer decides.")
 OPEN_METEO = {"provider": "Open-Meteo (model-based estimate, forecast API past days)",
               "provider_url": "https://open-meteo.com/", "licence": "CC BY 4.0",
               "licence_url": "https://open-meteo.com/en/license", "attribution": "Weather data by Open-Meteo.com",
@@ -146,10 +145,18 @@ def _nasa_power(loc: dict, start: dt.date, end: dt.date, fetch) -> dict:
     last = min(end, _today() - dt.timedelta(days=CROSSCHECK_MIN_AGE_DAYS))
     url = (f"https://power.larc.nasa.gov/api/temporal/daily/point?parameters=PRECTOTCORR&community=AG"
            f"&longitude={loc['lon']}&latitude={loc['lat']}&start={start:%Y%m%d}&end={last:%Y%m%d}&format=JSON")
-    vals = fetch(url)["properties"]["parameter"]["PRECTOTCORR"]
+    resp = fetch(url)
+    sources = resp.get("header", {}).get("sources", [])
+    if sources != ["MERRA2"]:
+        # Seen 25 Oct 2026: once the range reaches near-real-time GEOSIT days, every day in the response came back
+        # 24 times larger (Kumasi 25 Sep: 89.52 instead of 3.73). Only MERRA2-only responses are comparable.
+        return {**NASA_POWER, "available": False, "url": url,
+                "reason": f"not used: response mixes sources {sources} (MERRA2 + GEOSIT responses gave values 24 "
+                          "times larger for the same days); only MERRA2-only (finalised) responses are used"}
+    vals = resp["properties"]["parameter"]["PRECTOTCORR"]
     want = [(start + dt.timedelta(days=i)) for i in range((last - start).days + 1)]
     daily, missing = _clean((d.isoformat(), vals.get(f"{d:%Y%m%d}")) for d in want)
-    return {**NASA_POWER, "url": url, "period": {"start": start.isoformat(), "end": last.isoformat()},
+    return {**NASA_POWER, "available": True, "url": url, "period": {"start": start.isoformat(), "end": last.isoformat()},
             "daily": daily, "missing_days": len(missing), "missing_dates": missing,
             "total_mm": round(sum(d["mm"] for d in daily), 1),
             "note": f"Only days at least {CROSSCHECK_MIN_AGE_DAYS} days old are used."}

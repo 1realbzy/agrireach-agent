@@ -89,17 +89,28 @@ def test_cached_then_stale_when_offline(today):
     assert c["available"] and c["cache"]["stale"] and c["daily"] == a["daily"]
 
 
+def _nasa(fixture):
+    def fetch(url):
+        return json.loads((FIX / (fixture if "power.larc" in url else "open_meteo_kumasi.json")).read_text())
+    return fetch
+
+
 def test_nasa_power_cross_check_only_finalised_days_and_no_fill_values(today, monkeypatch):
     monkeypatch.setenv("AGRIREACH_RAINFALL_CROSSCHECK", "nasa_power")
-
-    def fetch(url):
-        return json.loads((FIX / ("nasa_power_kumasi.json" if "power.larc" in url else "open_meteo_kumasi.json")).read_text())
-    r = rainfall.recent("Kumasi", fetch=fetch)
-    cc = r["cross_check"]
+    cc = rainfall.recent("Kumasi", fetch=_nasa("nasa_power_kumasi_merra2_only.json"))["cross_check"]
     assert cc["provider"].startswith("NASA POWER") and cc["licence"]
-    assert all(d["date"] <= "2026-10-18" for d in cc["daily"])  # only days at least 7 days old
-    assert all(d["mm"] >= 0 for d in cc["daily"])
-    assert "-999" not in json.dumps(cc)
+    assert cc["daily"] and all(d["date"] <= "2026-10-18" for d in cc["daily"])  # only days at least 7 days old
+    assert all(d["mm"] >= 0 for d in cc["daily"]) and "-999" not in json.dumps(cc)
+    assert cc["daily"][0] == {"date": "2026-09-25", "mm": 3.7}
+
+
+def test_nasa_power_mixed_source_response_is_not_used(today, monkeypatch):
+    """Recorded 25 Oct 2026: when the requested range reaches GEOSIT (near-real-time) days, NASA POWER returned
+    every day 24 times larger (25 Sep: 89.52 instead of 3.73), plus -999 fill values. Such a response is not used."""
+    monkeypatch.setenv("AGRIREACH_RAINFALL_CROSSCHECK", "nasa_power")
+    r = rainfall.recent("Kumasi", fetch=_nasa("nasa_power_kumasi.json"))
+    assert r["available"] and r["cross_check"]["available"] is False
+    assert "GEOSIT" in r["cross_check"]["reason"] and "daily" not in r["cross_check"]
 
 
 def test_draft_must_not_claim_onset():
