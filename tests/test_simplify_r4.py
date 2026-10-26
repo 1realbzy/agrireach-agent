@@ -260,3 +260,9 @@ def test_bad_simulator_sender_is_a_definite_failure_back_in_the_queue(monkeypatc
     r = _approve(c, h, cid, "Harvest at 9 of 10 pods.")
     assert r.status_code == 200 and r.json()["status"] == "not_delivered"
     assert r.json()["delivery"]["outcome"] == "definitely_failed" and "not sent" in r.json()["delivery"]["detail"]
+
+
+def test_repeat_application_is_held_even_when_no_chemical_passage_is_cited():
+    manual = next(p for p in knowledge.load()["passages"] if p["id"] == "APNI-SARI-2023:weeds-manual")
+    result = safety_gate.assess("Apply twice a week.", [manual], question="Which herbicide should I use on my maize weeds?")
+    assert result.outcome != "pass" and any(f.rule_id == "S3" for f in result.findings)
