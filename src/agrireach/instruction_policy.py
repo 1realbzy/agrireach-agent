@@ -1,14 +1,8 @@
-"""Three hard stops for advice lines that are not copied from a cited source.
+"""Three hard stops for unsourced advice lines; the judge and officer handle agronomy.
 
-The gate does not try to judge agronomy; the judge and the officer do that.
-It only holds lines the officer must edit (they cannot be acknowledged):
-
-1. unsourced_input(): a product, chemical, household hazard, dose or rate;
-   a vague or capitalised thing being applied ("Pour it...", "Use Clear...");
-   or anything put on the leaves or plants.
-2. skips_officer(): any mention of the AEA or extension officer that is not a
-   plain referral. "If you are not sure, ask your AEA" passes; "Do not ask the
-   AEA" is held, because there the negation is aimed at the officer.
+1. unsourced_input(): a product, chemical, dose or rate; a vague or capitalised thing
+   being applied ("Pour it...", "Use Clear..."); or anything put on the plants.
+2. skips_officer(): an AEA mention that is not a plain referral ("Do not ask the AEA").
 3. burns_land(): burning, torching or setting fire, unless it says not to.
 """
 import re
@@ -34,6 +28,7 @@ CAPITALISED = re.compile(rf"\b(?i:{APPLY})\b(?:.*\b(?:in|with)\b)?\s+(?:the |som
 # Anything "on the leaves" is held unless the line is about looking at them.
 ON_PLANTS = re.compile(rf"\b(?:on|onto|over|(?:{APPLY})\s+\w+\s+to)\s+(?:the\s+|your\s+|each\s+)?(?:\w+\s+)?(?:leaf|leaves|plants?|crops?|"
                        r"weeds?|funnels?|cobs?|grains?|seeds?|stems?|roots?|maize|pods)\b", re.I)
+BURN = re.compile(r"\b(?:burn\w*|torch\w*|set\w* fire|with fire|fire to)\b", re.I)
 LOOKING = re.compile(r"\b(?:look|check|scout|inspect|see|find|search|count|eggs?|holes|damage|frass|spots|signs)\b", re.I)
 CLAIM = re.compile(r"\b(?:kills?|controls?|cures?|works? (?:on|against|for)|(?:is|are) (?:good|best|effective) "
                    r"(?:for|against|on))\s+(?:the |your )?(?:pests?|insects?|worms?|armyworms?|caterpillars?|weeds?|"
@@ -69,12 +64,8 @@ DEVALUE = re.compile(r"\b(?:no|not|never|don't|without|instead|unnecessary|skip|
 
 
 def skips_officer(sentence: str) -> bool:
-    """True when a line steers the farmer away from the officer.
-
-    Each clause naming the officer must be a plain referral with no negation in
-    it. A clause that does not name the officer ("If you are not sure, ...") is
-    left alone unless it says the visit is not needed or offers someone else instead.
-    """
+    """True when a line steers the farmer away from the officer: a clause naming the officer must be a
+    plain referral with no negation; other clauses only count if they say the visit isn't needed."""
     s = sentence.strip().rstrip(".!?")
     if re.search(r"\binstead\b", s, re.I) and re.search(r"\b(?:ask|consult|talk to|see|call)\b", s, re.I):
         return True
@@ -85,14 +76,11 @@ def skips_officer(sentence: str) -> bool:
                 return OFFICER.search(s) is not None
             continue
         # A trailing condition ("... if you see no improvement") is about the farm, not the officer.
-        core = re.split(r"\s+\b(?:if|when|before|after|until)\b(?! (?:your|the) (?:local )?aea)", clause, 1, flags=re.I)[0]
+        core = re.split(r"\s+\b(?:if|when|before|after|until)\b(?! (?:your|the) (?:local )?aea)", clause, maxsplit=1, flags=re.I)[0]
         waits = re.match(r"(?:do not|don't|never) (?:skip|ignore|forget|\w+ (?:anything )?until)\b", clause, re.I)
         if not REFERRAL.search(clause) or (DEVALUE.search(core) and not waits):
             return True
     return False
-
-
-BURN = re.compile(r"\b(?:burn\w*|torch\w*|set\w* fire|with fire|fire to)\b", re.I)
 
 
 def burns_land(sentence: str) -> bool:

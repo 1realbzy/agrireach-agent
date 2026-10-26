@@ -20,19 +20,16 @@ PROTECTIVE_RULE = re.compile(r"^(?:wear (?:protective )?gloves\b|(?:never|do not
                              r"(?:(?:unapproved|unlabelled) (?:pesticides?|chemicals?)|(?:pesticides?|chemicals?) "
                              r"without (?:a |the )?labels?)\b)", re.I)
 PERSON = r"(?:AEA|agricultural extension officer|agricultural extension agent|extension officer|extension agent)"
-REFERRALS = {
-    f"{verb} your local {person} {tail}."
-    for verb in ("Consult", "Ask")
-    for person in ("AEA", "agricultural extension officer", "agricultural extension agent")
-    for tail in ("before choosing or applying a pesticide", "before applying any herbicide",
-                 "for advice on the recommended fall army worm control pesticide in your area")
-}
+# Fixed lines that always pass: referrals, protective rules and "I don't know".
+REFERRALS = {f"{verb} your local {person} {tail}." for verb in ("Consult", "Ask")
+             for person in ("AEA", "agricultural extension officer", "agricultural extension agent")
+             for tail in ("before choosing or applying a pesticide", "before applying any herbicide",
+                          "for advice on the recommended fall army worm control pesticide in your area")}
+REFERRALS |= {f"{start} your local {person} {end}." for person in ("AEA", "extension agent", "agricultural extension officer")
+              for start, end in (("Talk to", "about which pesticide to use"), ("Ask", "which fall armyworm pesticide to use"))}
 PROTECTIVE = {"Do not use unapproved pesticides.", "Do not spray without gloves."}
-NO_ADVICE = {"I do not know.", "I am not sure.", "Your extension officer will confirm which to follow."}
-NO_ADVICE.add("I do not know which pesticide to recommend.")
-for person in ("AEA", "extension agent", "agricultural extension officer"):
-    REFERRALS.update({f"Talk to your local {person} about which pesticide to use.",
-                      f"Ask your local {person} which fall armyworm pesticide to use."})
+NO_ADVICE = {"I do not know.", "I am not sure.", "Your extension officer will confirm which to follow.",
+             "I do not know which pesticide to recommend."}
 
 
 def registered_template(text: str) -> bool:
@@ -40,22 +37,16 @@ def registered_template(text: str) -> bool:
     return normalized(text) in {normalized(s) for s in REFERRALS | PROTECTIVE | NO_ADVICE}
 
 
-TOPICS = {
-    "storage": r"\b(?:stor\w*|sacks?|bags?|grain|bagging|tablets?|postharvest)\b|\bkeep\b.*\bcobs?\b",
-    "faw": r"\b(?:faw|army\s?worms?|worms?|holes|infestation)\b",
-    "weeds": r"\b(?:weeds?|weeding|herbicides?)\b",
-}
-SOURCE_TOPICS = {"APNI-SARI-2023:weeds-herbicide": "weeds",
-                 "APNI-SARI-2023-MAIZE:p20-faw-control": "faw",
+TOPICS = {"storage": r"\b(?:stor\w*|sacks?|bags?|grain|bagging|tablets?|postharvest)\b|\bkeep\b.*\bcobs?\b",
+          "faw": r"\b(?:faw|army\s?worms?|worms?|holes|infestation)\b", "weeds": r"\b(?:weeds?|weeding|herbicides?)\b"}
+SAFEGUARD = {"APNI-SARI-2023:weeds-herbicide": "before applying any herbicide",  # source-specific referral lines
+             "APNI-SARI-2023-MAIZE:p20-faw-control": "fall army ?worm"}
+SOURCE_TOPICS = {"APNI-SARI-2023:weeds-herbicide": "weeds", "APNI-SARI-2023-MAIZE:p20-faw-control": "faw",
                  "APNI-SARI-2023-MAIZE:p22-sacks": "storage"}
 
 
 def applicable(passage: dict, question: str, text: str) -> bool:
-    """Exclude only classified incidental sources; ambiguity keeps S1 enabled.
-
-    The immutable question participates so omitting reply keywords cannot remove
-    its safeguards. Unknown IDs/topics and changed registered content fail closed.
-    """
+    """False only for a registered, unchanged source off the question's topic; anything unknown keeps S1 on."""
     topic = SOURCE_TOPICS.get(passage.get("id"))
     if not topic or fingerprint(passage.get("text", "")) != SOURCE_FINGERPRINTS.get(passage.get("id")):
         return True
@@ -78,8 +69,7 @@ def normalized(text: str) -> str:
 
 def fingerprint(value) -> str:
     """Stable SHA256 of canonical UTF8 JSON, including exact text inside strings."""
-    return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
-                                     separators=(",", ":")).encode()).hexdigest()
+    return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -91,7 +81,6 @@ class Finding:
     recovery: tuple[str, ...] = ("revise", "reject", "request_info")
 
     def to_dict(self) -> dict:
-        """Serialize rule evidence consistently for authenticated clients and storage."""
         return asdict(self)
 
 
@@ -106,13 +95,7 @@ class Assessment:
 
 
 def assess(text: str, passages: list[dict], *, language: str = "en", question: str = "") -> Assessment:
-    """Assess deterministic rules; return evidence without I/O or content rewriting.
-
-    Args: exact farmer text, resolved source passages and stored proposal language.
-    Returns: pass, safety_blocked or review_required plus rule evidence.
-    Safety assumption: supplied passages are the immutable case snapshot. Unknown
-    languages and uncertain chemical clauses require revision, not acknowledgement.
-    """
+    """Return pass, review_required or safety_blocked (neither held outcome can be acknowledged)."""
     from agrireach.language import TWI_MARKERS
     from agrireach import instruction_policy
 
@@ -126,37 +109,29 @@ def assess(text: str, passages: list[dict], *, language: str = "en", question: s
         add("TEXT", text or "", "Explicit farmer text is required")
         return result
     words = re.findall(r"[^\W\d_]+", text.casefold())
-    twi_hits = sum(w in TWI_MARKERS for w in words)
     english_hits = sum(w in {"the", "your", "when", "before", "do", "not", "consult", "use", "harvest", "maize", "pesticide", "to", "is", "at"} for w in words)
     foreign_script = bool(re.search(r"[\u0370-\u052f\u0600-\u06ff\u0900-\u0dff\u3040-\u9fff]", text))
-    english = not (twi_hits >= 2 or foreign_script or (language != "en" and english_hits < 2))
+    english = not (sum(w in TWI_MARKERS for w in words) >= 2 or foreign_script or (language != "en" and english_hits < 2))
     if not english:  # held for a reviewer who reads the language; the English rules below cannot read it
         add("LANGUAGE", "", "Language assessment is outside the English policy", uncertain=True)
     source_sentences = {normalized(s) for p in passages for s in sentences(p.get("text", ""))}
-    safe_templates = {normalized(s) for s in REFERRALS | PROTECTIVE | NO_ADVICE}
     chemical_passages = [p for p in passages if p.get("risk") == "chemical" or CHEMICAL.search(p.get("text", ""))]
     ss = sentences(text)
-    # All baseline chemical requirements permit local consultation. Additional
-    # precautions in later corpus versions cannot inherit this exemption.
-    registry_ids = {"APNI-SARI-2023:weeds-herbicide", "APNI-SARI-2023-MAIZE:p20-faw-control",
-                    "APNI-SARI-2023-MAIZE:p22-sacks"}
     referral_sentences = [normalized(s) for s in ss if normalized(s) in {normalized(x) for x in REFERRALS}]
-    preuse_referral = any("before choosing or applying a pesticide" in s for s in referral_sentences)
     for p in chemical_passages:
         if not applicable(p, question, text):
             continue
         consultation = [s for s in sentences(p["text"]) if re.search(PERSON, s, re.I)]
         kept = any(normalized(s) == normalized(c) for s in ss for c in consultation)
-        if p["id"] not in registry_ids or fingerprint(p["text"]) != SOURCE_FINGERPRINTS.get(p["id"]):
+        if fingerprint(p["text"]) != SOURCE_FINGERPRINTS.get(p["id"]):  # unknown or changed chemical source
             add("S1", "", "Chemical source requires a registered safeguard", [p["id"], p["text"]], uncertain=True)
-        elif not (kept or preuse_referral or
-                  (p["id"] == "APNI-SARI-2023:weeds-herbicide" and any("before applying any herbicide" in s for s in referral_sentences)) or
-                  (p["id"] == "APNI-SARI-2023-MAIZE:p20-faw-control" and any("fall army worm" in s or "fall armyworm" in s for s in referral_sentences))):
+        elif not (kept or any(re.search(r"before choosing or applying a pesticide|" + SAFEGUARD.get(p["id"], "^$"), s)
+                              for s in referral_sentences)):
             required = consultation or ["Consult your local AEA before choosing or applying a pesticide."]
             add("S1", "", "Required safeguard: " + " / ".join(required), [p["id"], *required])
     for s in ss:
         norm = normalized(s)
-        if norm in safe_templates or norm in source_sentences:
+        if registered_template(s) or norm in source_sentences:
             continue
         reversal = re.search(
             r"\b(?:do not|don't|never|no need to)\s+follow\s+(?:the\s+)?(?:pesticide\s+)?label\b"
@@ -170,15 +145,13 @@ def assess(text: str, passages: list[dict], *, language: str = "en", question: s
         if instruction_policy.burns_land(s) and not any(instruction_policy.BURN.search(p.get("text", "")) for p in passages):
             add("S4", s, "Burning is not advised without a cited source. Revise or remove this line.", uncertain=True)
             continue
-        # Unsourced products, doses, unclear materials and spraying need editing; neither
-        # an acknowledgement nor a favourable judge can clear them. Protective rules
-        # ("Never use unapproved pesticides") and "do not spray" may mention chemicals.
-        problem = instruction_policy.unsourced_input(s)
+        # S3: unsourced products, doses, unclear materials and spraying must be edited.
+        # Protective rules ("Never use unapproved pesticides") and "do not spray" may mention chemicals.
         harmless = PROTECTIVE_RULE.match(s) or re.search(
             r"\b(?:without|no|not|never|before you)\s+(?:any\s+)?spray\w*|\bspray\w*\s+(?:clean\s+)?water\b|"
             r"\bwhen spraying\b|\badvice on (?:the )?recommended\b", s, re.I)
-        if not problem and CHEMICAL.search(s) and not harmless:
-            problem = "mentions a pesticide or spraying"
+        problem = instruction_policy.unsourced_input(s) or (
+            None if harmless or not CHEMICAL.search(s) else "mentions a pesticide or spraying")
         if problem and harmless and not re.search(r"\d|\bit\b|\bthem\b", s):
             problem = None
         if problem:

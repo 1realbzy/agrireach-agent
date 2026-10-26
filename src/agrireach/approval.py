@@ -52,23 +52,19 @@ def assess_candidate(text: str, ctx: dict) -> dict:
         result["informational"].append("The approved text omits the case zone caveat; review source applicability")
     if ctx["contact"] and ctx["contact"]["channel"] == "sms" and text and sms.length_prompt(text):
         reason = sms.length_prompt(text)
-        finding = safety_gate.Finding("CHANNEL_LENGTH", text, reason)
         return result | {"outcome": "safety_blocked", "reason": reason,
-                         "findings": [finding.to_dict()]}
+                         "findings": [safety_gate.Finding("CHANNEL_LENGTH", text, reason).to_dict()]}
     if result["outcome"] != "pass" or result["judge_status"] != "required":
         return result
     if not ctx["sources"]:
-        finding = safety_gate.Finding("SOURCE_SUPPORT", text, "No source supports the candidate")
-        return result | {"outcome": "review_required", "reason": finding.reason,
-                         "findings": [finding.to_dict()]}
+        return result | {"outcome": "review_required", "reason": "No source supports the candidate",
+                         "findings": [safety_gate.Finding("SOURCE_SUPPORT", text, "No source supports the candidate").to_dict()]}
     ids = ", ".join(p["id"] for p in ctx["sources"])
     from agrireach.farmer_reply import _ABBREV_WORDS
     # Deterministic rules have already inspected every sentence. Only an exact
     # code built caveat can be omitted from the probabilistic source comparison.
     fixed_caveat = farmer_reply.zone_caveat(ctx["case"]["region"] or "")
-    fixed = {farmer_reply.CONFIRM}
-    if fixed_caveat:
-        fixed.add(fixed_caveat["sentence"])
+    fixed = {farmer_reply.CONFIRM, (fixed_caveat or {}).get("sentence")}
     source_sentences = {safety_gate.normalized(s) for p in ctx["sources"] for s in safety_gate.sentences(p["text"])}
     checked_sentences = [re.sub(rf"\b({_ABBREV_WORDS})\.(?=\s)", r"\1", s)
                          for s in safety_gate.sentences(text)
@@ -79,8 +75,7 @@ def assess_candidate(text: str, ctx: dict) -> dict:
     draft = "\n".join(f"{s} [{ids}]" for s in checked_sentences)
     figures = citation_check.check_draft(draft, ctx["sources"])
     if not figures.ok:
-        findings = [safety_gate.Finding("SOURCE_FIGURES", "", problem,
-                    tuple(p["id"] for p in ctx["sources"])).to_dict()
+        findings = [safety_gate.Finding("SOURCE_FIGURES", "", problem, tuple(p["id"] for p in ctx["sources"])).to_dict()
                     for problem in figures.problems]
         return result | {"outcome": "review_required", "reason": "Figures do not match cited sources",
                          "warnings": figures.problems, "findings": findings}
@@ -98,21 +93,16 @@ def assess_candidate(text: str, ctx: dict) -> dict:
         model_warnings = [v for v in (checked.judge or {}).get("verdicts", []) if v["verdict"] == "not_supported"]
         chemical = any(p.get("risk") == "chemical" for p in ctx["sources"])
         food_safety = bool(re.search(r"\b(?:aflatoxin|poison(?:ing)?|mouldy|moldy)\b", ctx["case"]["question"] + " " + text, re.I))
-        source_conflict = any(str(p).startswith("sources differ") for p in proposal.get("problems", []))
-        # The judge is advisory. A "not supported" verdict on how-to advice (when to
-        # harvest or plant, what to apply, how much, how often) must be edited by the
-        # officer; acknowledging the warning is not enough to send it.
-        how_to = any(re.search(r"\b(?:harvest\w*|plant\w*|sow\w*|apply\w*|appl(?:y|ied)|put|pour|mix\w*|spray\w*|"
-                               r"treat\w*|store\w*|stor(?:e|age)|dry|dried|dose|times|every|daily|weekly|days?|weeks?|"
-                               r"when|before|after)\b|\d", v["sentence"], re.I) for v in model_warnings)
+        # The judge is advisory: a "not supported" verdict on how-to advice (when, what, how much,
+        # how often) must be edited by the officer; acknowledging the warning is not enough.
+        how_to = any(re.search(r"\b(?:harvest|plant|sow|appl[yi]|put|pour|mix|spray|treat|stor|dr[yi]|dose|times|every|"
+                               r"daily|weekly|days?|weeks?|when|before|after)\w*|\d", v["sentence"], re.I) for v in model_warnings)
         critical = chemical or food_safety or source_conflict or how_to
-        result["findings"] = [{"rule_id": "SOURCE_SUPPORT", "sentence": v["sentence"],
-                               "reason": v.get("why", "Unsupported source claim"), "evidence": v["cited"],
-                               "recovery": ["revise", "reject", "request_info"]} for v in model_warnings]
-        if not result["findings"]:
-            result["findings"] = [{"rule_id": "SOURCE_SUPPORT", "sentence": "", "reason": p,
-                                    "evidence": [s["id"] for s in ctx["sources"]],
-                                    "recovery": ["revise", "reject", "request_info"]} for p in checked.problems]
+        recovery = ["revise", "reject", "request_info"]
+        result["findings"] = [{"rule_id": "SOURCE_SUPPORT", "sentence": v["sentence"], "reason": v.get("why", "Unsupported source claim"),
+                               "evidence": v["cited"], "recovery": recovery} for v in model_warnings] or [
+            {"rule_id": "SOURCE_SUPPORT", "sentence": "", "reason": p, "evidence": [s["id"] for s in ctx["sources"]],
+             "recovery": recovery} for p in checked.problems]
         result["warnings"] = checked.problems
         return result | {"outcome": "acknowledgement_required" if model_warnings and len(model_warnings) == len(checked.problems) and not critical else "review_required",
                          "judge_status": "concern"}
