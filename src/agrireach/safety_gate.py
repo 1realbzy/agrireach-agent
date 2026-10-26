@@ -103,7 +103,11 @@ def assess(text: str, passages: list[dict], *, language: str = "en") -> Assessme
         norm = normalized(s)
         if norm in safe_templates:
             continue
-        reversal = re.search(r"\b(?:do not|don't|never|no need to)\s+(?:consult|ask|follow|wear)\b|\bignore\b.*\blabel\b|^spray\b.*\bwithout gloves\b", norm)
+        reversal = re.search(
+            rf"\b(?:do not|don't|never|no need to)\s+(?:consult|ask)\s+(?:your\s+)?(?:local\s+)?{PERSON}\b"
+            r"|\b(?:do not|don't|never|no need to)\s+follow\s+(?:the\s+)?(?:pesticide\s+)?label\b"
+            r"|\b(?:do not|don't|never|no need to)\s+wear\s+(?:protective\s+)?gloves\b"
+            r"|\bignore\b.*\blabel\b|^spray\b.*\bwithout gloves\b", norm, re.I)
         if reversal and (chemical_passages or CHEMICAL.search(s)):
             add("S2", s, "Instruction reverses consultation, label or protection requirements")
             continue

@@ -45,6 +45,7 @@ class Decision(BaseModel):
     # The exact farmer-facing text being approved (required to approve): this, and only this, is delivered.
     farmer_text: str | None = None
     # Approving requires the officer to confirm they checked the farmer text against the cited sources.
+    acknowledgement: str | None = None
     expected_revision: int | None = None
     confirmed: bool = False
 
@@ -111,40 +112,16 @@ def decide(case_id: int, d: Decision, officer: str = Depends(current_officer)):
     if d.decision in ("approve", "edit_approve") and not d.confirmed:
         raise HTTPException(400, "confirm that you checked the farmer text against the cited sources before approving")
     warnings = []
-    if d.decision in ("approve", "edit_approve"):
-        contact = db.get_contact(con, case_id)
-        if contact is not None and contact["channel"] == "sms" and (p := sms.length_prompt(d.farmer_text)):
-            # The text could never be sent; approving would release a case that can't reach the farmer.
-            raise HTTPException(400, p)
-        current = db.get_case(con, case_id)
-        caveat = (json.loads(current["farmer_draft"] or "null") or {}).get("zone_caveat") if current else None
-        if not farmer_reply.caveat_kept(d.farmer_text, caveat):
-            warnings.append(f"the approved farmer text has no zone caveat: the guidance is from sources for "
-                            f"{caveat['sources_for']} and the farmer is in {caveat['region']}")
-        # Officer-written or kept text is warned about and logged, never blocked: the officer is the authority.
-        if current:
-            ps = [knowledge.reference(i) for i in json.loads(current["sources"] or "[]")]
-            with llm.usage_logged(case_id, f"officer:{officer}", "approval_check"):
-                warnings += [f"farmer text not backed by the case's sources: {p}"
-                             for p in farmer_reply.sms_claims(d.farmer_text, ps, caveat=caveat)]
-            # The proposal carries the source's pesticide line (farmer_reply.ensure_safety_line); an officer who takes
-            # it out is warned and logged, and the line is never put back: what is approved is what is sent.
-            # Whether a line is needed comes from the case's passages and original proposal, never from the officer's
-            # (editable) draft: in live runs 5 and 6 (F1-b) the officer removed it from both texts and got no warning.
-            proposal = (json.loads(current["farmer_draft"] or "null") or {}).get("text") or ""
-            if farmer_reply.drops_safety_line(d.farmer_text, ps, proposal):
-                warnings.append("approved farmer text drops the pesticide safety line: the case's sources (or the "
-                                "proposed text) carry one on pesticides or spraying; keep it")
     try:
         row = db.officer_decide(con, case_id, officer=officer, decision=d.decision, edited_text=d.edited_text,
-                                note=d.note, farmer_text=d.farmer_text, expected_revision=d.expected_revision)
+                                note=d.note, farmer_text=d.farmer_text, expected_revision=d.expected_revision, acknowledgement=d.acknowledgement)
         delivery = None
         if row["status"] == "approved":
             row = db.release_to_farmer(con, case_id, actor=f"officer:{officer}")
             delivery = service.deliver(con, case_id, service.configured_channels())
             row = db.get_case(con, case_id)  # 'not_delivered' if the channel send failed
     except db.SafetyError as e:
-        raise HTTPException(422, e.assessment)
+        raise HTTPException({"acknowledgement_required": 409, "assessment_unavailable": 503}.get(e.assessment["outcome"], 422), e.assessment)
     except db.GateError as e:
         raise HTTPException(409, str(e))
     except ValueError as e:
@@ -201,7 +178,7 @@ def release(case_id: int, officer: str = Depends(current_officer)):
     try:
         db.release_to_farmer(con, case_id, actor=f"officer:{officer}")
     except db.SafetyError as e:
-        raise HTTPException(422, e.assessment)
+        raise HTTPException({"acknowledgement_required": 409, "assessment_unavailable": 503}.get(e.assessment["outcome"], 422), e.assessment)
     except db.GateError as e:
         raise HTTPException(409, str(e))
     delivery = service.deliver(con, case_id, service.configured_channels())
@@ -223,7 +200,12 @@ def farmer_view(case_id: int):
     if row["status"] != "released":
         return {"case_id": case_id, "status": row["status"], "answer": None,
                 "message": "Waiting for an extension officer to review your question."}
-    return {"case_id": case_id, "status": "released", "answer": row["farmer_text"] or row["final_text"],
+    from agrireach.approval import validated_approval
+    try:
+        _approval, payload = validated_approval(con, case_id)
+    except db.GateError:
+        return {"case_id": case_id, "status": "review_required", "answer": None}
+    return {"case_id": case_id, "status": "released", "answer": payload["farmer_text"],
             "approved_by": row["officer"],
             "approved_at": row["decided_at"]}
 

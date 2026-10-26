@@ -91,6 +91,8 @@ def parse(raw: str, items: list[tuple[str, list[dict]]]) -> list[dict]:
         n = v.get("n") if isinstance(v, dict) else None
         if isinstance(n, bool) or not isinstance(n, (int, str)) or not str(n).strip().isdigit():
             raise JudgeParseError("judge reply has a verdict without a valid item number 'n'", raw)
+        if int(n) in by_n or not 1 <= int(n) <= len(items):
+            raise JudgeParseError("duplicate or unexpected verdict item number", raw)
         by_n[int(n)] = v
     out = []
     for n, (sentence, ps) in enumerate(items, 1):

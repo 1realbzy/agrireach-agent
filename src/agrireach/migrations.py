@@ -27,8 +27,9 @@ def ensure_schema(con: sqlite3.Connection, path: str) -> None:
     exists = con.execute("SELECT 1 FROM sqlite_master WHERE name='schema_migrations'").fetchone()
     if exists:
         rows = con.execute("SELECT version,checksum FROM schema_migrations ORDER BY version").fetchall()
-        if [(r[0], r[1]) for r in rows] != [(VERSION, CHECKSUM)]:
+        if [(r[0], r[1]) for r in rows] not in ([(VERSION, CHECKSUM)], [(VERSION, CHECKSUM), (2, CHECKSUM_V2)]):
             raise RuntimeError("Unsupported migration ledger; stop writers and inspect the database")
+        upgrade_v2(con)
         return
     if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
         raise RuntimeError("Database integrity check failed; no migration applied")
@@ -50,6 +51,48 @@ def ensure_schema(con: sqlite3.Connection, path: str) -> None:
             con.execute(statement)
         con.execute("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, checksum TEXT NOT NULL, applied_at TEXT NOT NULL)")
         con.execute("INSERT INTO schema_migrations VALUES (?,?,?)", (VERSION, CHECKSUM, datetime.now(timezone.utc).isoformat()))
+        if con.execute("PRAGMA foreign_key_check").fetchone():
+            raise RuntimeError("Foreign key verification failed")
+        con.commit()
+        upgrade_v2(con)
+    except BaseException:
+        con.rollback()
+        raise
+
+
+STATEMENTS_V2 = [
+    "DROP TRIGGER cases_content_revision",
+    "CREATE TRIGGER cases_content_revision AFTER UPDATE OF draft,farmer_draft,sources,question,crop,region ON cases WHEN NEW.revision=OLD.revision BEGIN UPDATE cases SET revision=revision+1 WHERE id=NEW.id; END",
+    "CREATE TABLE approvals(id INTEGER PRIMARY KEY, case_id INTEGER NOT NULL REFERENCES cases(id), revision INTEGER NOT NULL, submission_id INTEGER REFERENCES advisory_submissions(id), assessment_id INTEGER REFERENCES safety_assessments(id), payload TEXT NOT NULL, fingerprint TEXT NOT NULL, provenance TEXT NOT NULL, created_at TEXT NOT NULL)",
+    "CREATE TABLE acknowledgement_challenges(token_hash TEXT PRIMARY KEY, case_id INTEGER NOT NULL REFERENCES cases(id), assessment_id INTEGER NOT NULL REFERENCES safety_assessments(id), binding TEXT NOT NULL, expires_at TEXT NOT NULL, consumed_approval INTEGER REFERENCES approvals(id))",
+    "CREATE TABLE audit_events(id INTEGER PRIMARY KEY, case_id INTEGER REFERENCES cases(id), event_name TEXT NOT NULL, actor TEXT NOT NULL, details TEXT NOT NULL, created_at TEXT NOT NULL)",
+    "CREATE TABLE delivery_jobs(id INTEGER PRIMARY KEY, approval_id INTEGER NOT NULL REFERENCES approvals(id), channel TEXT NOT NULL, recipient_hash TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('pending','sending','accepted','definitely_failed','unknown','undeliverable')), claim_id TEXT, updated_at TEXT NOT NULL, UNIQUE(approval_id,channel))",
+    "CREATE TABLE delivery_attempts(id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL REFERENCES delivery_jobs(id), claim_id TEXT NOT NULL UNIQUE, outcome TEXT NOT NULL, started_at TEXT NOT NULL, completed_at TEXT, detail TEXT)",
+]
+# Immutable content is distinct from mutable delivery state. An administrator who
+# controls SQLite can still drop these guards; that is outside the trust boundary.
+for _table in ("approvals", "advisory_submissions", "safety_assessments", "audit_events"):
+    for _action in ("UPDATE", "DELETE"):
+        STATEMENTS_V2.append(f"CREATE TRIGGER {_table}_{_action.lower()} BEFORE {_action} ON {_table} BEGIN SELECT RAISE(ABORT, 'immutable evidence'); END")
+CHECKSUM_V2 = hashlib.sha256("\n".join(STATEMENTS_V2).encode()).hexdigest()
+
+
+def upgrade_v2(con):
+    """Upgrade approval and delivery storage atomically; preserve legacy provenance."""
+    import json
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        if con.execute("SELECT 1 FROM schema_migrations WHERE version=2").fetchone():
+            con.rollback()
+            return
+        for statement in STATEMENTS_V2:
+            con.execute(statement)
+        for row in con.execute("SELECT * FROM cases WHERE officer IS NOT NULL AND status IN ('approved','released','not_delivered','undeliverable')").fetchall():
+            payload = dict(row)
+            text = json.dumps(payload, sort_keys=True)
+            con.execute("INSERT INTO approvals(case_id,revision,payload,fingerprint,provenance,created_at) VALUES (?,?,?,?,'legacy_unvalidated',?)",
+                        (row['id'], row['revision'], text, hashlib.sha256(text.encode()).hexdigest(), row['updated_at']))
+        con.execute("INSERT INTO schema_migrations VALUES (2,?,?)", (CHECKSUM_V2, datetime.now(timezone.utc).isoformat()))
         if con.execute("PRAGMA foreign_key_check").fetchone():
             raise RuntimeError("Foreign key verification failed")
         con.commit()

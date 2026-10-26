@@ -135,74 +135,22 @@ def agent_upsert_case(con, *, status: str, question: str = "", case_id: int | No
     return case_id
 
 
-def officer_decide(con, case_id: int, *, officer: str, decision: str, edited_text: str | None = None,
-                   note: str | None = None, farmer_text: str | None = None,
-                   expected_revision: int | None = None) -> dict:
-    """Assess explicit farmer text and reject stale revisions before any approval.
-
-    SafetyError retains structured findings; GateError requests reload/recovery.
-    Checkpoint one holds model dependent candidates for further assessment.
-    """
-    if not officer or not officer.strip():
-        raise GateError("a named officer is required")
-    if decision not in OFFICER_DECISIONS:
-        raise ValueError(f"decision must be one of {sorted(OFFICER_DECISIONS)}")
-    row = get_case(con, case_id)
-    if row is None:
-        raise ValueError(f"case {case_id} not found")
-    if expected_revision is None or expected_revision != row["revision"]:
-        raise GateError("stale_revision: supply the current case revision")
-    if decision in ("approve", "edit_approve"):
-        from agrireach import safety_gate, knowledge
-        snapshot = dict(row)
-        passages = [knowledge.reference(i) for i in json.loads(row["sources"])]
-        if not all(passages):
-            raise GateError("review_required: a source cannot be resolved")
-        language = (json.loads(row["farmer_draft"] or "null") or {}).get("language", "en")
-        assessment = safety_gate.assess(farmer_text, passages, language=language)
-        with con:
-            con.execute("INSERT INTO advisory_submissions(case_id,revision,officer,farmer_text,officer_text,decision,note,created_at) VALUES (?,?,?,?,?,?,?,?)",
-                        (case_id, expected_revision, officer, farmer_text, edited_text, decision, note, now()))
-            con.execute("INSERT INTO safety_assessments(case_id,snapshot,assessment,created_at) VALUES (?,?,?,?)",
-                        (case_id, json.dumps(snapshot), json.dumps(assessment.to_dict()), now()))
-        if assessment.outcome != "pass":
-            raise SafetyError(assessment.to_dict())
-        if assessment.judge_status == "required":
-            # Checkpoint 1 deliberately holds probabilistic assessments until the
-            # secure acknowledgement protocol is available in checkpoint 2.
-            raise SafetyError({"outcome": "review_required", "findings": [], "reason": "probabilistic assessment not yet enabled"})
-    prev = row["status"]
-    if prev not in ("pending_review", "not_delivered"):
-        raise GateError(f"case {case_id} is '{prev}', not pending_review")
-    status = {"approve": "approved", "edit_approve": "approved", "reject": "rejected",
-              "request_info": "needs_info"}[decision]
-    final = None
-    if decision == "approve":
-        final = row["draft"]
-    elif decision == "edit_approve":
-        if not edited_text:
-            raise ValueError("edited_text required for edit_approve")
-        final = edited_text
-    farmer = None
-    if final is not None:
-        farmer = farmer_text
-    t = now()
-    # Write only if the case is STILL in the status read above: the check and this write are not atomic, so two
-    # officers deciding at once would otherwise both "win" (last write on the record, first text on the phone).
-    cur = con.execute("UPDATE cases SET status=?, final_text=?, farmer_text=?, officer=?, decided_at=?, officer_note=?,"
-                      " updated_at=?, revision=revision+1 WHERE id=? AND status=? AND revision=?",
-                      (status, final, farmer, officer.strip(), t, note, t, case_id, prev, expected_revision))
-    con.commit()
-    if cur.rowcount != 1:
-        log(con, f"officer:{officer.strip()}", "officer_decision", {"decision": decision},
-            "BLOCKED: another decision was recorded first", ok=False, case_id=case_id)
-        raise GateError(f"case {case_id} was decided by someone else first; reload it")
-    log(con, f"officer:{officer.strip()}", "officer_decision",
-        {"decision": decision, **({"after": "re-approval after a failed delivery"} if prev == "not_delivered" else {}),
-         "farmer_text": None if farmer is None else
-         ("officer-approved farmer text" if farmer != final else "same as officer text"),
-         "farmer_text_chars": len(farmer or "")}, status, case_id=case_id)
-    return dict(get_case(con, case_id))
+def officer_decide(con, case_id: int, *, officer: str, decision: str, edited_text=None,
+                   note=None, farmer_text=None, expected_revision=None, acknowledgement=None) -> dict:
+    """Enforced local workflow boundary; remote callers authenticate officer first."""
+    from agrireach.approval import decide
+    try:
+        return decide(con, case_id, officer=officer, decision=decision, edited_text=edited_text,
+                      note=note, farmer_text=farmer_text, expected_revision=expected_revision,
+                      acknowledgement=acknowledgement)
+    except SafetyError:
+        raise  # The assessment and rejected submission are already durable.
+    except GateError:
+        from agrireach.approval import audit
+        if get_case(con, case_id):
+            with con:
+                audit(con, case_id, officer, "approval_conflict", expected_revision=expected_revision)
+        raise
 
 
 def _token_hash(token: str) -> str:
@@ -249,29 +197,9 @@ def officer_for_token(con, token: str | None) -> str | None:
 
 
 def release_to_farmer(con, case_id: int, actor: str = "system") -> dict:
-    row = get_case(con, case_id)
-    if row is None:
-        raise ValueError(f"case {case_id} not found")
-    """approved -> released. A 'not_delivered' case (released, then the channel send failed) goes back to
-    'released' so the same approved text can be sent again (a retry)."""
-    st = row["status"]
-    if st == "undeliverable":
-        log(con, actor, "release_to_farmer", {}, "BLOCKED: undeliverable", ok=False, case_id=case_id)
-        raise GateError(f"case {case_id} is undeliverable: {delivery_problem(con, case_id) or 'the number was removed'}")
-    if st == "released":
-        log(con, actor, "release_to_farmer", {}, "BLOCKED: already released", ok=False, case_id=case_id)
-        raise GateError(f"case {case_id} is already released")
-    if st not in ("approved", "not_delivered") or not row["officer"]:
-        log(con, actor, "release_to_farmer", {}, f"BLOCKED: status '{st}', no officer approval",
-            ok=False, case_id=case_id)
-        raise GateError(f"case {case_id} has no officer approval (status '{st}')")
-    cur = con.execute("UPDATE cases SET status='released', updated_at=? WHERE id=? AND status=?", (now(), case_id, st))
-    con.commit()
-    if cur.rowcount != 1:
-        raise GateError(f"case {case_id} is no longer '{st}'; reload it")
-    what = "retry after a failed delivery" if st == "not_delivered" else "released"
-    log(con, actor, "release_to_farmer", {}, f"{what}; approved by {row['officer']}", case_id=case_id)
-    return dict(get_case(con, case_id))
+    """Validate the exact approval before idempotent publication or channel release."""
+    from agrireach.approval import release
+    return release(con, case_id, actor)
 
 
 def mark_not_delivered(con, case_id: int, reason: str, actor: str = "system") -> bool:

@@ -185,7 +185,7 @@ class SmsChannel:
         except UNKNOWN_OUTCOME as e:  # the request may have reached AT: it may have been sent
             return SendResult(False, f"outcome unknown: {type(e).__name__}. {MAYBE_SENT}")
         except httpx.HTTPError as e:   # never reached AT (connect error/timeout): not sent
-            return SendResult(False, f"network error: {type(e).__name__} (not sent)")
+            return SendResult(False, f"network error: {type(e).__name__} (not sent)", "definitely_failed")
         scrub = lambda s: str(s).replace(recipient_id, mask_sender(recipient_id))[:160]  # noqa: E731
         if r.status_code >= 400:
             return SendResult(False, f"HTTP {r.status_code}: {scrub(r.text)}")
@@ -199,7 +199,7 @@ class SmsChannel:
         if code in ACCEPTED:
             return SendResult(True, f"accepted by Africa's Talking (status {code} {ACCEPTED[code]}; "
                                     f"{_parts(m.segments)}, {m.encoding})")
-        return SendResult(False, f"rejected by Africa's Talking: {code} {scrub(rec.get('status') or data.get('Message', ''))}")
+        return SendResult(False, f"rejected by Africa's Talking: {code} {scrub(rec.get('status') or data.get('Message', ''))}", "definitely_failed")
 
 
 def parse(raw: bytes) -> dict | None:

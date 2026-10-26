@@ -247,13 +247,15 @@ def _add_sms_review(con, case_id: int) -> None:
     con.commit()
 
 
-def deliver(con, case_id: int, channels: dict[str, Channel]) -> dict | None:
+def _deliver_transport(con, case_id: int, channels: dict[str, Channel]) -> dict | None:
     """Send a released case's approved text back through its channel. None if the case has no channel contact."""
     contact = db.get_contact(con, case_id)
     if contact is None:
         return None
     row = db.get_case(con, case_id)
-    text = (row["farmer_text"] or row["final_text"]) if row is not None else None  # exactly what the officer approved
+    from agrireach.approval import validated_approval
+    _record, payload = validated_approval(con, case_id)
+    text = payload["farmer_text"]  # exactly what the officer approved
     if row is None or row["status"] != "released" or not row["officer"] or not text:
         db.log(con, f"channel:{contact['channel']}", "send_answer", {"to": mask_sender(contact["sender_id"])},
                f"BLOCKED: case is '{row['status'] if row else 'missing'}', not released after officer approval",
@@ -285,7 +287,28 @@ def deliver(con, case_id: int, channels: dict[str, Channel]) -> dict | None:
            ("sent: " if r.ok else "FAILED: ") + r.detail, ok=r.ok, case_id=case_id)
     if not r.ok:  # never looks delivered: back to the officer queue with the reason
         db.mark_not_delivered(con, case_id, r.detail, actor=f"channel:{contact['channel']}")
-    return {"ok": r.ok, "detail": r.detail, "audio": bool(audio)}
+    return {"ok": r.ok, "detail": r.detail, "audio": bool(audio), "outcome": r.outcome}
+
+
+def deliver(con, case_id: int, channels: dict[str, Channel]) -> dict | None:
+    """Enforced advisory boundary: one committed claim before any transport call.
+
+    Unexpected failures leave unknown, never a retryable failed job. A process
+    crash leaves sending, also ineligible for a second claim.
+    """
+    from agrireach import delivery
+    claimed = delivery.claim(con, case_id)
+    if claimed is None:
+        return {"ok": False, "detail": "No send: existing job or web publication", "outcome": "unchanged"}
+    job_id, claim_id = claimed
+    try:
+        result = _deliver_transport(con, case_id, channels)
+    except Exception:
+        delivery.complete(con, case_id, job_id, claim_id, "unknown")
+        raise
+    outcome = result.get("outcome", "accepted" if result.get("ok") else "unknown")
+    delivery.complete(con, case_id, job_id, claim_id, outcome)
+    return result
 
 
 def configured_channels() -> dict[str, Channel]:

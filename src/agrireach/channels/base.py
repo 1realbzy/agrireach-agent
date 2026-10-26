@@ -25,6 +25,13 @@ class OutboundMessage:
 class SendResult:
     ok: bool
     detail: str = ""
+    outcome: str = ""
+
+    def __post_init__(self):
+        # An adapter must explicitly establish nonacceptance; an unexplained
+        # false result is uncertain and cannot safely trigger a resend.
+        if not self.outcome:
+            self.outcome = "accepted" if self.ok else "unknown"
 
 
 class Channel(Protocol):
