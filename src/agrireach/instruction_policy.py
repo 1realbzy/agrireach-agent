@@ -11,7 +11,7 @@ APPLY = r"put|pour|apply|sprinkle|add|soak|dip|coat|wipe|rub|mix|give|use|smear|
 # Treating, dusting or drenching a crop is chemical work, whatever it is done with.
 TREAT = re.compile(r"\b(?:treat|dust|drench|dress|fumigate|coat)\w*\b(?! with (?:water|ash)\b)", re.I)
 _V = r"(?:re-?)?(?:appl(?:y|ie[sd]|ying|ications?)|spray(?:s|ed|ing)?|treat(?:s|ed|ing|ments?)?)"  # how often is a dose too
-_W = r"twice|thrice|again|every|times|weekly|daily|once|each (?:day|week|season|time)|fortnight\w*|intervals?|second|repeat\w*"
+_W = r"twice|thrice|again|every|times|weekly|daily|once(?! (?:the|it|they|you|your|all|rains?|plants?|crops?)\b)|each (?:day|week|season|time)|fortnight\w*|intervals?|second|repeat\w*"
 REPEAT = re.compile(rf"\b{_V}\b.*\b(?:{_W})\b|\b(?:{_W})\b.*\b{_V}\b|\bre-?appl", re.I)
 PRODUCT = re.compile(  # "sulphate of ammonia" is an ordinary fertiliser, not household ammonia
     r"\b(?:mancozeb|karate|lambda|actellic|phostoxin|gramoxone|paraquat|glyphosate|atrazine|attakan|emamectin|"

@@ -272,7 +272,9 @@ def test_repeat_application_is_held_even_when_no_chemical_passage_is_cited():
 
 REPEATS = ["Apply once a week.", "Apply weekly.", "Apply daily.", "Apply each week.", "Reapply next week.",
            "A second application after rain helps.", "Repeat the application after one week.", "Spray at 14-day intervals.",
-           "Apply fortnightly.", "Do the spraying two times.", "Give a second treatment.", "Reapply after rain."]
+           "Apply fortnightly.", "Do the spraying two times.", "Give a second treatment.", "Reapply after rain.",
+           "The application should be done twice.", "Apply at two-week intervals.", "Apply a second dose after two weeks.",
+           "Apply compost each season."]
 
 
 @pytest.mark.parametrize("line", REPEATS)
@@ -303,6 +305,8 @@ def test_definite_send_failure_is_not_called_uncertain():
 
 @pytest.mark.parametrize("line", ["Use a hoe to weed every two weeks.", "It is useful to scout every week.",
                                   "Add compost every season.", "Use the PICS bags again next season.",
-                                  "Place your sacks off the floor and check them every week.", "Repeat weeding after three weeks."])
+                                  "Place your sacks off the floor and check them every week.", "Repeat weeding after three weeks.",
+                                  "Apply fertiliser once the rains have started.", "Use certified seed once the rains are steady.",
+                                  "Put the bags on pallets and check them weekly."])
 def test_repeat_rule_only_counts_apply_spray_and_treat_words(line):
     assert not instruction_policy.REPEAT.search(line)
