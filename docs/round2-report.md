@@ -74,5 +74,7 @@ Duplicate logical migration backups under simultaneous startup remain a low
 priority operational limitation. Provider reconciliation still relies on the
 officer verifying external evidence. No field-readiness claim is made.
 
-Final full-suite/speech results and commit IDs are recorded in round2-progress.md
-and the owner handoff after verification completes.
+Final full suite: 825 passed, zero failed/skipped in 214.28 seconds, including six
+real speech tests. Targeted safety/UI/transaction group: 167 passed. Checkpoints:
+079bd36, 92ce86d and 98c23f7. Final documentation commit is identified in the owner
+handoff. Working tree verified clean after committing final evidence.
