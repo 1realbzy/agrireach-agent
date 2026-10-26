@@ -1,6 +1,8 @@
 # Safety rule reference
 
-Policy version: chemical-2. Authoritative implementation: safety_gate.py. Accepted templates and source fingerprints are explicit in that module. Changing them requires a policy version change and regression review.
+Policy version: chemical-3. Authoritative implementation: safety_gate.py and instruction_policy.py. Accepted templates and source fingerprints are explicit. Changing them requires policy review.
+
+Round 2 removes the enumerated-verb boundary. Every unsupported sentence, including fragments and passive voice, is checked for unresolved terms, dosage and chemical context. Novel material/entity terms require nonacknowledgeable review before a model is consulted. Reviewed ordinary agricultural vocabulary permits source assessment, not automatic support; familiar words alone do not prove semantic safety. Consultation devaluation is checked independently of chemical sources. Unknown common-word brands and misleading combinations remain limitations. New agricultural terms can cause conservative review holds and need source/policy review rather than routine acknowledgement.
 
 | Rule | Enforcement | Recovery |
 | :--- | :--- | :--- |

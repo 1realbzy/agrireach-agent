@@ -51,18 +51,30 @@ def run_browser():
         area.get_by_text("Required for approval: I checked every advice line against the cited sources", exact=True).click()
         area.get_by_role("button", name="Approve and release", exact=True).click()
         area.get_by_text("Approval was blocked or held", exact=False).wait_for()
+        area.get_by_text("Approval was blocked or held", exact=False).scroll_into_view_if_needed()
         assert db.get_case(con, bad)["status"] == "pending_review"
         page.screenshot(path=str(output / "safety-hold.png"), full_page=True)
         area = section(reject, "Browser rejection")
         area.get_by_label("Officer note or clarification request").fill("Please confirm the crop condition.")
         area.get_by_role("button", name="Request info", exact=True).click()
         area.get_by_text("Information requested.", exact=False).wait_for()
+        area.get_by_text("Information requested.", exact=False).scroll_into_view_if_needed()
         assert db.get_case(con, reject)["officer_note"] == "Please confirm the crop condition."
         page.screenshot(path=str(output / "information-requested.png"), full_page=True)
         area = section(good, "Browser approval")
         area.get_by_text("Required for approval: I checked every advice line against the cited sources", exact=True).click()
         area.get_by_role("button", name="Approve and release", exact=True).click()
+        area.get_by_text("Assessment unavailable.", exact=False).wait_for()
+        area.get_by_text("Assessment unavailable.", exact=False).scroll_into_view_if_needed()
+        area.get_by_role("button", name="Retry assessment", exact=True).click()
+        area.get_by_text("Assessment unavailable.", exact=False).wait_for()
+        page.screenshot(path=str(output / "assessment-retry.png"), full_page=True)
+        from agrireach import knowledge
+        area.get_by_label("Farmer text: exactly what will be sent").fill(knowledge.reference("APNI-SARI-2023:harvest")["text"])
+        area.get_by_label("Farmer text: exactly what will be sent").press("Tab")
+        area.get_by_role("button", name="Approve and release", exact=True).click()
         area.get_by_text("Advice approved and released", exact=False).wait_for()
+        area.get_by_text("Advice approved and released", exact=False).scroll_into_view_if_needed()
         assert db.get_case(con, good)["status"] == "released"
         page.screenshot(path=str(output / "approved.png"), full_page=True)
         assert page.locator('[data-testid="stException"]').count() == 0

@@ -1,5 +1,11 @@
 # Testing the safety branch
 
+For Round 2, run tests with `PYTHONPATH=tests:src` so optional ONNX telemetry is
+disabled in both pytest and speech subprocesses. Set AGRIREACH_REQUIRE_SPEECH=1
+for a speech acceptance run; any skip then fails. Use a verified pinned model cache.
+Run historical replay with --strict to validate record identity and explicitly
+retain the five known evidence gaps. See round2-report.md and round2-progress.md.
+
 Install requirements.txt in an isolated Python environment. The investigation used Python 3.12.14; the historical project record used a different environment. Optional speech tests additionally need requirements-voice.txt and locally cached models.
 
 ```bash

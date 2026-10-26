@@ -5,6 +5,14 @@ from pathlib import Path
 
 import pytest
 
+
+def pytest_sessionfinish(session, exitstatus):
+    """The speech CI job must not turn unavailable assets into a green skip."""
+    if os.getenv("AGRIREACH_REQUIRE_SPEECH") == "1":
+        reporter = session.config.pluginmanager.getplugin("terminalreporter")
+        if reporter and reporter.stats.get("skipped"):
+            session.exitstatus = 1
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 
@@ -24,7 +32,8 @@ def isolated(tmp_path, monkeypatch):
     for k in ("WHATSAPP_ENABLED", "AGRIREACH_TTS", "SMS_ENABLED", "AT_USERNAME", "AT_API_KEY", "AT_SENDER_ID",
               "AT_SANDBOX", "SMS_WEBHOOK_TOKEN", "SMS_MAX_SEGMENTS"):
         monkeypatch.delenv(k, raising=False)
-    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).resolve().parents[1] / "src"))
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(root / "tests"), str(root / "src"))))
     # The judge is always on for model drafts and fails closed. Tests that fake a model draft get an offline judge
     # that supports every sentence; tests about the judge itself replace this (judge_call=, or patch judge._call).
     from agrireach import judge

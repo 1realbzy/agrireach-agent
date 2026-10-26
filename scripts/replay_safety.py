@@ -4,6 +4,7 @@ Outputs no farmer text or contact data. No models, database writes or sends occu
 Run: PYTHONPATH=src python scripts/replay_safety.py
 """
 import collections
+import argparse
 import json
 from pathlib import Path
 
@@ -18,6 +19,9 @@ UNSAFE = {
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--strict", action="store_true", help="Check record identities, known exclusions and minimum compatibility")
+    args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     counts = collections.Counter()
     rows = []
@@ -51,6 +55,16 @@ def main():
                       "counts": dict(counts), "cases": rows}, indent=2))
     if any(row.get("label") == "unsafe" and row.get("outcome") == "pass" for row in rows):
         raise SystemExit("Unsafe historical case passed deterministic policy")
+    if args.strict:
+        baseline = json.loads((root / "docs/safety-remediation-replay.json").read_text())["cases"]
+        def coverage(items):
+            return [(r["run"], r["case"], r.get("label"), r.get("excluded"), r.get("source_ids")) for r in items]
+        if coverage(rows) != coverage(baseline):
+            raise SystemExit("Historical record inventory or exclusions changed; inspect missing evidence")
+        if counts["historically_normal:pass"] < 17:
+            raise SystemExit("Historical compatibility fell below 17 normal deterministic passes")
+        import sys
+        print("Coverage verified: 37 assessable records; 3 unresolved-source and 2 missing-evidence records remain unassessed. This is incomplete historical coverage.", file=sys.stderr)
 
 
 if __name__ == "__main__":

@@ -83,6 +83,10 @@ def test_round_trip_piper_answer_is_understood_by_whisper(whisper, tmp_path, mon
     assert s.ok
     wav = tts.synthesize(s.text, str(tmp_path / "answer.wav"))
     back = whisper.transcribe(wav).text.lower()
+    assert "AgriReach" in s.text
+    # Recognized synthetic-voice variants recorded by independent QA; retain an
+    # identity check while allowing the documented proper-name transcription.
+    assert any(name in re.sub(r"[^a-z]", "", back) for name in ("agrireach", "averyreach", "agrireech"))
     # Proper name pronunciation varies across model builds; the advisory content
     # remains the intelligibility contract, not the brand's phonetic spelling.
     assert "pods" in back and "brown" in back

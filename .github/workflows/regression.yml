@@ -11,42 +11,43 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
-      PYTHONPATH: src
+      PYTHONPATH: tests:src
       AGRIREACH_SOURCE_CHECK: '0'
       AGRIREACH_RAINFALL: off
       AGRIREACH_STT: none
       SMS_ENABLED: '0'
       WHATSAPP_ENABLED: '0'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.13'
           cache: pip
       - run: pip install -r requirements.txt
       # No secrets are passed to either job. Tests isolate endpoints and recipients.
       - run: python -m pytest -q
-      - run: python scripts/replay_safety.py
+      - run: python scripts/replay_safety.py --strict
       - run: python scripts/verify_legacy_migration.py
   speech:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      PYTHONPATH: src
+      PYTHONPATH: tests:src
       AGRIREACH_STT_DIR: /tmp/agrireach-whisper
       AGRIREACH_TTS_DIR: /tmp/agrireach-piper
       AGRIREACH_SOURCE_CHECK: '0'
       AGRIREACH_RAINFALL: off
       SMS_ENABLED: '0'
       WHATSAPP_ENABLED: '0'
+      AGRIREACH_REQUIRE_SPEECH: '1'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.13'
           cache: pip
       - run: pip install -r requirements.txt -r requirements-voice.txt
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             /tmp/agrireach-whisper
