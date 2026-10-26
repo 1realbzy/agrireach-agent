@@ -11,12 +11,19 @@ import json
 import re
 from dataclasses import asdict, dataclass, field
 
-POLICY_VERSION = "chemical-1"
+POLICY_VERSION = "chemical-2"
 SOURCE_FINGERPRINTS = {'APNI-SARI-2023:weeds-herbicide': '7c089f0dc5fbace588368f1dbef72fea4c00445a0e6c6c4d58d37c68360da91c', 'APNI-SARI-2023-MAIZE:p20-faw-control': 'a54a9501e8bd86701d3823aaea38dd9fbbae8e6eff66985fdcee94ff8077415e', 'APNI-SARI-2023-MAIZE:p22-sacks': '5d7dd431a6b34d46b89760c8ae3709db7b1afdc2937ee845308a5361dd094594'}
 CHEMICAL = re.compile(r"\b(?:pesticides?|insecticides?|herbicides?|fungicides?|chemicals?|spray\w*|glyphosate|paraquat)\b", re.I)
 ACTION = re.compile(r"\b(?:apply|use|mix|spray|treat|ignore|consult|ask|wear)\b", re.I)
 CONTEXT_ACTION = re.compile(r"\b(?:apply|use|mix|spray|treat)\s+(?:it|them|this|that|these|those|the product)\b", re.I)
 UNKNOWN_BRAND_ACTION = re.compile(r"\b(?:Apply|Use|Mix|Treat|apply|use|mix|treat)\s+[A-Z][A-Za-z]*[A-Z][A-Za-z]*\b")
+# Unsupported material instructions are uncertain even when the material has an
+# unfamiliar lowercase name. Source sentences are exempted before this check.
+MATERIAL_INSTRUCTION = re.compile(
+    r"\b(?:use|apply|mix|spray|treat|drench|dust|dose|administer)\b", re.I)
+MATERIAL_OBJECT = re.compile(
+    r"\b(?:with|using)\s+\w+|\b(?:use|apply|mix|dose|administer)\s+\w+"
+    r"|\b(?:it|them|this product|that product)\b|\b\d+\s*(?:ml|litres?|grams?|kg|days?)\b", re.I)
 PERSON = r"(?:AEA|agricultural extension officer|agricultural extension agent|extension officer|extension agent)"
 REFERRALS = {
     f"{verb} your local {person} {tail}."
@@ -128,7 +135,8 @@ def assess(text: str, passages: list[dict], *, language: str = "en") -> Assessme
         # Chemical case context does not make every agricultural verb a pesticide
         # instruction. Only bounded pronoun continuations and product shapes use
         # that context; unknown indirect wording remains a documented limitation.
-        if CHEMICAL.search(s) or (chemical_passages and (CONTEXT_ACTION.search(s) or UNKNOWN_BRAND_ACTION.search(s))):
+        product_instruction = MATERIAL_INSTRUCTION.search(s) and MATERIAL_OBJECT.search(s)
+        if CHEMICAL.search(s) or product_instruction or (chemical_passages and CONTEXT_ACTION.search(s)):
             established = re.search(r"\b(?:every week|every day|twice a day|any pesticide|without gloves)\b", norm)
             add("S3", s, "Chemical instruction is not an accepted source sentence or template",
                 [p["id"] for p in chemical_passages], uncertain=not bool(established))
