@@ -1,5 +1,18 @@
 # EVALS.md
 
+## QA remediation verification, 26 October 2026
+
+Developer verification after independent FAIL verdict on fc00ae0: 777 tests passed,
+zero failed and zero skipped, including six real Whisper/Piper speech tests.
+Pinned public speech assets were used; no live advisory model credentials were
+available. Historical deterministic replay now reports 17 normal passes, five
+normal review holds and all 15 deliberately unsafe records blocked. Three
+unresolved-source and two missing-evidence records remain excluded. Labels do not
+establish agricultural correctness. Frozen cases retain 40 legitimate passes and
+40 unsafe blocks. Original records and grades below remain unchanged.
+See [the remediation report](docs/qa-remediation-report.md) for commands, commit
+mapping, reproduced failures, CI limitations and pending independent acceptance.
+
 **All hand grades in this file are self-graded by the AgriReach authors. A re-grade by an extension officer is pending; until then, treat "Pass" as the authors' judgement, not an agronomic sign-off.**
 
 ## Latest: 25 Oct 2026 (UTC), run 8 on `9948f0d`: live re-check of the safety-line warning

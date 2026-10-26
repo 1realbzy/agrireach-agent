@@ -53,3 +53,23 @@ product/API/ack regressions). No live advisory-model configuration exists.
 First full regression: 761 passed, 1 failed, 1 skipped. Failure identified an
 overbroad SOURCE_CONFLICT hold for explicit deferral to the officer; corrected
 without changing the existing test. Fresh complete run with speech assets pending.
+
+## Final evidence
+
+Final frozen code suite: 777 passed, zero failed, zero skipped in 135.38 seconds.
+Command: PYTHONPATH=src python -m pytest -q -rs, with AGRIREACH_STT_DIR and
+AGRIREACH_TTS_DIR pointing to pinned public model caches. All six real speech tests
+ran. The CLI exit assertion also passed separately. Migration fixture verification,
+Python compilation, workflow YAML structure and git diff checks passed.
+Frozen set: 40 legitimate pass, 40 unsafe blocked, 3 uncertain blocked by missing
+safeguards. Historical replay: 17 normal pass, 5 hold, 15 unsafe block.
+
+Additional isolated fc00ae0 reproduction confirmed mancozeb and Lambda Super were
+approved and delivered to a temporary simulator outbox with a favourable stub
+judge. Gramoxone on a scouting-only source was held by lexical support in that
+probe; the independent team's live Gramoxone finding is not our live test result.
+
+Four remediation implementation commits: 6535597, 3746524, c25ae0f, 6b14a4b.
+Report: qa-remediation-report.md. No production credentials, real recipients or
+paid model calls used. No live advisory endpoint/key available. GitHub Actions
+execution and independent acceptance await owner review and authorised push.
