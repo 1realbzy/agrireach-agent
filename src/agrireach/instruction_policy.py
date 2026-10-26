@@ -12,9 +12,9 @@ APPLY = r"put|pour|apply|sprinkle|add|soak|dip|coat|wipe|rub|mix|give|use|smear|
 TREAT = re.compile(r"\b(?:treat|dust|drench|dress|fumigate|coat)\w*\b(?! with (?:water|ash)\b)", re.I)
 # How often to apply is a dose too: an apply, spray or treat word with a repeat word, or a re-application.
 REPEAT_VERB = r"(?:re-?)?(?:appl(?:y|ie[sd]|ying|ications?)|spray(?:s|ed|ing)?|treat(?:s|ed|ing|ments?)?)"
-REPEAT_WORD = r"twice|thrice|again|every|times|weekly|daily|once (?:a|per|every)|each (?:day|week|season|time)|fortnight\w*|intervals?|repeat\w*"
-REPEAT = re.compile(rf"\b{REPEAT_VERB}\b.*\b(?:{REPEAT_WORD})\b|\b(?:{REPEAT_WORD})\b.*\b{REPEAT_VERB}\b|\bre-?appl"
-                    r"|\bsecond (?:time|dose|application|treatment|spray)", re.I)
+REPEAT_WORD = (r"twice|thrice|again|every|times|weekly|daily|fortnight\w*|intervals?|repeat\w*|keep applying|in a week|"
+               r"once (?:a|per|every|more|again)|once\b.*\bonce|each (?:day|week|season)")
+REPEAT = re.compile(rf"\b{REPEAT_VERB}\b.*\b(?:{REPEAT_WORD})\b|\b(?:{REPEAT_WORD})\b.*\b{REPEAT_VERB}\b|\bre-?appl|\bsecond (?:time|dose|application|treatment|spray)", re.I)
 PRODUCT = re.compile(  # "sulphate of ammonia" is an ordinary fertiliser, not household ammonia
     r"\b(?:mancozeb|karate|lambda|actellic|phostoxin|gramoxone|paraquat|glyphosate|atrazine|attakan|emamectin|"
     r"tylosin|ampligo|coragen|kerosene|petrol|diesel|engine oil|detergent|bleach|carbide|battery|"

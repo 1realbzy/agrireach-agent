@@ -319,3 +319,18 @@ def test_repeat_rule_only_counts_apply_spray_and_treat_words(line):
                                   "Second, apply fertiliser at two weeks after planting."])
 def test_mofa_fertiliser_timing_is_not_a_repeat(line):
     assert not any(f.rule_id == "S3" and "repeats" in f.reason for f in safety_gate.assess(line, []).findings)
+
+
+@pytest.mark.parametrize("line", ["Apply basal fertiliser once, at planting.", "Apply the fertiliser each time you plant.",
+                                  "Apply manure once before planting."])
+def test_single_application_is_not_a_repeat(line):
+    assert not instruction_policy.REPEAT.search(line)
+
+
+@pytest.mark.parametrize("line", ["Apply once they hatch and once they return.", "Apply now and in a week.",
+                                  "Apply once the leaves are dry, and once the new leaves come out.",
+                                  "Apply once the rains start and keep applying through the season.", "Apply once more."])
+@pytest.mark.parametrize("pid", ["APNI-SARI-2023:weeds-manual", "APNI-SARI-2023-MAIZE:p18-scouting"])
+def test_more_than_once_is_held(line, pid):
+    passage = next(p for p in knowledge.load()["passages"] if p["id"] == pid)
+    assert safety_gate.assess(line, [passage], question="Which herbicide should I use?").outcome != "pass"
