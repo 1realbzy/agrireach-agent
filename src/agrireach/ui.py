@@ -33,10 +33,11 @@ def show_result(status, data):
 
 LABELS = {"S1": "Required source safeguard", "S2": "Consultation or protection instruction",
           "S3": "Unsourced material or dose", "S4": "Burning without a source", "LANGUAGE": "Language needs additional review",
-          "SOURCE_SUPPORT": "Source support needs review", "SOURCE_FIGURES": "Number not in the cited source"}
+          "SOURCE_SUPPORT": "Source support needs review", "SOURCE_FIGURES": "Number not in the cited source",
+          "SOURCE_CONFLICT": "Cited sources disagree"}
 
 
-PASSAGE_ID = re.compile(r"\b[A-Z][A-Z0-9-]*-\d{4}[A-Z0-9-]*:[\w-]+")
+PASSAGE_ID = re.compile(r"\[?'?\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*:[\w-]+'?\]?")  # e.g. ['MOFA-MAIZE:p10-when-to-plant']
 
 
 def show_findings(findings, text=""):
@@ -46,7 +47,7 @@ def show_findings(findings, text=""):
         sentence = finding.get("sentence")
         quoted = re.search(r"'([^']+)'", finding.get("reason") or "")
         if not sentence and quoted:  # a number hold names the figure; show the line it is in
-            sentence = next((s for s in re.split(r"(?<=[.!?])\s+", text) if quoted[1] in s), "")
+            sentence = next((s for s in re.split(r"(?<=[.!?])\s+", text) if re.search(rf"\b{re.escape(quoted[1])}\b", s, re.I)), "")
         if sentence:
             st.text(sentence)
         if finding.get("reason"):
@@ -171,7 +172,7 @@ def render_case(case, headers):
             if status == 200:
                 st.session_state[f"assessment_retry{cid}"] = False
                 st.info(f"Assessment complete: {data.get('outcome', 'unknown').replace('_', ' ')}. Nothing was approved or sent.")
-                show_findings(data.get("findings", []))
+                show_findings(data.get("findings", []), farmer_text)
             else:
                 show_result(status, data)
         for label, decision in (("Reject", "reject"), ("Request info", "request_info")):

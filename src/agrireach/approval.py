@@ -12,9 +12,10 @@ from datetime import datetime, timedelta, timezone
 
 from agrireach import db, knowledge, safety_gate
 
-
-# A bare greeting, optionally with a Ghanaian day name (a closed list, so "Harvest" can't pose as one), skips the source check.
-GREETING = re.compile(r"^(?i:thank you|thanks|hello|hi|good (?:morning|afternoon|evening)|medaase|akwaaba|maakye|[ɛe]te s[ɛe]n|akpe|oyiwala ?donn?)(?i: for your question)?(?:,? (?:Kwa?sis?|Akosua|Kwadwo|Kojo|Adwoa|Kwabena|Ebo|Abena|Kwaku|Kweku|Akua|Ekua|Yaw|Yaa|Kofi|Fiifi|Afua|Efua|Kwame|Ato|Ama|Amma|Esi|Akwasi))?[.!]?$")
+# A bare greeting skips the source check. Names are Ghanaian day names only, so "Thanks, Harvest." is checked.
+NAMES = "kwa?sis?|kwesi|akosua|kwadwo|kojo|adwoa|kwabena|ebo|abena|kwaku|kweku|akua|ekua|yaw|yaa|kofi|fiifi|afua|efua|kwame|ato|ama|amma|esi|akwasi"
+GREETING = re.compile(rf"^(?:thank you|thanks|hello|hi|good (?:morning|afternoon|evening)|medaase|akwaaba|maakye|[ɛe]te s[ɛe]n|akpe|oyiwala ?donn?)"
+                      rf"(?: for your question)?(?:,? (?:{NAMES}))?[.!]?$", re.I)
 
 
 def audit(con, case_id: int, actor: str, event: str, **details):
@@ -64,12 +65,11 @@ def assess_candidate(text: str, ctx: dict) -> dict:
         return result | {"outcome": "review_required", "reason": "No source supports the candidate",
                          "findings": [safety_gate.Finding("SOURCE_SUPPORT", text, "No source supports the candidate").to_dict()]}
     ids = ", ".join(p["id"] for p in ctx["sources"])
-    from agrireach.farmer_reply import _ABBREV_WORDS
     # The gate has checked every sentence. Only code-built caveats, templates, verbatim
     # source lines and a bare greeting (GREETING) skip the judge's source comparison.
     fixed = {farmer_reply.CONFIRM, (farmer_reply.zone_caveat(ctx["case"]["region"] or "") or {}).get("sentence")}
     source_sentences = {safety_gate.normalized(s) for p in ctx["sources"] for s in safety_gate.sentences(p["text"])}
-    checked_sentences = [re.sub(rf"\b({_ABBREV_WORDS})\.(?=\s)", r"\1", s)
+    checked_sentences = [re.sub(rf"\b({farmer_reply._ABBREV_WORDS})\.(?=\s)", r"\1", s)
                          for s in safety_gate.sentences(text)
                          if s not in fixed and not safety_gate.registered_template(s) and not GREETING.match(s)
                          and safety_gate.normalized(s) not in source_sentences]

@@ -171,6 +171,9 @@ def decide(case_id: int, d: Decision, officer: str = Depends(current_officer)):
         raise HTTPException(400, "farmer_text required: approve the exact text the farmer will receive")
     if d.decision in ("approve", "edit_approve") and not d.confirmed:
         raise HTTPException(400, "confirm that you checked the farmer text against the cited sources before approving")
+    # A reviewable case cannot be rejected or sent back without saying why (other states keep their own errors).
+    if d.decision in ("reject", "request_info") and not (d.note or "").strip() and (case := db.get_case(con, case_id)) and case["status"] == "pending_review":
+        raise HTTPException(400, "note required: say why you are rejecting or what information you need")
     warnings = []
     try:
         row = db.officer_decide(con, case_id, officer=officer, decision=d.decision, edited_text=d.edited_text,
@@ -182,9 +185,9 @@ def decide(case_id: int, d: Decision, officer: str = Depends(current_officer)):
             row = db.release_to_farmer(con, case_id, actor=f"officer:{officer}")
             try:
                 delivery = service.deliver(con, case_id, service.configured_channels()) if row["status"] == "released" else {"ok": False, "outcome": "undeliverable"}
-            except ValueError as e:  # approved and released, but the channel refused the send: a delivery problem, not a 400
+            except ValueError as e:  # approved and released, but the send failed mid-way: outcome unknown, not a 400
                 delivery = {"ok": False, "outcome": "unknown", "detail": str(e)}
-            row = db.get_case(con, case_id)  # 'not_delivered' if the channel send failed
+            row = db.get_case(con, case_id)  # 'not_delivered' if the send failed; stays 'released' if its outcome is unknown
     except db.SafetyError as e:
         raise HTTPException({"acknowledgement_required": 409, "assessment_unavailable": 503}.get(e.assessment["outcome"], 422), e.assessment)
     except db.GateError as e:

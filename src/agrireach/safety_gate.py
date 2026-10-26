@@ -145,12 +145,12 @@ def assess(text: str, passages: list[dict], *, language: str = "en", question: s
         if instruction_policy.burns_land(s) and not any(instruction_policy.BURN.search(p.get("text", "")) for p in passages):
             add("S4", s, "Burning is not advised without a cited source. Revise or remove this line.", uncertain=True)
             continue
-        # S3: unsourced products, doses, unclear materials and spraying must be edited.
-        # Protective rules ("Never use unapproved pesticides") and "do not spray" may mention chemicals.
+        # S3: unsourced products, doses, materials, spraying, and repeat applications on a chemical case.
         harmless = PROTECTIVE_RULE.match(s) or re.search(
             r"\b(?:without|no|not|never|before you)\s+(?:any\s+)?spray\w*|\bspray\w*\s+(?:clean\s+)?water\b|"
             r"\bwhen spraying\b|\badvice on (?:the )?recommended\b", s, re.I)
-        problem = instruction_policy.unsourced_input(s) or (
+        repeat = chemical_passages and re.search(rf"\b(?:{instruction_policy.APPLY}|spray|treat)\w*\b.*\b(?:twice|thrice|again|every|times)\b", s, re.I)
+        problem = instruction_policy.unsourced_input(s) or ("repeats an application on a pesticide case" if repeat else
             None if harmless or not CHEMICAL.search(s) else "mentions a pesticide or spraying")
         if problem and harmless and not re.search(r"\d|\bit\b|\bthem\b", s):
             problem = None

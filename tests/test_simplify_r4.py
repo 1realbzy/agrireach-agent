@@ -201,3 +201,62 @@ def test_send_refused_after_approval_is_a_delivery_problem_not_a_400(monkeypatch
     r = _approve(c, h, cid, "Harvest at 9 of 10 pods.")
     assert r.status_code == 200 and r.json()["delivery"]["ok"] is False
     assert r.json()["status"] != "released" or r.json()["delivery"]["outcome"] == "unknown"
+
+
+WEEDS = next(p for p in knowledge.load()["passages"] if p["id"] == "APNI-SARI-2023:weeds-herbicide")
+REFERRAL = "Consult your local AEA before applying any herbicide."
+
+
+@pytest.mark.parametrize("line", ["Follow the instructions provided by the manufacturer and apply twice.",
+                                  "Apply twice a week.", "Apply again after rain.", "Spray every week."])
+def test_repeat_application_on_a_pesticide_case_cannot_pass(line):
+    # Held, not blocked: QA's existing test expects "Apply it every three days." to be review_required.
+    result = safety_gate.assess(f"{REFERRAL} {line}", [WEEDS], question="How do I control weeds in maize?")
+    assert result.outcome != "pass" and any(f.rule_id == "S3" for f in result.findings)
+
+
+@pytest.mark.parametrize("line", ["Check the field every week for armyworm.", "Walk the farm again after rain to look for new damage."])
+def test_scouting_on_a_pesticide_case_is_not_a_repeat_application(line):
+    result = safety_gate.assess(f"{REFERRAL} {line}", [WEEDS], question="How do I control weeds in maize?")
+    assert not any(f.rule_id == "S3" for f in result.findings)
+
+
+@pytest.mark.parametrize("decision", ["reject", "request_info"])
+@pytest.mark.parametrize("note", [None, "", "   "])
+def test_reject_and_request_info_need_a_note_at_the_api(decision, note, monkeypatch):
+    from tests.test_not_delivered import _setup
+    _, cid, h, c = _setup(monkeypatch)
+    rev = db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]
+    r = c.post(f"/officer/cases/{cid}/decision", headers=h,
+               json={"decision": decision, "note": note, "expected_revision": rev})
+    assert r.status_code == 400 and "note required" in r.json()["detail"]
+    assert db.get_case(db.connect(), cid)["status"] == "pending_review"
+
+
+def test_mofa_ids_are_hidden_and_number_lookup_uses_whole_words(monkeypatch):
+    from agrireach import ui
+    shown = []
+    monkeypatch.setattr(ui.st, "caption", shown.append)
+    monkeypatch.setattr(ui.st, "text", shown.append)
+    monkeypatch.setattr(ui, "source_name", lambda pid: "Guide to Maize Production, p. 10")
+    ui.show_findings([{"rule_id": "SOURCE_FIGURES", "sentence": "",
+                       "reason": "'ten' is not in ['MOFA-MAIZE:p10-when-to-plant']"}],
+                     "Water the field often. Plant ten seeds per hill.")
+    assert "Plant ten seeds per hill." in shown and "Water the field often." not in shown
+    assert "Why: 'ten' is not in Guide to Maize Production, p. 10" in shown and "MOFA" not in " ".join(shown)
+
+
+@pytest.mark.parametrize("text", ["Hello kofi.", "Thanks, Kwesi."])
+def test_day_names_match_in_any_case(text):
+    assert approval.GREETING.match(text)
+
+
+def test_bad_simulator_sender_is_a_definite_failure_back_in_the_queue(monkeypatch):
+    from tests.test_not_delivered import _approve, _setup
+    _, cid, h, c = _setup(monkeypatch)
+    con = db.connect()
+    con.execute("UPDATE channel_contacts SET channel='simulator', sender_id='+233200000000' WHERE case_id=?", (cid,))
+    con.commit()
+    r = _approve(c, h, cid, "Harvest at 9 of 10 pods.")
+    assert r.status_code == 200 and r.json()["status"] == "not_delivered"
+    assert r.json()["delivery"]["outcome"] == "definitely_failed" and "not sent" in r.json()["delivery"]["detail"]
