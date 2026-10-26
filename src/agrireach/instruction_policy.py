@@ -1,16 +1,16 @@
 """Three hard stops for unsourced advice lines; the judge and officer handle agronomy.
 
-1. unsourced_input(): a product, chemical, dose or rate; a vague or capitalised thing
-   being applied ("Pour it...", "Use Clear..."); or anything put on the plants.
-2. skips_officer(): an AEA mention that is not a plain referral ("Do not ask the AEA").
-3. burns_land(): burning, torching or setting fire, unless it says not to.
-"""
+safety_gate records them as S3, S2, S4 (S1 is the separate chemical safeguard). S2 and
+pesticide or spraying lines are blocked; other S3 and S4 hits are held for the officer.
+S3 unsourced_input(): a product, dose or rate, a vague thing applied ("Pour it..."), or anything on plants.
+S2 skips_officer(): an AEA mention that is not a plain referral ("Do not ask the AEA").
+S4 burns_land(): burning or setting fire, unless it says not to or a cited source burns."""
 import re
 
 APPLY = r"put|pour|apply|sprinkle|add|soak|dip|coat|wipe|rub|mix|give|use|smear|paint|spread|scatter|place"
 # Treating, dusting or drenching a crop is chemical work, whatever it is done with.
 TREAT = re.compile(r"\b(?:treat|dust|drench|dress|fumigate|coat)\w*\b(?! with (?:water|ash)\b)", re.I)
-PRODUCT = re.compile(
+PRODUCT = re.compile(  # "sulphate of ammonia" is an ordinary fertiliser, not household ammonia
     r"\b(?:mancozeb|karate|lambda|actellic|phostoxin|gramoxone|paraquat|glyphosate|atrazine|attakan|emamectin|"
     r"tylosin|ampligo|coragen|kerosene|petrol|diesel|engine oil|detergent|bleach|carbide|battery|"
     r"(?<!sulphate of )(?<!sulfate of )ammonia|\w{3,}(?:thrin|phos|fos|carb|zeb|mectin|cides?|azole|oxone|"

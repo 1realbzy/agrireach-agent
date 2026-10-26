@@ -14,7 +14,7 @@ from agrireach import db, knowledge, safety_gate
 
 
 # Only a bare greeting or thanks (plus a name) skips the source check; anything more is checked.
-GREETING = re.compile(r"^(?i:thank you|thanks|hello|hi|good (?:morning|afternoon|evening)|medaase)(?i: for your question)?(?:,? [A-Z][a-z]+)?[.!]?$")
+GREETING = re.compile(r"^(?i:thank you|thanks|hello|hi|good (?:morning|afternoon|evening)|medaase|akwaaba|maakye|[ɛe]te s[ɛe]n|akpe|oyiwala ?donn?)(?i: for your question)?(?:,? [A-Z][a-z]+)?[.!]?$")
 
 
 def audit(con, case_id: int, actor: str, event: str, **details):
@@ -65,8 +65,8 @@ def assess_candidate(text: str, ctx: dict) -> dict:
                          "findings": [safety_gate.Finding("SOURCE_SUPPORT", text, "No source supports the candidate").to_dict()]}
     ids = ", ".join(p["id"] for p in ctx["sources"])
     from agrireach.farmer_reply import _ABBREV_WORDS
-    # Deterministic rules have already inspected every sentence. Only an exact
-    # code built caveat can be omitted from the probabilistic source comparison.
+    # The gate has checked every sentence. Only code-built caveats, templates, verbatim
+    # source lines and a bare greeting (GREETING) skip the judge's source comparison.
     fixed = {farmer_reply.CONFIRM, (farmer_reply.zone_caveat(ctx["case"]["region"] or "") or {}).get("sentence")}
     source_sentences = {safety_gate.normalized(s) for p in ctx["sources"] for s in safety_gate.sentences(p["text"])}
     checked_sentences = [re.sub(rf"\b({_ABBREV_WORDS})\.(?=\s)", r"\1", s)

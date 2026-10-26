@@ -141,3 +141,39 @@ def test_officer_screen_shows_the_hold_reason(monkeypatch):
     monkeypatch.setattr(ui.st, "text", shown.append)
     ui.show_findings([{"rule_id": "SOURCE_FIGURES", "sentence": "", "reason": "'two' is not in the cited passage(s)"}])
     assert "Number not in the cited source" in shown and "Why: 'two' is not in the cited passage(s)" in shown
+
+
+@pytest.mark.parametrize("text", ["Akwaaba, Kofi.", "Maakye Ama.", "Ɛte sɛn, Kwame.", "Ete sen.",
+                                  "Akpe, Kofi.", "Oyiwaladonn, Ama."])
+def test_local_greetings_count_as_bare_greetings(text):
+    assert approval.GREETING.match(text)
+
+
+def test_local_greeting_cannot_carry_advice():
+    assert not approval.GREETING.match("Akwaaba, plant two seeds per hill.")
+
+
+def test_held_reasons_show_when_a_case_opens(monkeypatch):
+    from agrireach import ui
+    shown = []
+    for name in ("caption", "text", "warning"):
+        monkeypatch.setattr(ui.st, name, shown.append)
+    monkeypatch.setattr(ui.st, "session_state", {})
+    monkeypatch.setattr(ui, "request", lambda *a, **k: (200, {"outcome": "review_required", "findings": [
+        {"rule_id": "SOURCE_FIGURES", "sentence": "Plant two seeds per hill.", "reason": "'two' is not in the cited passage(s)"}]}))
+    ui.show_holds(1, "Plant two seeds per hill.", {})
+    assert "Why: 'two' is not in the cited passage(s)" in shown and "Plant two seeds per hill." in shown
+
+
+def test_bad_request_shows_the_api_reason():
+    from agrireach.ui_feedback import feedback
+    level, message = feedback(400, {"detail": "farmer_text required: approve the exact text the farmer will receive"})
+    assert level == "error" and "farmer_text required" in message
+
+
+def test_officer_sees_numbered_citations_not_source_ids():
+    from agrireach import ui
+    draft = "Plant two seeds per hill [APNI-SARI-2023:p11-spacing]. Weed early [MOFA-MAIZE:p12-weeds]."
+    shown, cites = ui.number_citations(draft)
+    assert shown == "Plant two seeds per hill [1]. Weed early [2]." and "APNI" not in shown
+    assert ui.restore_citations(shown.replace("two", "2"), cites) == draft.replace("two", "2")

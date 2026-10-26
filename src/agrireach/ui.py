@@ -1,6 +1,7 @@
 """Officer and farmer screens with explicit workflow feedback and safe sign in."""
 import logging
 import os
+import re
 
 import httpx
 import streamlit as st
@@ -48,6 +49,36 @@ def show_findings(findings):
                 st.text("Required guidance: " + source_line)
 
 
+CITATION = re.compile(r"\[[A-Z0-9][A-Z0-9-]*:[^\]]+\]")
+
+
+def number_citations(text):
+    """Replace raw source IDs with [1], [2]... for the officer; return the IDs in order."""
+    cites = list(dict.fromkeys(CITATION.findall(text)))
+    for n, cite in enumerate(cites, 1):
+        text = text.replace(cite, f"[{n}]")
+    return text, cites
+
+
+def restore_citations(text, cites):
+    """Put the source IDs back into an officer's edit so the saved draft keeps its citations."""
+    return re.sub(r"\[(\d+)\]", lambda m: cites[int(m[1]) - 1] if 0 < int(m[1]) <= len(cites) else m[0], text)
+
+
+def show_holds(cid, farmer_text, headers):
+    """Show why the farmer text would be held as soon as the case opens (read-only check, cached per text)."""
+    key = f"holds{cid}"
+    if st.session_state.get(key, (None,))[0] != farmer_text:
+        status, data = request("POST", f"/officer/cases/{cid}/assess", headers=headers, json={"farmer_text": farmer_text})
+        st.session_state[key] = (farmer_text, status, data)
+    _, status, data = st.session_state[key]
+    if status != 200:
+        st.warning("Safety check unavailable. Nothing will be approved until it runs; use Retry assessment after Approve.")
+    elif data.get("outcome") != "pass":
+        st.warning(f"This text would be held ({data['outcome'].replace('_', ' ')}). Edit the lines below before approving.")
+        show_findings(data.get("findings", []))
+
+
 def source_name(passage_id):
     """Show a source as its title and page, not its internal ID."""
     ref = knowledge.reference(passage_id) or {}
@@ -90,8 +121,12 @@ def render_case(case, headers):
             st.text("Machine transcript: " + (inbound.get("transcript") or ""))
         # The offline label is for logs and tests; officers see only the advice.
         shown = "\n".join(l for l in case["draft"].splitlines() if not l.startswith(llm.STUB_LABEL))
+        # Officers see numbered citations; edits are mapped back to the source IDs before saving.
+        shown, cites = number_citations(shown)
         edited = st.text_area("Officer draft with citations", shown, key=f"draft{cid}")
-        text = case["draft"] if edited == shown else edited
+        for n, cite in enumerate(cites, 1):
+            st.caption(f"[{n}] " + source_name(cite[1:-1]))
+        text = case["draft"] if edited == shown else restore_citations(edited, cites)
         if st.button("Re-propose farmer text", key=f"repropose{cid}"):
             status, proposal = request("POST", f"/officer/cases/{cid}/farmer-draft", headers=headers, json={"officer_text": text})
             if status == 200:
@@ -100,6 +135,7 @@ def render_case(case, headers):
             else:
                 show_result(status, proposal)
         farmer_text = st.text_area("Farmer text: exactly what will be sent", case.get("farmer_text") or (case.get("farmer_draft") or {}).get("text", ""), key=f"farmer{cid}")
+        show_holds(cid, farmer_text, headers)
         note = st.text_area("Officer note or clarification request", key=f"note{cid}")
         confirmed = st.checkbox("Required for approval: I checked every advice line against the cited sources", key=f"confirm{cid}")
         status, preview = request("POST", f"/officer/cases/{cid}/voice-preview", headers=headers, json={"officer_text": farmer_text})

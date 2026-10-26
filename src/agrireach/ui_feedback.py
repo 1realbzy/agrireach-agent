@@ -20,6 +20,8 @@ def feedback(status: int, data: dict) -> tuple[str, str]:
         return "info", "Sign in with a valid officer token to continue."
     if status == 409:
         return "warning", "The action could not proceed with the current case or delivery state. Reload the case; reconcile any uncertain delivery before retrying."
+    if status == 400 and isinstance(detail, str) and detail:
+        return "error", f"The action could not be completed: {detail}. Nothing was approved or sent."
     if status >= 400:
         return "error", "The action could not be completed. Check the required fields and try again. If the problem continues, contact the operator with the case number."
     delivery = data.get("delivery")
