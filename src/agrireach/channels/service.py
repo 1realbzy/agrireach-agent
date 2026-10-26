@@ -280,7 +280,7 @@ def _deliver_transport(con, case_id: int, channels: dict[str, Channel]) -> dict 
             except Exception as e:  # text still goes out; the officer sees why there is no audio
                 db.log(con, "channel:tts", "synthesize", {}, f"failed: {type(e).__name__}", ok=False, case_id=case_id)
     r = ch.send(contact["sender_id"], OutboundMessage(text=text, audio_path=audio)) if ch else \
-        SendResult(False, f"channel '{contact['channel']}' is not configured")
+        SendResult(False, f"channel '{contact['channel']}' is not configured", "definitely_failed")
     db.record_delivery(con, case_id, contact["channel"], "answer", r.ok, r.detail)
     db.log(con, f"channel:{contact['channel']}", "send_answer",
            {"to": mask_sender(contact["sender_id"]), "audio": bool(audio)},

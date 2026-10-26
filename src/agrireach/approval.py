@@ -106,7 +106,9 @@ def decide(con, case_id: int, *, officer: str, decision: str, edited_text=None,
     if row["status"] not in ("pending_review", "not_delivered"):
         raise db.GateError("Case is not available for review")
     active = con.execute("SELECT 1 FROM delivery_jobs j JOIN approvals a ON a.id=j.approval_id WHERE a.case_id=? AND j.state IN ('sending','unknown','accepted')", (case_id,)).fetchone()
-    if active:
+    if active and decision in ("approve", "edit_approve"):
+        # Rejecting advice does not cancel or resolve an external send. The job
+        # remains visible and cannot be retried without reconciliation.
         raise db.GateError("Delivery is active, unresolved or accepted; reapproval is prohibited")
     approving = decision in ("approve", "edit_approve")
     final = edited_text if decision == "edit_approve" else row["draft"]

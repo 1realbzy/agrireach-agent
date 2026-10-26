@@ -171,11 +171,11 @@ class SmsChannel:
     def send(self, recipient_id: str, message: OutboundMessage) -> SendResult:
         """Text only (an audio_path is ignored). Refuses, rather than cuts, a text over the segment limit."""
         if not PHONE_RE.match(recipient_id or ""):
-            return SendResult(False, "recipient is not an international number (+ and country code)")
+            return SendResult(False, "recipient is not an international number (+ and country code)", "definitely_failed")
         m = measure(message.text)
         hit = _too_long(message.text, self.cfg.max_segments)
         if hit:  # backstop: the officer is prompted, and approval refused, before it gets here
-            return SendResult(False, f"not sent, nothing was cut: {hit[0]} (it is {hit[1]} now)")
+            return SendResult(False, f"not sent, nothing was cut: {hit[0]} (it is {hit[1]} now)", "definitely_failed")
         form = {"username": self.cfg.username, "to": recipient_id, "message": message.text}
         if self.cfg.sender_id:
             form["from"] = self.cfg.sender_id

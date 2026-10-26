@@ -60,6 +60,25 @@ class ReopenRequest(BaseModel):
     information: str
 
 
+class ReconcileRequest(BaseModel):
+    accepted: bool
+    provider_evidence: str
+
+
+@app.post("/officer/delivery-jobs/{job_id}/reconcile")
+def reconcile_delivery(job_id: int, body: ReconcileRequest, officer: str = Depends(current_officer)):
+    """Record an officer's verified provider disposition without sending again."""
+    from agrireach import delivery
+    try:
+        delivery.reconcile(db.connect(), job_id, officer=officer,
+                           accepted=body.accepted, provider_evidence=body.provider_evidence)
+    except db.GateError as exc:
+        raise HTTPException(409, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return {"job_id": job_id, "state": "accepted" if body.accepted else "definitely_failed"}
+
+
 @app.post("/officer/cases/{case_id}/reopen")
 def reopen(case_id: int, body: ReopenRequest, officer: str = Depends(current_officer)):
     """Return a clarified needs_info case to review without approving any advice."""

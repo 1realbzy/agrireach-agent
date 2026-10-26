@@ -96,15 +96,18 @@ def reconcile(con, job_id: int, *, officer: str, accepted: bool, provider_eviden
 
     The caller must verify the provider record outside this function. The evidence
     reference is retained for review; an ambiguous note is not proof of failure.
-    This action is deliberately not exposed as a routine retry button.
+    This action records provider evidence; it never sends or retries a message.
     """
     if not provider_evidence.strip() or not officer.strip():
         raise ValueError("Named officer and verified provider evidence reference required")
     with con:
+        # Serialize reconciliation with competing reconciliations and claims.
+        con.execute("BEGIN IMMEDIATE")
         job = con.execute("SELECT * FROM delivery_jobs WHERE id=?", (job_id,)).fetchone()
         if not job or job["state"] != "unknown":
             raise db.GateError("Only an unknown job can be reconciled")
         con.execute("UPDATE delivery_jobs SET state=?,updated_at=? WHERE id=?",
                     ("accepted" if accepted else "definitely_failed", db.now(), job_id))
-        approval.audit(con, None, officer, "delivery_reconciled", job_id=job_id,
+        case_id = con.execute("SELECT case_id FROM approvals WHERE id=?", (job["approval_id"],)).fetchone()[0]
+        approval.audit(con, case_id, officer, "delivery_reconciled", job_id=job_id,
                        provider_evidence=provider_evidence, accepted=accepted)

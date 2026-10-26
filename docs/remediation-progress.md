@@ -20,3 +20,13 @@ API regressions and frozen labels pass. C1 verified before relevance changes.
 
 Known bound: unfamiliar agricultural material instructions may be held conservatively;
 grammar is not universal product recognition or semantic safety proof.
+
+## H1
+
+Local channel configuration/recipient/length refusals are definitely_failed;
+ambiguous provider responses remain unknown. Authenticated POST
+/officer/delivery-jobs/{job_id}/reconcile records verified provider evidence and
+disposition atomically without sending. BEGIN IMMEDIATE serializes reconciliation.
+Reject/request_info can preserve an unresolved delivery record without reapproving.
+Reopening remains unavailable until an unknown send is reconciled.
+Targeted delivery, SMS, transaction and QA regressions: 65 passed.
