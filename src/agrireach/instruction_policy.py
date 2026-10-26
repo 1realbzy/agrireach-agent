@@ -10,9 +10,11 @@ import re
 APPLY = r"put|pour|apply|sprinkle|add|soak|dip|coat|wipe|rub|mix|give|use|smear|paint|spread|scatter|place"
 # Treating, dusting or drenching a crop is chemical work, whatever it is done with.
 TREAT = re.compile(r"\b(?:treat|dust|drench|dress|fumigate|coat)\w*\b(?! with (?:water|ash)\b)", re.I)
-_V = r"(?:re-?)?(?:appl(?:y|ie[sd]|ying|ications?)|spray(?:s|ed|ing)?|treat(?:s|ed|ing|ments?)?)"  # how often is a dose too
-_W = r"twice|thrice|again|every|times|weekly|daily|once(?! (?:the|it|they|you|your|all|rains?|plants?|crops?)\b)|each (?:day|week|season|time)|fortnight\w*|intervals?|second|repeat\w*"
-REPEAT = re.compile(rf"\b{_V}\b.*\b(?:{_W})\b|\b(?:{_W})\b.*\b{_V}\b|\bre-?appl", re.I)
+# How often to apply is a dose too: an apply, spray or treat word with a repeat word, or a re-application.
+REPEAT_VERB = r"(?:re-?)?(?:appl(?:y|ie[sd]|ying|ications?)|spray(?:s|ed|ing)?|treat(?:s|ed|ing|ments?)?)"
+REPEAT_WORD = r"twice|thrice|again|every|times|weekly|daily|once (?:a|per|every)|each (?:day|week|season|time)|fortnight\w*|intervals?|repeat\w*"
+REPEAT = re.compile(rf"\b{REPEAT_VERB}\b.*\b(?:{REPEAT_WORD})\b|\b(?:{REPEAT_WORD})\b.*\b{REPEAT_VERB}\b|\bre-?appl"
+                    r"|\bsecond (?:time|dose|application|treatment|spray)", re.I)
 PRODUCT = re.compile(  # "sulphate of ammonia" is an ordinary fertiliser, not household ammonia
     r"\b(?:mancozeb|karate|lambda|actellic|phostoxin|gramoxone|paraquat|glyphosate|atrazine|attakan|emamectin|"
     r"tylosin|ampligo|coragen|kerosene|petrol|diesel|engine oil|detergent|bleach|carbide|battery|"
@@ -68,8 +70,7 @@ DEVALUE = re.compile(r"\b(?:no|not|never|don't|without|instead|unnecessary|skip|
 def skips_officer(sentence: str) -> bool:
     """True when a line steers the farmer from the officer: an officer clause must be a plain referral."""
     s = sentence.strip().rstrip(".!?")
-    if re.search(r"\binstead\b", s, re.I) and re.search(r"\b(?:ask|consult|talk to|see|call)\b", s, re.I):
-        return True
+    if re.search(r"\binstead\b", s, re.I) and re.search(r"\b(?:ask|consult|talk to|see|call)\b", s, re.I): return True
     for clause in re.split(r"[,;:]|\b(?:but|though|although)\b", s):
         clause = clause.strip()
         if not OFFICER.search(clause):

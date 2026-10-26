@@ -307,6 +307,15 @@ def test_definite_send_failure_is_not_called_uncertain():
                                   "Add compost every season.", "Use the PICS bags again next season.",
                                   "Place your sacks off the floor and check them every week.", "Repeat weeding after three weeks.",
                                   "Apply fertiliser once the rains have started.", "Use certified seed once the rains are steady.",
-                                  "Put the bags on pallets and check them weekly."])
+                                  "Put the bags on pallets and check them weekly.", "Apply fertiliser once the rains have started.",
+                                  "Apply top-dressing fertilizer once at 6 weeks after planting.", "Once the rains start, apply fertiliser.",
+                                  "Second, apply fertiliser at two weeks after planting."])
 def test_repeat_rule_only_counts_apply_spray_and_treat_words(line):
     assert not instruction_policy.REPEAT.search(line)
+
+
+@pytest.mark.parametrize("line", ["Apply fertiliser once the rains have started.", "Once the rains start, apply fertiliser.",
+                                  "Apply top-dressing fertilizer once at 6 weeks after planting.",
+                                  "Second, apply fertiliser at two weeks after planting."])
+def test_mofa_fertiliser_timing_is_not_a_repeat(line):
+    assert not any(f.rule_id == "S3" and "repeats" in f.reason for f in safety_gate.assess(line, []).findings)

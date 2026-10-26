@@ -2,9 +2,8 @@
 
 Lines copied from a cited source pass on provenance. Other lines go through the
 three hard stops in instruction_policy plus the chemical-safeguard check (S1);
-whatever survives goes to the judge and the officer. A favourable judge verdict
-never overrides a hard stop.
-The original payload is never normalized for storage or delivery.
+whatever survives goes to the judge and the officer. A favourable judge verdict never
+overrides a hard stop, and the original payload is never normalized for storage or delivery.
 """
 from __future__ import annotations
 
