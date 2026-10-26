@@ -45,6 +45,7 @@ class Decision(BaseModel):
     # The exact farmer-facing text being approved (required to approve): this, and only this, is delivered.
     farmer_text: str | None = None
     # Approving requires the officer to confirm they checked the farmer text against the cited sources.
+    expected_revision: int | None = None
     confirmed: bool = False
 
 
@@ -136,12 +137,14 @@ def decide(case_id: int, d: Decision, officer: str = Depends(current_officer)):
                                 "proposed text) carry one on pesticides or spraying; keep it")
     try:
         row = db.officer_decide(con, case_id, officer=officer, decision=d.decision, edited_text=d.edited_text,
-                                note=d.note, farmer_text=d.farmer_text)
+                                note=d.note, farmer_text=d.farmer_text, expected_revision=d.expected_revision)
         delivery = None
         if row["status"] == "approved":
             row = db.release_to_farmer(con, case_id, actor=f"officer:{officer}")
             delivery = service.deliver(con, case_id, service.configured_channels())
             row = db.get_case(con, case_id)  # 'not_delivered' if the channel send failed
+    except db.SafetyError as e:
+        raise HTTPException(422, e.assessment)
     except db.GateError as e:
         raise HTTPException(409, str(e))
     except ValueError as e:
@@ -197,6 +200,8 @@ def release(case_id: int, officer: str = Depends(current_officer)):
     con = db.connect()
     try:
         db.release_to_farmer(con, case_id, actor=f"officer:{officer}")
+    except db.SafetyError as e:
+        raise HTTPException(422, e.assessment)
     except db.GateError as e:
         raise HTTPException(409, str(e))
     delivery = service.deliver(con, case_id, service.configured_channels())

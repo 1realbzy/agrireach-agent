@@ -24,6 +24,13 @@ class GateError(Exception):
     """Raised when an action would bypass the officer approval gate."""
 
 
+class SafetyError(GateError):
+    """Structured safety rejection; callers must preserve findings and recovery."""
+    def __init__(self, assessment):
+        self.assessment = assessment
+        super().__init__(assessment["outcome"])
+
+
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -78,6 +85,8 @@ def connect(path: str | None = None) -> sqlite3.Connection:
         if col not in cols:
             con.execute(f"ALTER TABLE cases ADD COLUMN {col} TEXT")
     con.commit()
+    from agrireach.migrations import ensure_schema
+    ensure_schema(con, p)
     return con
 
 
@@ -119,17 +128,21 @@ def agent_upsert_case(con, *, status: str, question: str = "", case_id: int | No
         raise GateError(f"case {case_id} is '{row['status']}' and can no longer be changed by the agent")
     con.execute(
         "UPDATE cases SET draft=COALESCE(?,draft), farmer_draft=COALESCE(?,farmer_draft), sources=?, priority=?,"
-        " urgent_reasons=?, status=?, updated_at=? WHERE id=?",
+        " urgent_reasons=?, status=?, updated_at=?, revision=revision+1 WHERE id=? AND revision=?",
         (draft, farmer_draft, json.dumps(sources if sources is not None else json.loads(row["sources"])), priority,
-         json.dumps(urgent_reasons or []), status, t, case_id))
+         json.dumps(urgent_reasons or []), status, t, case_id, row["revision"]))
     con.commit()
     return case_id
 
 
 def officer_decide(con, case_id: int, *, officer: str, decision: str, edited_text: str | None = None,
-                   note: str | None = None, farmer_text: str | None = None) -> dict:
-    """Approval covers exactly what is delivered: farmer_text is the farmer-facing text the officer approved. If it is
-    not given, the approved officer text itself is what the farmer gets (the API requires it explicitly)."""
+                   note: str | None = None, farmer_text: str | None = None,
+                   expected_revision: int | None = None) -> dict:
+    """Assess explicit farmer text and reject stale revisions before any approval.
+
+    SafetyError retains structured findings; GateError requests reload/recovery.
+    Checkpoint one holds model dependent candidates for further assessment.
+    """
     if not officer or not officer.strip():
         raise GateError("a named officer is required")
     if decision not in OFFICER_DECISIONS:
@@ -137,10 +150,28 @@ def officer_decide(con, case_id: int, *, officer: str, decision: str, edited_tex
     row = get_case(con, case_id)
     if row is None:
         raise ValueError(f"case {case_id} not found")
+    if expected_revision is None or expected_revision != row["revision"]:
+        raise GateError("stale_revision: supply the current case revision")
+    if decision in ("approve", "edit_approve"):
+        from agrireach import safety_gate, knowledge
+        snapshot = dict(row)
+        passages = [knowledge.reference(i) for i in json.loads(row["sources"])]
+        if not all(passages):
+            raise GateError("review_required: a source cannot be resolved")
+        language = (json.loads(row["farmer_draft"] or "null") or {}).get("language", "en")
+        assessment = safety_gate.assess(farmer_text, passages, language=language)
+        with con:
+            con.execute("INSERT INTO advisory_submissions(case_id,revision,officer,farmer_text,officer_text,decision,note,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                        (case_id, expected_revision, officer, farmer_text, edited_text, decision, note, now()))
+            con.execute("INSERT INTO safety_assessments(case_id,snapshot,assessment,created_at) VALUES (?,?,?,?)",
+                        (case_id, json.dumps(snapshot), json.dumps(assessment.to_dict()), now()))
+        if assessment.outcome != "pass":
+            raise SafetyError(assessment.to_dict())
+        if assessment.judge_status == "required":
+            # Checkpoint 1 deliberately holds probabilistic assessments until the
+            # secure acknowledgement protocol is available in checkpoint 2.
+            raise SafetyError({"outcome": "review_required", "findings": [], "reason": "probabilistic assessment not yet enabled"})
     prev = row["status"]
-    if prev == "not_delivered" and decision not in ("approve", "edit_approve"):
-        raise GateError(f"case {case_id} was approved but not delivered: approve it again (after editing if needed) "
-                        "or retry the send")
     if prev not in ("pending_review", "not_delivered"):
         raise GateError(f"case {case_id} is '{prev}', not pending_review")
     status = {"approve": "approved", "edit_approve": "approved", "reject": "rejected",
@@ -154,13 +185,13 @@ def officer_decide(con, case_id: int, *, officer: str, decision: str, edited_tex
         final = edited_text
     farmer = None
     if final is not None:
-        farmer = farmer_text.strip() if farmer_text and farmer_text.strip() else final
+        farmer = farmer_text
     t = now()
     # Write only if the case is STILL in the status read above: the check and this write are not atomic, so two
     # officers deciding at once would otherwise both "win" (last write on the record, first text on the phone).
     cur = con.execute("UPDATE cases SET status=?, final_text=?, farmer_text=?, officer=?, decided_at=?, officer_note=?,"
-                      " updated_at=? WHERE id=? AND status=?",
-                      (status, final, farmer, officer.strip(), t, note, t, case_id, prev))
+                      " updated_at=?, revision=revision+1 WHERE id=? AND status=? AND revision=?",
+                      (status, final, farmer, officer.strip(), t, note, t, case_id, prev, expected_revision))
     con.commit()
     if cur.rowcount != 1:
         log(con, f"officer:{officer.strip()}", "officer_decision", {"decision": decision},
@@ -176,6 +207,25 @@ def officer_decide(con, case_id: int, *, officer: str, decision: str, edited_tex
 
 def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def reopen_case(con, case_id: int, *, officer: str, expected_revision: int, information: str) -> dict:
+    """Reopen needs_info explicitly, preserving the old draft and new officer evidence.
+
+    Trusted local callers supply the officer; remote callers must authenticate it.
+    Raises GateError on stale state. It never releases or approves advice.
+    """
+    if not officer.strip() or not information.strip():
+        raise ValueError("Officer and additional information are required")
+    with con:
+        changed = con.execute("UPDATE cases SET status='pending_review', revision=revision+1, updated_at=? "
+                              "WHERE id=? AND revision=? AND status='needs_info'",
+                              (now(), case_id, expected_revision))
+        if changed.rowcount != 1:
+            raise GateError("stale_revision: reload the needs_info case")
+        con.execute("INSERT INTO advisory_submissions(case_id,revision,officer,decision,note,created_at) "
+                    "VALUES (?,?,?,'reopen',?,?)", (case_id, expected_revision, officer, information, now()))
+    return dict(get_case(con, case_id))
 
 
 def add_officer(con, name: str) -> str:
