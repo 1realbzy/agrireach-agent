@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadF
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from agrireach import agent, db, farmer_reply, knowledge, llm
+from agrireach import approval, agent, db, farmer_reply, knowledge, llm
 from agrireach.channels import service, simulator, sms, whatsapp
 from agrireach.channels.base import mask_sender
 
@@ -230,6 +230,16 @@ def sms_check(case_id: int, body: FarmerText, officer: str = Depends(current_off
     if contact is None or contact["channel"] != "sms":
         return {"channel": contact["channel"] if contact else None, "prompt": None}
     return {"channel": "sms", **sms.check(body.farmer_text)}
+
+
+@app.post("/officer/cases/{case_id}/assess")
+def assess(case_id: int, body: FarmerText, officer: str = Depends(current_officer)):
+    """Re-run the safety assessment on the officer's farmer text. Read-only: nothing is approved or sent."""
+    con = db.connect()
+    row = db.get_case(con, case_id)
+    if not row:
+        raise HTTPException(404, "not found")
+    return approval.assess_candidate(body.farmer_text, approval.context(con, row))
 
 
 @app.post("/cases/{case_id}/release")

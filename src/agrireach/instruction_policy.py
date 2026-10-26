@@ -1,71 +1,100 @@
-"""Bounded vocabulary boundary for novel advice, independent of instruction verbs.
+"""Three hard stops for advice lines that are not copied from a cited source.
 
-This classifies uncertainty, not semantic truth. A model may assess source support
-only after all material/entity terms have a known nonchemical interpretation.
-Names outside the vocabulary require review even in fragments or passive voice.
-Common-word product names remain a limitation; do not claim universal recognition.
+The gate does not try to judge agronomy; the judge and the officer do that.
+It only holds lines the officer must edit (they cannot be acknowledged):
+
+1. unsourced_input(): a product, chemical, household hazard, dose or rate;
+   a vague or capitalised thing being applied ("Pour it...", "Use Clear...");
+   or anything put on the leaves or plants.
+2. skips_officer(): any mention of the AEA or extension officer that is not a
+   plain referral. "If you are not sure, ask your AEA" passes; "Do not ask the
+   AEA" is held, because there the negation is aimed at the officer.
+3. burns_land(): burning, torching or setting fire, unless it says not to.
 """
 import re
 
-# Ordinary grammatical and agricultural words are not evidence of a product.
-# This set permits model assessment, not automatic source support or approval.
-GENERAL_WORDS = set("""a an the this that these those i you your we our they their it its them and or but
-with without to from into onto on in at by for of as if when while before after
-is are was were be been being should could would can may must will do does did
-not no never only also then than very more less some any all each every once twice
-one two three four five six seven eight nine ten first second day days week weeks
-month months morning evening daily weekly need needs local recommended which what
-how why where about until well use using used put pour add added sprinkle soak
-scout scouting inspect check look monitor observe remove harvest mature pods leaves
-leaf field crop crops plant plants planting maize soybean soybeans seed seeds soil
-ground water clean dry wet damp keep kept storage stored store bag bags sacks sack
-jute knife hoe tool tools cut cutting weeds weed weeding roots root stem stems cobs
-cob grain grains ready brown green turned turn most carefully regularly gently
-proper properly clear away damaged damage insect insects larvae pests pest holes
-rotating rotate rotation plough ploughing deeply burn bury residues growth stunted
-compost manure ash mulch organic decomposed mature matter healthy ripe sow sowing
-apply applied applying mix mixed mixing spread place scatter cover top around near
-row rows between separate spacing apart wash drying sunlight shade ventilation
-farmer farmers advice advise officer extension agent agricultural aea consult ask
-talk seeing see visit confirm follow help safety safe gloves label protect wear
-temperature c kɔforidua tamale adaklu ejura kintampo northern ghana area region
-so guides guide comes suit like future weeded timing looking manage color consider
-problems think infestation signs find prevent ashanti farm armyworm fall apni
-zone zones answer b checked kumasi
-recommend know unsure sure thank please information carefully advice necessary
-""".split())
-DOSE = re.compile(r"\b\d+(?:\.\d+)?\s*(?:ml|mg|g|kg|litres?|liters?|tablets?|capsules?|percent|%)\b", re.I)
-CONSULTATION = re.compile(r"\b(?:aea|extension (?:officer|agent))\b", re.I)
+APPLY = r"put|pour|apply|sprinkle|add|soak|dip|coat|wipe|rub|mix|give|use|smear|paint|spread|scatter|place"
+# Treating, dusting or drenching a crop is chemical work, whatever it is done with.
+TREAT = re.compile(r"\b(?:treat|dust|drench|dress|fumigate|coat)\w*\b(?! with (?:water|ash)\b)", re.I)
+PRODUCT = re.compile(
+    r"\b(?:mancozeb|karate|lambda|actellic|phostoxin|gramoxone|paraquat|glyphosate|atrazine|attakan|emamectin|"
+    r"tylosin|ampligo|coragen|kerosene|petrol|diesel|engine oil|detergent|bleach|carbide|battery|"
+    r"(?<!sulphate of )(?<!sulfate of )ammonia|\w{3,}(?:thrin|phos|fos|carb|zeb|mectin|cides?|azole|oxone|"
+    r"thoate|cloprid|phosphide))\b", re.I)
+DOSE = re.compile(r"\b\d+(?:\.\d+)?\s*(?:ml|mg|g|kg|l|litres?|liters?|tablets?|sachets?|capfuls?|cups?|spoons?|"
+                  r"bottles?|bags?)\b|\b(?:pinch|capful|sachet|bottle[- ]top|tablespoon|teaspoon|tablet)s?\b"
+                  r"|\bper (?:acre|hectare|knapsack|litre|bucket)\b", re.I)
+# What follows an application verb (or "with") when it is unclear what it is.
+VAGUE = (r"it|them|some(?!\s+[a-z]{3,})|that|this|these|those|any|whatever|what|a little|a bit|one|two|three|a few|"
+         r"(?:the |a |your )?(?:\w+ )?(?:powder|mixture|stuff|liquid|solution|product|medicine|remedy|thing|"
+         r"chemical|control|treatment|one)s?\b")
+UNCLEAR = re.compile(rf"\b(?:{APPLY}|with)\s+(?:{VAGUE})\b|\b(?:{APPLY})(?:\s*$|\s+(?:to|on|onto|over)\b)", re.I)
+# A capitalised name as the thing applied is probably a brand ("Use Clear on the weeds").
+CAPITALISED = re.compile(rf"\b(?i:{APPLY})\b(?:.*\b(?:in|with)\b)?\s+(?:the |some |a )?(?!PICS\b|NPK\b|MoFA\b)[A-Z]\w*")
+# Anything "on the leaves" is held unless the line is about looking at them.
+ON_PLANTS = re.compile(rf"\b(?:on|onto|over|(?:{APPLY})\s+\w+\s+to)\s+(?:the\s+|your\s+|each\s+)?(?:\w+\s+)?(?:leaf|leaves|plants?|crops?|"
+                       r"weeds?|funnels?|cobs?|grains?|seeds?|stems?|roots?|maize|pods)\b", re.I)
+LOOKING = re.compile(r"\b(?:look|check|scout|inspect|see|find|search|count|eggs?|holes|damage|frass|spots|signs)\b", re.I)
+CLAIM = re.compile(r"\b(?:kills?|controls?|cures?|works? (?:on|against|for)|(?:is|are) (?:good|best|effective) "
+                   r"(?:for|against|on))\s+(?:the |your )?(?:pests?|insects?|worms?|armyworms?|caterpillars?|weeds?|"
+                   r"diseases?|cobs?|leaves|crops?|plants?|maize|soybeans?)\b|\bworks?$", re.I)
 
 
-def words(text: str) -> set[str]:
-    """Return lexical terms without interpreting punctuation or capitalization."""
-    return set(re.findall(r"[^\W\d_]+", text.casefold()))
+def unsourced_input(sentence: str) -> str | None:
+    """Explain why an unsourced line about putting something on a crop needs editing, or return None."""
+    s = re.sub(r"\btop[- ]dress\w*", "topdress", sentence.strip().rstrip(".!?"), flags=re.I)
+    if PRODUCT.search(s):
+        return "names a pesticide, chemical or household product"
+    if DOSE.search(s):
+        return "gives a dose or rate"
+    label_only = re.match(r"for [\w ]{1,20}:\s*\w+\s*(?:,|$)", s, re.I)  # "For maize: X, before harvest"
+    if TREAT.search(s) or UNCLEAR.search(s) or CAPITALISED.search(s) or label_only:
+        return "does not say plainly what is applied"
+    if (ON_PLANTS.search(s) and not LOOKING.search(s)) or CLAIM.search(s):
+        return "puts something on the plants or claims a cure"
+    return None
 
 
-def unresolved_terms(sentence: str, source_texts: list[str]) -> set[str]:
-    """Return unknown entities/materials; full source support is checked elsewhere.
+OFFICER = re.compile(r"\b(?:aeas?|extension|(?:the|your) agents?|agricultural (?:officer|agent)s?|officers?(?!-checked)|mofa staff)\b", re.I)
+# The officer clause must read as sending the farmer to the officer.
+REFERRAL = re.compile(
+    r"^(?:(?:so|then|and|just|please|you should|you can|you may)\s+)*(?:consult|ask|talk to|speak to|see|visit|call|"
+    r"contact|tell|check(?:\s+\w+){0,3}\s+with)\s+(?:your|the|a)\b"
+    r"|^(?:your|the) (?:local )?aea can (?:help|confirm|advise|show)\b"
+    r"|^(?:do not|don't|never) (?:skip|ignore|forget) (?:the|your) (?:local )?(?:aea|extension officer)$"
+    r"|\b(?:until|before|after|once) (?:your|the) (?:local )?(?:aea|extension officer) (?:has |have )?"
+    r"(?:seen|checked|visited|confirmed|advised)\b", re.I)
+DEVALUE = re.compile(r"\b(?:no|not|never|don't|without|instead|unnecessary|skip|avoid|ignore|forget|bypass|waste|"
+                     r"bother|wait|delay|yourself|alone|only|unless|rather|optional)\b|n't\b", re.I)
 
-    The cited source vocabulary supplies provenance context. The reviewed general
-    vocabulary supplies nonchemical interpretations. Neither is semantic proof.
-    Do not add reported brands here or whitelist whole sentences containing them.
+
+def skips_officer(sentence: str) -> bool:
+    """True when a line steers the farmer away from the officer.
+
+    Each clause naming the officer must be a plain referral with no negation in
+    it. A clause that does not name the officer ("If you are not sure, ...") is
+    left alone unless it says the visit is not needed or offers someone else instead.
     """
-    known = GENERAL_WORDS | {w for text in source_texts for w in words(text)}
-    return words(sentence) - known
+    s = sentence.strip().rstrip(".!?")
+    if re.search(r"\binstead\b", s, re.I) and re.search(r"\b(?:ask|consult|talk to|see|call)\b", s, re.I):
+        return True
+    for clause in re.split(r"[,;:]|\b(?:but|though|although)\b", s):
+        clause = clause.strip()
+        if not OFFICER.search(clause):
+            if DEVALUE.search(clause) and re.search(r"\b(?:need|needed|necessary|required|worth)\b", clause, re.I):
+                return OFFICER.search(s) is not None
+            continue
+        # A trailing condition ("... if you see no improvement") is about the farm, not the officer.
+        core = re.split(r"\s+\b(?:if|when|before|after|until)\b(?! (?:your|the) (?:local )?aea)", clause, 1, flags=re.I)[0]
+        waits = re.match(r"(?:do not|don't|never) (?:skip|ignore|forget|\w+ (?:anything )?until)\b", clause, re.I)
+        if not REFERRAL.search(clause) or (DEVALUE.search(core) and not waits):
+            return True
+    return False
 
 
-def consultation_bypass(sentence: str) -> bool:
-    """Recognize devaluing/refusing consultation regardless of chemical sources.
+BURN = re.compile(r"\b(?:burn\w*|torch\w*|set\w* fire|with fire|fire to)\b", re.I)
 
-    Ambiguous consultation language is held by the caller. Protective negations
-    do not become harmful solely because they mention a negative predicate.
-    """
-    if not CONSULTATION.search(sentence):
-        return False
-    value = sentence.casefold()
-    protective = re.search(r"\b(?:do not|don't|never) (?:skip|avoid|ignore|bypass)\b", value)
-    if protective:
-        return False
-    return bool(re.search(r"\b(?:no point|pointless|unnecessary|irrelevant|waste of time|"
-                          r"need not|needn't|not necessary|don't bother|do not bother|"
-                          r"skip|avoid|ignore|bypass)\b", value))
+
+def burns_land(sentence: str) -> bool:
+    """True when a line advises burning; "Do not burn the bush" is fine."""
+    return bool(BURN.search(sentence)) and not re.match(r"(?:do not|don't|never|avoid)\s+(?:burn|set|torch)|burn nothing", sentence.strip(), re.I)

@@ -5,6 +5,7 @@ import os
 import httpx
 import streamlit as st
 
+from agrireach import knowledge, llm
 from agrireach.ui_feedback import auth_headers, feedback
 
 API = os.getenv("AGRIREACH_API", "http://127.0.0.1:8000")
@@ -36,6 +37,13 @@ def show_result(status, data):
                     st.text("Required guidance: " + source_line)
 
 
+def source_name(passage_id):
+    """Show a source as its title and page, not its internal ID."""
+    ref = knowledge.reference(passage_id) or {}
+    title = (ref.get("source") or {}).get("title")
+    return f"{title}, {ref['page']}" if title and ref.get("page") else title or "Cited source"
+
+
 def render_delivery(case_id, headers, key):
     status, jobs = request("GET", f"/officer/cases/{case_id}/delivery-jobs", headers=headers)
     if status != 200:
@@ -58,7 +66,7 @@ def render_case(case, headers):
         render_delivery(cid, headers, "queue")
         if case["status"] == "not_delivered" and st.button("Retry release and delivery", key=f"retry{cid}"):
             show_result(*request("POST", f"/cases/{cid}/release", headers=headers))
-        st.caption("Sources: " + ", ".join(case["sources"]))
+        st.caption("Sources: " + "; ".join(source_name(s) for s in case["sources"]))
         voice_status, inbound = request("GET", f"/officer/cases/{cid}/voice", headers=headers)
         if voice_status == 200 and inbound.get("has_audio"):
             # Keep the officer's ability to verify the machine transcript.
@@ -69,7 +77,10 @@ def render_case(case, headers):
             except httpx.HTTPError:
                 st.warning("Voice note unavailable. Ask the operator to restore access before relying on the transcript.")
             st.text("Machine transcript: " + (inbound.get("transcript") or ""))
-        text = st.text_area("Officer draft with citations", case["draft"], key=f"draft{cid}")
+        # The offline label is for logs and tests; officers see only the advice.
+        shown = "\n".join(l for l in case["draft"].splitlines() if not l.startswith(llm.STUB_LABEL))
+        edited = st.text_area("Officer draft with citations", shown, key=f"draft{cid}")
+        text = case["draft"] if edited == shown else edited
         if st.button("Re-propose farmer text", key=f"repropose{cid}"):
             status, proposal = request("POST", f"/officer/cases/{cid}/farmer-draft", headers=headers, json={"officer_text": text})
             if status == 200:
@@ -100,10 +111,17 @@ def render_case(case, headers):
 
         if st.button("Approve and release", key=f"approve{cid}", disabled=not confirmed):
             submit(body)
-        if st.session_state.get(f"assessment_retry{cid}") and st.button("Retry assessment", key=f"assessment{cid}", disabled=not confirmed):
-            submit(body)
+        # Retry only re-checks the text. Approving is always a separate click.
+        if st.session_state.get(f"assessment_retry{cid}") and st.button("Retry assessment", key=f"assessment{cid}"):
+            status, data = request("POST", f"/officer/cases/{cid}/assess", headers=headers, json={"farmer_text": farmer_text})
+            if status == 200:
+                st.session_state[f"assessment_retry{cid}"] = False
+                st.info(f"Assessment complete: {data.get('outcome', 'unknown').replace('_', ' ')}. Nothing was approved or sent.")
+            else:
+                show_result(status, data)
         for label, decision in (("Reject", "reject"), ("Request info", "request_info")):
-            if st.button(label, key=f"{decision}{cid}"):
+            sure = st.checkbox(f"Confirm: {label.lower()} this case with the note above", key=f"sure{decision}{cid}")
+            if st.button(label, key=f"{decision}{cid}", disabled=not (sure and note.strip())):
                 submit(body | {"decision": decision})
         challenge = st.session_state.get(f"challenge{cid}")
         if challenge and challenge["body"] == body:
@@ -152,8 +170,6 @@ def main():
     status, health = request("GET", "/health")
     if status != 200:
         st.warning("The service is unavailable. Try again shortly.")
-    elif health.get("draft_mode") == "stub":
-        st.info("Offline demonstration: proposals use retrieved source passages.")
     farmer, voice, officer = st.tabs(["Farmer", "Voice note simulator", "Extension officer"])
     with farmer:
         question = st.text_area("Your question", "When should I plant soybean in Tamale?")

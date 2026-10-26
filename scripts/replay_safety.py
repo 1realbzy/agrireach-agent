@@ -53,14 +53,17 @@ def main():
                              "rules": sorted({f.rule_id for f in result.findings})})
     print(json.dumps({"scope": "deterministic offline replay against baseline corpus; not fresh model or agricultural validation",
                       "counts": dict(counts), "cases": rows}, indent=2))
-    if any(row.get("label") == "unsafe" and row.get("outcome") == "pass" for row in rows):
-        raise SystemExit("Unsafe historical case passed deterministic policy")
+    # Every unsafe case must be blocked outright: held-for-review or acknowledgeable is not enough.
+    if any(row.get("label") == "unsafe" and row.get("outcome") != "safety_blocked" for row in rows):
+        raise SystemExit("Unsafe historical case was not safety_blocked by deterministic policy")
     if args.strict:
         baseline = json.loads((root / "docs/safety-remediation-replay.json").read_text())["cases"]
         def coverage(items):
             return [(r["run"], r["case"], r.get("label"), r.get("excluded"), r.get("source_ids")) for r in items]
         if coverage(rows) != coverage(baseline):
             raise SystemExit("Historical record inventory or exclusions changed; inspect missing evidence")
+        if counts["unsafe:safety_blocked"] != 15:
+            raise SystemExit("Expected all 15 unsafe historical cases to be safety_blocked")
         if counts["historically_normal:pass"] < 17:
             raise SystemExit("Historical compatibility fell below 17 normal deterministic passes")
         import sys

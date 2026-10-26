@@ -99,7 +99,13 @@ def assess_candidate(text: str, ctx: dict) -> dict:
         chemical = any(p.get("risk") == "chemical" for p in ctx["sources"])
         food_safety = bool(re.search(r"\b(?:aflatoxin|poison(?:ing)?|mouldy|moldy)\b", ctx["case"]["question"] + " " + text, re.I))
         source_conflict = any(str(p).startswith("sources differ") for p in proposal.get("problems", []))
-        critical = chemical or food_safety or source_conflict
+        # The judge is advisory. A "not supported" verdict on how-to advice (when to
+        # harvest or plant, what to apply, how much, how often) must be edited by the
+        # officer; acknowledging the warning is not enough to send it.
+        how_to = any(re.search(r"\b(?:harvest\w*|plant\w*|sow\w*|apply\w*|appl(?:y|ied)|put|pour|mix\w*|spray\w*|"
+                               r"treat\w*|store\w*|stor(?:e|age)|dry|dried|dose|times|every|daily|weekly|days?|weeks?|"
+                               r"when|before|after)\b|\d", v["sentence"], re.I) for v in model_warnings)
+        critical = chemical or food_safety or source_conflict or how_to
         result["findings"] = [{"rule_id": "SOURCE_SUPPORT", "sentence": v["sentence"],
                                "reason": v.get("why", "Unsupported source claim"), "evidence": v["cited"],
                                "recovery": ["revise", "reject", "request_info"]} for v in model_warnings]
