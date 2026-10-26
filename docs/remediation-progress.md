@@ -30,3 +30,26 @@ disposition atomically without sending. BEGIN IMMEDIATE serializes reconciliatio
 Reject/request_info can preserve an unresolved delivery record without reapproving.
 Reopening remains unavailable until an unknown send is reconciled.
 Targeted delivery, SMS, transaction and QA regressions: 65 passed.
+
+## H2 and functional corrections
+
+S1 now classifies registered source topics using immutable question plus reply.
+Unknown/changed topics remain in scope; field scouting of cobs is not storage.
+S2/S3 still inspect every sentence independently. All frozen fixtures unchanged.
+Complete registered templates/source sentences bypass probabilistic assessment;
+critical uncertain instructions cannot. Harmful consultation bypass rewordings
+block while protective negations remain valid. English replies to Twi proposals
+are assessed from the reply; temperature symbols and place names alone do not
+trigger a language hold. Language classification remains a bounded heuristic.
+CLI returns nonzero on blocked operations. Acknowledgement binding uses stable
+warning identity instead of stochastic explanation prose.
+
+Historical replay: 17 normal passes, 5 normal holds, 0 normal blocks; 15/15 unsafe
+blocks; 3 unresolved sources and 2 missing-evidence exclusions unchanged. These
+labels do not establish agronomic correctness. Updated QA/approval tests: 38 passed.
+Repaired real Whisper/Piper and QA/approval group: 39 passed (before five added
+product/API/ack regressions). No live advisory-model configuration exists.
+
+First full regression: 761 passed, 1 failed, 1 skipped. Failure identified an
+overbroad SOURCE_CONFLICT hold for explicit deferral to the officer; corrected
+without changing the existing test. Fresh complete run with speech assets pending.

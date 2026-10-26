@@ -41,13 +41,16 @@ def main():
                     rows.append({"run": run, "case": name, "excluded": "unresolved source identifiers", "source_ids": ids})
                     continue
                 language = "twi" if name == "TWI" else "en"
-                result = safety_gate.assess(text, passages, language=language)
+                result = safety_gate.assess(text, passages, language=language,
+                                           question=case.get("question", case.get("q", "")))
                 counts[f"{label}:{result.outcome}"] += 1
                 rows.append({"run": run, "case": name, "label": label, "outcome": result.outcome,
                              "judge_status": result.judge_status,
                              "rules": sorted({f.rule_id for f in result.findings})})
     print(json.dumps({"scope": "deterministic offline replay against baseline corpus; not fresh model or agricultural validation",
                       "counts": dict(counts), "cases": rows}, indent=2))
+    if any(row.get("label") == "unsafe" and row.get("outcome") == "pass" for row in rows):
+        raise SystemExit("Unsafe historical case passed deterministic policy")
 
 
 if __name__ == "__main__":

@@ -123,7 +123,8 @@ def main(argv=None):
     else:
         out = SimulatorChannel().messages(args.sender)
     print(json.dumps(out, indent=2, ensure_ascii=False))
+    return 1 if isinstance(out, dict) and ("error" in out or out.get("ok") is False) else 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

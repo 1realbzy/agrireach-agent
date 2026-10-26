@@ -37,17 +37,30 @@ def assess_candidate(text: str, ctx: dict) -> dict:
     from agrireach import citation_check, claim_check, farmer_reply, llm
     from agrireach.channels import sms
     proposal = json.loads(ctx["case"]["farmer_draft"] or "null") or {}
-    result = safety_gate.assess(text, ctx["sources"], language=proposal.get("language", "en")).to_dict()
+    result = safety_gate.assess(text, ctx["sources"], language=proposal.get("language", "en"),
+                                question=ctx["case"].get("question", "")).to_dict()
+    source_conflict = any(str(p).startswith("sources differ") for p in proposal.get("problems", []))
+    # A refusal to choose between sources is a recovery path, not a resolution
+    # claim. Numeric or model-dependent advice still needs source reconciliation.
+    conflict_deferred = farmer_reply.CONFIRM in (text or "") and not re.search(r"\d", text or "")
+    if source_conflict and not conflict_deferred:
+        result["outcome"] = "review_required" if result["outcome"] == "pass" else result["outcome"]
+        result["findings"].append(safety_gate.Finding("SOURCE_CONFLICT", "", "Contradictory sources require officer source resolution").to_dict())
     caveat = proposal.get("zone_caveat")
     result["informational"] = []
     if not farmer_reply.caveat_kept(text or "", caveat):
         result["informational"].append("The approved text omits the case zone caveat; review source applicability")
     if ctx["contact"] and ctx["contact"]["channel"] == "sms" and text and sms.length_prompt(text):
-        return result | {"outcome": "safety_blocked", "reason": sms.length_prompt(text), "findings": [safety_gate.Finding("CHANNEL_LENGTH", text, sms.length_prompt(text)).to_dict()]}
+        reason = sms.length_prompt(text)
+        finding = safety_gate.Finding("CHANNEL_LENGTH", text, reason)
+        return result | {"outcome": "safety_blocked", "reason": reason,
+                         "findings": [finding.to_dict()]}
     if result["outcome"] != "pass" or result["judge_status"] != "required":
         return result
     if not ctx["sources"]:
-        return result | {"outcome": "review_required", "reason": "No source supports the candidate", "findings": [safety_gate.Finding("SOURCE_SUPPORT", text, "No source supports the candidate").to_dict()]}
+        finding = safety_gate.Finding("SOURCE_SUPPORT", text, "No source supports the candidate")
+        return result | {"outcome": "review_required", "reason": finding.reason,
+                         "findings": [finding.to_dict()]}
     ids = ", ".join(p["id"] for p in ctx["sources"])
     from agrireach.farmer_reply import _ABBREV_WORDS
     # Deterministic rules have already inspected every sentence. Only an exact
@@ -56,15 +69,29 @@ def assess_candidate(text: str, ctx: dict) -> dict:
     fixed = {farmer_reply.CONFIRM}
     if fixed_caveat:
         fixed.add(fixed_caveat["sentence"])
-    checked_sentences = [re.sub(rf"\b({_ABBREV_WORDS})\.(?=\s)", r"\1", s) for s in safety_gate.sentences(text) if s not in fixed]
+    source_sentences = {safety_gate.normalized(s) for p in ctx["sources"] for s in safety_gate.sentences(p["text"])}
+    checked_sentences = [re.sub(rf"\b({_ABBREV_WORDS})\.(?=\s)", r"\1", s)
+                         for s in safety_gate.sentences(text)
+                         if s not in fixed and not safety_gate.registered_template(s)
+                         and safety_gate.normalized(s) not in source_sentences]
+    if not checked_sentences:
+        return result | {"judge_status": "not_required"}
     draft = "\n".join(f"{s} [{ids}]" for s in checked_sentences)
     figures = citation_check.check_draft(draft, ctx["sources"])
     if not figures.ok:
-        return result | {"outcome": "review_required", "reason": "Figures do not match cited sources", "warnings": figures.problems, "findings": [safety_gate.Finding("SOURCE_FIGURES", "", problem, tuple(p["id"] for p in ctx["sources"])).to_dict() for problem in figures.problems]}
+        findings = [safety_gate.Finding("SOURCE_FIGURES", "", problem,
+                    tuple(p["id"] for p in ctx["sources"])).to_dict()
+                    for problem in figures.problems]
+        return result | {"outcome": "review_required", "reason": "Figures do not match cited sources",
+                         "warnings": figures.problems, "findings": findings}
     checked = claim_check.check_claims(draft, ctx["sources"], judge=True)
     result["judge"] = checked.judge
     if checked.judge_failed:
-        return result | {"outcome": "assessment_unavailable", "judge_status": "failed", "findings": [safety_gate.Finding("JUDGE_AVAILABILITY", "", "Required judge did not return a complete valid assessment", recovery=("retry_assessment", "revise", "reject", "request_info")).to_dict()]}
+        finding = safety_gate.Finding("JUDGE_AVAILABILITY", "",
+            "Required judge did not return a complete valid assessment",
+            recovery=("retry_assessment", "revise", "reject", "request_info"))
+        return result | {"outcome": "assessment_unavailable", "judge_status": "failed",
+                         "findings": [finding.to_dict()]}
     if checked.problems:
         # Only noncritical probabilistic support verdicts may be acknowledged.
         # Lexical/source problems and chemical uncertainty need revision instead.
@@ -128,9 +155,18 @@ def decide(con, case_id: int, *, officer: str, decision: str, edited_text=None,
             script_text = script.text
     credential = con.execute("SELECT token_sha256 FROM officers WHERE name=?", (officer,)).fetchone()
     credential_hash = credential[0] if credential else None
+    # Bind stable warning identity, not model explanation prose, which may change
+    # between identical assessments. New sentences/rules/evidence still invalidate.
+    warning_identity = {
+        "outcome": assessment["outcome"],
+        "judge_status": assessment.get("judge_status"),
+        "findings": sorted(
+            (f["rule_id"], f.get("sentence", ""), tuple(sorted(f.get("evidence", []))))
+            for f in assessment.get("findings", [])),
+    }
     binding = safety_gate.fingerprint({"context": ctx, "farmer_text": farmer_text, "officer_text": final,
                                        "decision": decision, "officer": officer, "credential": credential_hash, "voice_script": script_text,
-                                       "assessment": assessment})
+                                       "assessment": warning_identity})
     status = {"approve": "approved", "edit_approve": "approved", "reject": "rejected", "request_info": "needs_info"}[decision]
     blocked = None
     try:
@@ -202,7 +238,7 @@ def validated_approval(con, case_id: int) -> tuple[dict, dict]:
     ctx["case"]["revision"] = payload["context"]["case"]["revision"]
     if row["revision"] != approval["revision"] or ctx != payload["context"] or safety_gate.fingerprint(payload) != approval["fingerprint"]:
         raise db.GateError("Approval fingerprint changed; fresh approval required")
-    result = safety_gate.assess(payload["farmer_text"], ctx["sources"], language=(json.loads(ctx["case"]["farmer_draft"] or "null") or {}).get("language", "en"))
+    result = safety_gate.assess(payload["farmer_text"], ctx["sources"], language=(json.loads(ctx["case"]["farmer_draft"] or "null") or {}).get("language", "en"), question=ctx["case"]["question"])
     if result.outcome != "pass":
         raise db.SafetyError(result.to_dict())
     return dict(approval), payload

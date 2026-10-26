@@ -22,7 +22,7 @@ UNKNOWN_BRAND_ACTION = re.compile(r"\b(?:Apply|Use|Mix|Treat|apply|use|mix|treat
 MATERIAL_INSTRUCTION = re.compile(
     r"\b(?:use|apply|mix|spray|treat|drench|dust|dose|administer)\b", re.I)
 MATERIAL_OBJECT = re.compile(
-    r"\b(?:with|using)\s+\w+|\b(?:use|apply|mix|dose|administer)\s+\w+"
+    r"\b(?:with|using|in|into|onto)\s+\w+|\b(?:use|apply|mix|dose|administer)\s+\w+"
     r"|\b(?:it|them|this product|that product)\b|\b\d+\s*(?:ml|litres?|grams?|kg|days?)\b", re.I)
 PERSON = r"(?:AEA|agricultural extension officer|agricultural extension agent|extension officer|extension agent)"
 REFERRALS = {
@@ -34,6 +34,39 @@ REFERRALS = {
 }
 PROTECTIVE = {"Do not use unapproved pesticides.", "Do not spray without gloves."}
 NO_ADVICE = {"I do not know.", "I am not sure.", "Your extension officer will confirm which to follow."}
+NO_ADVICE.add("I do not know which pesticide to recommend.")
+for person in ("AEA", "extension agent", "agricultural extension officer"):
+    REFERRALS.update({f"Talk to your local {person} about which pesticide to use.",
+                      f"Ask your local {person} which fall armyworm pesticide to use."})
+
+
+def registered_template(text: str) -> bool:
+    """Recognize complete verified templates, including permitted attribution."""
+    return normalized(text) in {normalized(s) for s in REFERRALS | PROTECTIVE | NO_ADVICE}
+
+
+TOPICS = {
+    "storage": r"\b(?:stor\w*|sacks?|grain|bagging|postharvest)\b",
+    "faw": r"\b(?:faw|army\s?worms?|worms?|holes|infestation)\b",
+    "weeds": r"\b(?:weeds?|weeding|herbicides?)\b",
+}
+SOURCE_TOPICS = {"APNI-SARI-2023:weeds-herbicide": "weeds",
+                 "APNI-SARI-2023-MAIZE:p20-faw-control": "faw",
+                 "APNI-SARI-2023-MAIZE:p22-sacks": "storage"}
+
+
+def applicable(passage: dict, question: str, text: str) -> bool:
+    """Exclude only classified incidental sources; ambiguity keeps S1 enabled.
+
+    The immutable question participates so omitting reply keywords cannot remove
+    its safeguards. Unknown IDs/topics and changed registered content fail closed.
+    """
+    topic = SOURCE_TOPICS.get(passage.get("id"))
+    if not topic or fingerprint(passage.get("text", "")) != SOURCE_FINGERPRINTS.get(passage.get("id")):
+        return True
+    context_topics = {k for k, pattern in TOPICS.items() if re.search(pattern, question, re.I)}
+    reply_topics = {k for k, pattern in TOPICS.items() if re.search(pattern, text, re.I)}
+    return not context_topics or topic in context_topics | reply_topics
 
 
 def sentences(text: str) -> list[str]:
@@ -77,7 +110,7 @@ class Assessment:
         return asdict(self)
 
 
-def assess(text: str, passages: list[dict], *, language: str = "en") -> Assessment:
+def assess(text: str, passages: list[dict], *, language: str = "en", question: str = "") -> Assessment:
     """Assess deterministic rules; return evidence without I/O or content rewriting.
 
     Args: exact farmer text, resolved source passages and stored proposal language.
@@ -85,7 +118,7 @@ def assess(text: str, passages: list[dict], *, language: str = "en") -> Assessme
     Safety assumption: supplied passages are the immutable case snapshot. Unknown
     languages and uncertain chemical clauses require revision, not acknowledgement.
     """
-    from agrireach.language import is_twi
+    from agrireach.language import TWI_MARKERS
 
     result = Assessment()
     def add(rule, sentence, reason, evidence=(), *, uncertain=False):
@@ -96,7 +129,11 @@ def assess(text: str, passages: list[dict], *, language: str = "en") -> Assessme
     if not text or not text.strip():
         add("TEXT", text or "", "Explicit farmer text is required")
         return result
-    if language != "en" or is_twi(text) or re.search(r"[^\x00-\x7f]", text.replace("’", "'").replace("–", "-").replace("é", "e")):
+    words = re.findall(r"[^\W\d_]+", text.casefold())
+    twi_hits = sum(w in TWI_MARKERS for w in words)
+    english_hits = sum(w in {"the", "your", "when", "before", "do", "not", "consult", "use", "harvest", "maize", "pesticide", "to", "is", "at"} for w in words)
+    foreign_script = bool(re.search(r"[\u0370-\u052f\u0600-\u06ff\u0900-\u0dff\u3040-\u9fff]", text))
+    if twi_hits >= 2 or foreign_script or (language != "en" and english_hits < 2):
         add("LANGUAGE", "", "Language assessment is outside the English policy", uncertain=True)
     source_sentences = {normalized(s) for p in passages for s in sentences(p.get("text", ""))}
     safe_templates = {normalized(s) for s in REFERRALS | PROTECTIVE | NO_ADVICE}
@@ -109,25 +146,29 @@ def assess(text: str, passages: list[dict], *, language: str = "en") -> Assessme
     referral_sentences = [normalized(s) for s in ss if normalized(s) in {normalized(x) for x in REFERRALS}]
     preuse_referral = any("before choosing or applying a pesticide" in s for s in referral_sentences)
     for p in chemical_passages:
+        if not applicable(p, question, text):
+            continue
         consultation = [s for s in sentences(p["text"]) if re.search(PERSON, s, re.I)]
         kept = any(normalized(s) == normalized(c) for s in ss for c in consultation)
         if p["id"] not in registry_ids or fingerprint(p["text"]) != SOURCE_FINGERPRINTS.get(p["id"]):
             add("S1", "", "Chemical source requires a registered safeguard", [p["id"], p["text"]], uncertain=True)
         elif not (kept or preuse_referral or
                   (p["id"] == "APNI-SARI-2023:weeds-herbicide" and any("before applying any herbicide" in s for s in referral_sentences)) or
-                  (p["id"] == "APNI-SARI-2023-MAIZE:p20-faw-control" and any("fall army worm" in s for s in referral_sentences))):
-            add("S1", "", "Required chemical consultation guidance is missing", [p["id"], *consultation])
+                  (p["id"] == "APNI-SARI-2023-MAIZE:p20-faw-control" and any("fall army worm" in s or "fall armyworm" in s for s in referral_sentences))):
+            required = consultation or ["Consult your local AEA before choosing or applying a pesticide."]
+            add("S1", "", "Required safeguard: " + " / ".join(required), [p["id"], *required])
     for s in ss:
         norm = normalized(s)
         if norm in safe_templates:
             continue
         reversal = re.search(
-            rf"\b(?:do not|don't|never|no need to)\s+(?:consult|ask)\s+(?:your\s+)?(?:local\s+)?{PERSON}\b"
+            rf"\b(?:do not|don't|never|no need to|do not need to|don't need to)\s+(?:consult|ask)\s+(?:your\s+)?(?:local\s+)?{PERSON}\b"
+            rf"|(?<!not )(?<!never )(?<!don't )\bskip\s+(?:the\s+|your\s+)?(?:local\s+)?{PERSON}\b"
             r"|\b(?:do not|don't|never|no need to)\s+follow\s+(?:the\s+)?(?:pesticide\s+)?label\b"
             r"|\b(?:do not|don't|never|no need to)\s+wear\s+(?:protective\s+)?gloves\b"
             r"|\bignore\b.*\blabel\b|^spray\b.*\bwithout gloves\b"
             r"|^(?:apply|use|spray|treat)\b.*\bwithout (?:advice|consultation)\b", norm, re.I)
-        if reversal and (chemical_passages or CHEMICAL.search(s)):
+        if reversal:
             add("S2", s, "Instruction reverses consultation, label or protection requirements")
             continue
         if norm in source_sentences:
