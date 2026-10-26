@@ -127,7 +127,7 @@ def test_greeting_needs_no_source_but_advice_still_does(monkeypatch):
 
 @pytest.mark.parametrize("text", ["Thanks, you can sell mouldy maize.", "Hello, eat the mouldy cobs, they are fine.",
                                   "Hi Kofi, plant two seeds per hill.", "Thanks, harvest when the leaves are green.",
-                                  "Thanks, harvest."])
+                                  "Thanks, harvest.", "Thanks, Harvest.", "Hello, Sell.", "Hello, Mouldy."])
 def test_greeting_cannot_carry_advice_past_the_source_check(text, monkeypatch):
     _judge(monkeypatch, lambda n: json.dumps({"verdicts": [
         {"n": i + 1, "verdict": "not_supported", "why": "Synthetic"} for i in range(n)]}))
@@ -144,7 +144,7 @@ def test_officer_screen_shows_the_hold_reason(monkeypatch):
 
 
 @pytest.mark.parametrize("text", ["Akwaaba, Kofi.", "Maakye Ama.", "Ɛte sɛn, Kwame.", "Ete sen.",
-                                  "Akpe, Kofi.", "Oyiwaladonn, Ama."])
+                                  "Akpe, Kofi.", "Oyiwaladonn, Ama.", "Hello Ama!", "Medaase, Kwame."])
 def test_local_greetings_count_as_bare_greetings(text):
     assert approval.GREETING.match(text)
 
@@ -165,6 +165,17 @@ def test_held_reasons_show_when_a_case_opens(monkeypatch):
     assert "Why: 'two' is not in the cited passage(s)" in shown and "Plant two seeds per hill." in shown
 
 
+def test_number_hold_names_its_sentence_and_hides_source_ids(monkeypatch):
+    from agrireach import ui
+    shown = []
+    monkeypatch.setattr(ui.st, "caption", shown.append)
+    monkeypatch.setattr(ui.st, "text", shown.append)
+    monkeypatch.setattr(ui, "source_name", lambda pid: "Maize guide, p. 11")
+    ui.show_findings([{"rule_id": "SOURCE_FIGURES", "sentence": "",
+                       "reason": "'two' is not in APNI-SARI-2023:p11-spacing"}], "Weed early. Plant two seeds per hill.")
+    assert "Plant two seeds per hill." in shown and "Why: 'two' is not in Maize guide, p. 11" in shown
+
+
 def test_bad_request_shows_the_api_reason():
     from agrireach.ui_feedback import feedback
     level, message = feedback(400, {"detail": "farmer_text required: approve the exact text the farmer will receive"})
@@ -177,3 +188,16 @@ def test_officer_sees_numbered_citations_not_source_ids():
     shown, cites = ui.number_citations(draft)
     assert shown == "Plant two seeds per hill [1]. Weed early [2]." and "APNI" not in shown
     assert ui.restore_citations(shown.replace("two", "2"), cites) == draft.replace("two", "2")
+
+
+def test_send_refused_after_approval_is_a_delivery_problem_not_a_400(monkeypatch):
+    from agrireach.channels import service
+    from tests.test_not_delivered import _approve, _setup
+    _, cid, h, c = _setup(monkeypatch)
+
+    def refuse(*a, **k):
+        raise ValueError("simulator sender ids must look like 'sim:farmer-1'")
+    monkeypatch.setattr(service, "_deliver_transport", refuse)
+    r = _approve(c, h, cid, "Harvest at 9 of 10 pods.")
+    assert r.status_code == 200 and r.json()["delivery"]["ok"] is False
+    assert r.json()["status"] != "released" or r.json()["delivery"]["outcome"] == "unknown"

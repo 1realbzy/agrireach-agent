@@ -180,7 +180,10 @@ def decide(case_id: int, d: Decision, officer: str = Depends(current_officer)):
         delivery = None
         if row["status"] == "approved":
             row = db.release_to_farmer(con, case_id, actor=f"officer:{officer}")
-            delivery = service.deliver(con, case_id, service.configured_channels()) if row["status"] == "released" else {"ok": False, "outcome": "undeliverable"}
+            try:
+                delivery = service.deliver(con, case_id, service.configured_channels()) if row["status"] == "released" else {"ok": False, "outcome": "undeliverable"}
+            except ValueError as e:  # approved and released, but the channel refused the send: a delivery problem, not a 400
+                delivery = {"ok": False, "outcome": "unknown", "detail": str(e)}
             row = db.get_case(con, case_id)  # 'not_delivered' if the channel send failed
     except db.SafetyError as e:
         raise HTTPException({"acknowledgement_required": 409, "assessment_unavailable": 503}.get(e.assessment["outcome"], 422), e.assessment)

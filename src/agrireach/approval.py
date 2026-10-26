@@ -13,8 +13,8 @@ from datetime import datetime, timedelta, timezone
 from agrireach import db, knowledge, safety_gate
 
 
-# Only a bare greeting or thanks (plus a name) skips the source check; anything more is checked.
-GREETING = re.compile(r"^(?i:thank you|thanks|hello|hi|good (?:morning|afternoon|evening)|medaase|akwaaba|maakye|[ɛe]te s[ɛe]n|akpe|oyiwala ?donn?)(?i: for your question)?(?:,? [A-Z][a-z]+)?[.!]?$")
+# A bare greeting, optionally with a Ghanaian day name (a closed list, so "Harvest" can't pose as one), skips the source check.
+GREETING = re.compile(r"^(?i:thank you|thanks|hello|hi|good (?:morning|afternoon|evening)|medaase|akwaaba|maakye|[ɛe]te s[ɛe]n|akpe|oyiwala ?donn?)(?i: for your question)?(?:,? (?:Kwa?sis?|Akosua|Kwadwo|Kojo|Adwoa|Kwabena|Ebo|Abena|Kwaku|Kweku|Akua|Ekua|Yaw|Yaa|Kofi|Fiifi|Afua|Efua|Kwame|Ato|Ama|Amma|Esi|Akwasi))?[.!]?$")
 
 
 def audit(con, case_id: int, actor: str, event: str, **details):

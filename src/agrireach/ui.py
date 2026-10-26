@@ -36,14 +36,21 @@ LABELS = {"S1": "Required source safeguard", "S2": "Consultation or protection i
           "SOURCE_SUPPORT": "Source support needs review", "SOURCE_FIGURES": "Number not in the cited source"}
 
 
-def show_findings(findings):
+PASSAGE_ID = re.compile(r"\b[A-Z][A-Z0-9-]*-\d{4}[A-Z0-9-]*:[\w-]+")
+
+
+def show_findings(findings, text=""):
     """Show each hold with its line and the plain reason, so the officer knows what to edit."""
     for finding in findings:
         st.caption(LABELS.get(finding["rule_id"], "Additional review required"))
-        if finding.get("sentence"):
-            st.text(finding["sentence"])
+        sentence = finding.get("sentence")
+        quoted = re.search(r"'([^']+)'", finding.get("reason") or "")
+        if not sentence and quoted:  # a number hold names the figure; show the line it is in
+            sentence = next((s for s in re.split(r"(?<=[.!?])\s+", text) if quoted[1] in s), "")
+        if sentence:
+            st.text(sentence)
         if finding.get("reason"):
-            st.text("Why: " + finding["reason"])
+            st.text("Why: " + PASSAGE_ID.sub(lambda m: source_name(m[0]), finding["reason"]))
         if finding["rule_id"] == "S1":
             for source_line in finding.get("evidence", [])[1:]:
                 st.text("Required guidance: " + source_line)
@@ -76,7 +83,7 @@ def show_holds(cid, farmer_text, headers):
         st.warning("Safety check unavailable. Nothing will be approved until it runs; use Retry assessment after Approve.")
     elif data.get("outcome") != "pass":
         st.warning(f"This text would be held ({data['outcome'].replace('_', ' ')}). Edit the lines below before approving.")
-        show_findings(data.get("findings", []))
+        show_findings(data.get("findings", []), farmer_text)
 
 
 def source_name(passage_id):
