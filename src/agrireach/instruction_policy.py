@@ -29,6 +29,9 @@ row rows between separate spacing apart wash drying sunlight shade ventilation
 farmer farmers advice advise officer extension agent agricultural aea consult ask
 talk seeing see visit confirm follow help safety safe gloves label protect wear
 temperature c kɔforidua tamale adaklu ejura kintampo northern ghana area region
+so guides guide comes suit like future weeded timing looking manage color consider
+problems think infestation signs find prevent ashanti farm armyworm fall apni
+zone zones answer b checked kumasi
 recommend know unsure sure thank please information carefully advice necessary
 """.split())
 DOSE = re.compile(r"\b\d+(?:\.\d+)?\s*(?:ml|mg|g|kg|litres?|liters?|tablets?|capsules?|percent|%)\b", re.I)

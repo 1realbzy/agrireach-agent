@@ -19,6 +19,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 from dataclasses import dataclass
 
 import httpx
@@ -108,13 +109,17 @@ class WhatsAppChannel:
         return {"Authorization": f"Bearer {self.cfg.access_token}"}
 
     def send(self, recipient_id: str, message: OutboundMessage) -> SendResult:
+        if not re.fullmatch(r"\+?\d{7,15}", recipient_id or ""):
+            return SendResult(False, "Invalid WhatsApp recipient; nothing was attempted", "definitely_failed")
         if len(message.text) > MAX_TEXT_CHARS:
             return SendResult(False, f"text is {len(message.text)} chars, over WhatsApp's {MAX_TEXT_CHARS}; "
-                                     "officer should shorten it")
+                                     "officer should shorten it", "definitely_failed")
         body = {"messaging_product": "whatsapp", "recipient_type": "individual", "to": recipient_id,
                 "type": "text", "text": {"preview_url": False, "body": message.text}}
         try:
             r = self.client.post(self.cfg.url(f"{self.cfg.phone_number_id}/messages"), json=body, headers=self._auth())
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as e:
+            return SendResult(False, f"connection unavailable: {type(e).__name__}", "definitely_failed")
         except httpx.HTTPError as e:
             return SendResult(False, f"network error: {type(e).__name__}")
         if r.status_code >= 400:
