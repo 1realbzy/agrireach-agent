@@ -208,7 +208,9 @@ REFERRAL = "Consult your local AEA before applying any herbicide."
 
 
 @pytest.mark.parametrize("line", ["Follow the instructions provided by the manufacturer and apply twice.",
-                                  "Apply twice a week.", "Apply again after rain.", "Spray every week."])
+                                  "Apply twice a week.", "Apply again after rain.", "Spray every week.",
+                                  "Apply once a week.", "Apply weekly.", "Apply daily.", "Reapply after rain.",
+                                  "Repeat the spray."])
 def test_repeat_application_on_a_pesticide_case_cannot_pass(line):
     # Held, not blocked: QA's existing test expects "Apply it every three days." to be review_required.
     result = safety_gate.assess(f"{REFERRAL} {line}", [WEEDS], question="How do I control weeds in maize?")
@@ -266,3 +268,29 @@ def test_repeat_application_is_held_even_when_no_chemical_passage_is_cited():
     manual = next(p for p in knowledge.load()["passages"] if p["id"] == "APNI-SARI-2023:weeds-manual")
     result = safety_gate.assess("Apply twice a week.", [manual], question="Which herbicide should I use on my maize weeds?")
     assert result.outcome != "pass" and any(f.rule_id == "S3" for f in result.findings)
+
+
+@pytest.mark.parametrize("line", ["Apply once a week.", "Apply weekly.", "Reapply after rain."])
+@pytest.mark.parametrize("pid", ["APNI-SARI-2023:weeds-manual", "APNI-SARI-2023-MAIZE:p18-scouting"])
+def test_repeat_application_is_held_on_non_chemical_citations(line, pid):
+    passage = next(p for p in knowledge.load()["passages"] if p["id"] == pid)
+    assert safety_gate.assess(line, [passage], question="Which herbicide should I use?").outcome != "pass"
+
+
+def test_reasons_use_the_real_source_title_and_find_quoted_lines(monkeypatch):
+    from agrireach import ui
+    shown = []
+    monkeypatch.setattr(ui.st, "caption", shown.append)
+    monkeypatch.setattr(ui.st, "text", shown.append)
+    pid = "MOFA-MAIZE:p10-when-to-plant"
+    ui.show_findings([{"rule_id": "SOURCE_SUPPORT", "sentence": "", "reason": f"'Use a hoe to weed.' is not supported by ['{pid}']"}],
+                     "Weed early. Use a hoe to weed.")
+    assert "Use a hoe to weed." in shown
+    why = next(x for x in shown if x.startswith("Why:"))
+    assert pid not in why and "Cited source" not in why and ui.source_name(pid) in why
+
+
+def test_definite_send_failure_is_not_called_uncertain():
+    from agrireach.ui_feedback import feedback
+    level, message = feedback(200, {"status": "not_delivered", "delivery": {"ok": False, "outcome": "definitely_failed"}})
+    assert "nothing went out" in message and "uncertain" not in message

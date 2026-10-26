@@ -1,8 +1,7 @@
 """Approval transactions bind exact submissions to an immutable safety snapshot.
 
 Model I/O happens before acquiring a write lock. Rechecking the complete binding
-inside BEGIN IMMEDIATE prevents a concurrent case edit from approving stale text.
-"""
+inside BEGIN IMMEDIATE prevents a concurrent case edit from approving stale text."""
 from __future__ import annotations
 
 import json

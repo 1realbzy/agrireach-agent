@@ -25,6 +25,8 @@ def feedback(status: int, data: dict) -> tuple[str, str]:
     if status >= 400:
         return "error", "The action could not be completed. Check the required fields and try again. If the problem continues, contact the operator with the case number."
     delivery = data.get("delivery")
+    if delivery and delivery.get("outcome") == "definitely_failed":
+        return "warning", "Advice approved, but the send failed and nothing went out. The case is back in the queue; fix the contact or channel, then retry."
     if delivery:
         if delivery.get("ok"):
             return "success", "Approved and released. Sent: the channel accepted the advisory."

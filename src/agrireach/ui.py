@@ -23,12 +23,12 @@ def request(method, path, **kwargs):
         return 503, {}
 
 
-def show_result(status, data):
+def show_result(status, data, text=""):
     level, message = feedback(status, data)
     getattr(st, level)(message)
     detail = data.get("detail", {})
     if isinstance(detail, dict):
-        show_findings(detail.get("findings", []))
+        show_findings(detail.get("findings", []), text)
 
 
 LABELS = {"S1": "Required source safeguard", "S2": "Consultation or protection instruction",
@@ -37,7 +37,7 @@ LABELS = {"S1": "Required source safeguard", "S2": "Consultation or protection i
           "SOURCE_CONFLICT": "Cited sources disagree"}
 
 
-PASSAGE_ID = re.compile(r"\[?'?\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*:[\w-]+'?\]?")  # e.g. ['MOFA-MAIZE:p10-when-to-plant']
+PASSAGE_ID = re.compile(r"\[?'?\b([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*:[\w-]+)'?\]?")  # e.g. ['MOFA-MAIZE:p10-when-to-plant']
 
 
 def show_findings(findings, text=""):
@@ -47,11 +47,11 @@ def show_findings(findings, text=""):
         sentence = finding.get("sentence")
         quoted = re.search(r"'([^']+)'", finding.get("reason") or "")
         if not sentence and quoted:  # a number hold names the figure; show the line it is in
-            sentence = next((s for s in re.split(r"(?<=[.!?])\s+", text) if re.search(rf"\b{re.escape(quoted[1])}\b", s, re.I)), "")
+            sentence = next((s for s in re.split(r"(?<=[.!?])\s+", text) if re.search(rf"(?<!\w){re.escape(quoted[1])}(?!\w)", s, re.I)), "")
         if sentence:
             st.text(sentence)
         if finding.get("reason"):
-            st.text("Why: " + PASSAGE_ID.sub(lambda m: source_name(m[0]), finding["reason"]))
+            st.text("Why: " + PASSAGE_ID.sub(lambda m: source_name(m[1]), finding["reason"]))
         if finding["rule_id"] == "S1":
             for source_line in finding.get("evidence", [])[1:]:
                 st.text("Required guidance: " + source_line)
@@ -158,7 +158,7 @@ def render_case(case, headers):
 
         def submit(candidate):
             status, data = request("POST", f"/officer/cases/{cid}/decision", headers=headers, json=candidate)
-            show_result(status, data)
+            show_result(status, data, candidate.get("farmer_text") or "")
             detail = data.get("detail", {})
             if isinstance(detail, dict) and detail.get("outcome") == "acknowledgement_required":
                 st.session_state[f"challenge{cid}"] = {"body": candidate, "token": detail["acknowledgement"]}
