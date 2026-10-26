@@ -13,8 +13,8 @@ from datetime import datetime, timedelta, timezone
 from agrireach import db, knowledge, safety_gate
 
 
-# A short greeting or thanks needs no source; the safety gate still reads it.
-GREETING = re.compile(r"^(?:thank you|thanks|hello|hi|good (?:morning|afternoon|evening))\b[^\d.!?]{0,40}[.!]?$", re.I)
+# Only a bare greeting or thanks (plus a name) skips the source check; anything more is checked.
+GREETING = re.compile(r"^(?i:thank you|thanks|hello|hi|good (?:morning|afternoon|evening)|medaase)(?i: for your question)?(?:,? [A-Z][a-z]+)?[.!]?$")
 
 
 def audit(con, case_id: int, actor: str, event: str, **details):

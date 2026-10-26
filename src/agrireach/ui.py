@@ -27,14 +27,25 @@ def show_result(status, data):
     getattr(st, level)(message)
     detail = data.get("detail", {})
     if isinstance(detail, dict):
-        for finding in detail.get("findings", []):
-            labels = {"S1": "Required source safeguard", "S2": "Consultation or protection instruction", "S3": "Unresolved material or source wording", "LANGUAGE": "Language needs additional review", "SOURCE_SUPPORT": "Source support needs review"}
-            st.caption(labels.get(finding["rule_id"], "Additional review required"))
-            if finding.get("sentence"):
-                st.text(finding["sentence"])
-            if finding["rule_id"] == "S1":
-                for source_line in finding.get("evidence", [])[1:]:
-                    st.text("Required guidance: " + source_line)
+        show_findings(detail.get("findings", []))
+
+
+LABELS = {"S1": "Required source safeguard", "S2": "Consultation or protection instruction",
+          "S3": "Unsourced material or dose", "S4": "Burning without a source", "LANGUAGE": "Language needs additional review",
+          "SOURCE_SUPPORT": "Source support needs review", "SOURCE_FIGURES": "Number not in the cited source"}
+
+
+def show_findings(findings):
+    """Show each hold with its line and the plain reason, so the officer knows what to edit."""
+    for finding in findings:
+        st.caption(LABELS.get(finding["rule_id"], "Additional review required"))
+        if finding.get("sentence"):
+            st.text(finding["sentence"])
+        if finding.get("reason"):
+            st.text("Why: " + finding["reason"])
+        if finding["rule_id"] == "S1":
+            for source_line in finding.get("evidence", [])[1:]:
+                st.text("Required guidance: " + source_line)
 
 
 def source_name(passage_id):
@@ -117,6 +128,7 @@ def render_case(case, headers):
             if status == 200:
                 st.session_state[f"assessment_retry{cid}"] = False
                 st.info(f"Assessment complete: {data.get('outcome', 'unknown').replace('_', ' ')}. Nothing was approved or sent.")
+                show_findings(data.get("findings", []))
             else:
                 show_result(status, data)
         for label, decision in (("Reject", "reject"), ("Request info", "request_info")):

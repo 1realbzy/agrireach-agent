@@ -123,3 +123,21 @@ def test_greeting_needs_no_source_but_advice_still_does(monkeypatch):
         {"n": i + 1, "verdict": "supported", "why": "Synthetic"} for i in range(n)]}))
     assert approval.assess_candidate("Thank you for your question, Kofi.", _ctx())["outcome"] == "pass"
     assert approval.assess_candidate("Thank you. Intercrop maize with cowpea.", _ctx())["outcome"] == "review_required"
+
+
+@pytest.mark.parametrize("text", ["Thanks, you can sell mouldy maize.", "Hello, eat the mouldy cobs, they are fine.",
+                                  "Hi Kofi, plant two seeds per hill.", "Thanks, harvest when the leaves are green.",
+                                  "Thanks, harvest."])
+def test_greeting_cannot_carry_advice_past_the_source_check(text, monkeypatch):
+    _judge(monkeypatch, lambda n: json.dumps({"verdicts": [
+        {"n": i + 1, "verdict": "not_supported", "why": "Synthetic"} for i in range(n)]}))
+    assert approval.assess_candidate(text, _ctx())["outcome"] != "pass"
+
+
+def test_officer_screen_shows_the_hold_reason(monkeypatch):
+    from agrireach import ui
+    shown = []
+    monkeypatch.setattr(ui.st, "caption", shown.append)
+    monkeypatch.setattr(ui.st, "text", shown.append)
+    ui.show_findings([{"rule_id": "SOURCE_FIGURES", "sentence": "", "reason": "'two' is not in the cited passage(s)"}])
+    assert "Number not in the cited source" in shown and "Why: 'two' is not in the cited passage(s)" in shown
