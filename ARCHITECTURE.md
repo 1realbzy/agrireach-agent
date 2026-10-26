@@ -67,7 +67,7 @@ Empty text is `safety_blocked` (TEXT). S1 and LANGUAGE look at the whole text. S
 | **S4** burning | Advice to burn or set fire, unless the line says not to or a cited source mentions burning (`burns_land()`) | `review_required` |
 | **LANGUAGE** | Text that is not English (for example Twi markers or a non-Latin script). The English rules can't read it, so a reviewer who reads the language must check it. | `review_required` |
 
-`REPEAT` treats how often to apply as a dose: an apply, spray or treat word plus a repeat word ("twice", "every", "weekly", "again", "keep applying"), or "re-apply" or "second dose". "Once at X and once at Y" is a split dose and passes. It is a word list, so it misses some wordings and over-holds others; see the README Limitations.
+`REPEAT` treats how often to apply as a dose: an apply, spray or treat word plus a repeat word ("twice", "every", "weekly", "again"; "keep applying" counts only with another apply, spray or treat word), or "re-apply" or "second dose". "Once at X and once at Y" is a split dose and passes. It is a word list, so it misses some wordings and over-holds others; see the README Limitations.
 
 ### Source checks (`approval.py`)
 

@@ -619,7 +619,7 @@ Stub mode: two runs were identical. LLM mode (two runs, temperature 0): statuses
 
 This section records developer verification, not independent QA or agronomic signoff. Historical results above and raw historical evidence are unchanged.
 
-Baseline: 94bff8880f744e50d6df4d515bdc8c6b7a110198. Branch: work/safety-hardening. Python 3.12.14. The final full suite produced 738 passed and 1 optional speech module skipped in 178.75 seconds. Checkpoint commits are in docs/implementation-progress.md; exact validation is in docs/safety-verification.md.
+Baseline: 94bff8880f744e50d6df4d515bdc8c6b7a110198. Branch: work/safety-hardening (since merged into main and deleted). Python 3.12.14. The final full suite produced 738 passed and 1 optional speech module skipped in 178.75 seconds. Checkpoint commits are in docs/evidence/implementation-progress.md; exact validation is in docs/evidence/safety-verification.md.
 
 Frozen policy examples were committed before implementation: 40 source based legitimate cases, 40 unsafe cases and 3 uncertainty examples. The final bounded deterministic rules pass 40/40 legitimate cases and block 40/40 unsafe cases. The three uncertainty examples also omit mandatory safeguards and receive S1 blocks; this set does not establish calibrated uncertainty handling. No fixture was removed or relabelled.
 
