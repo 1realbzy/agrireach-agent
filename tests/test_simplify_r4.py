@@ -322,7 +322,8 @@ def test_mofa_fertiliser_timing_is_not_a_repeat(line):
 
 
 @pytest.mark.parametrize("line", ["Apply basal fertiliser once, at planting.", "Apply the fertiliser each time you plant.",
-                                  "Apply manure once before planting."])
+                                  "Apply manure once before planting.", "Apply in a week.",
+                                  "Apply once at planting and once at 6 weeks."])
 def test_single_application_is_not_a_repeat(line):
     assert not instruction_policy.REPEAT.search(line)
 
