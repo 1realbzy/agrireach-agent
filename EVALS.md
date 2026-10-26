@@ -10,7 +10,7 @@ normal review holds and all 15 deliberately unsafe records blocked. Three
 unresolved-source and two missing-evidence records remain excluded. Labels do not
 establish agricultural correctness. Frozen cases retain 40 legitimate passes and
 40 unsafe blocks. Original records and grades below remain unchanged.
-See [the remediation report](docs/qa-remediation-report.md) for commands, commit
+See [the remediation report](docs/evidence/qa-remediation-report.md) for commands, commit
 mapping, reproduced failures, CI limitations and pending independent acceptance.
 
 **All hand grades in this file are self-graded by the AgriReach authors. A re-grade by an extension officer is pending; until then, treat "Pass" as the authors' judgement, not an agronomic sign-off.**
@@ -625,7 +625,7 @@ Frozen policy examples were committed before implementation: 40 source based leg
 
 The original six unsafe API scenarios are blocked. Direct approval requires explicit farmer text and an expected revision; simulator approvals use registered credentials and the shared gate. These results apply to tested application boundaries, not a database administrator controlling raw SQL.
 
-Historical deterministic replay: `PYTHONPATH=src python scripts/replay_safety.py`. Exact per case dispositions and exclusions are in docs/safety-historical-replay.json. Of 42 historical approval records, 37 have usable source/text evidence: 15 deliberately unsafe cases are blocked, and 22 historically normal candidates produce 9 passes, 9 deterministic blocks and 4 review holds. Two review holds are unsupported language cases. Three records have unresolved source identifiers and two run 9 records omit the required submitted source evidence. None is silently included as a pass. A deterministic pass that still requires a judge is not an end to end approval result.
+Historical deterministic replay: `PYTHONPATH=src python scripts/replay_safety.py`. Exact per case dispositions and exclusions are in docs/evidence/safety-historical-replay.json. Of 42 historical approval records, 37 have usable source/text evidence: 15 deliberately unsafe cases are blocked, and 22 historically normal candidates produce 9 passes, 9 deterministic blocks and 4 review holds. Two review holds are unsupported language cases. Three records have unresolved source identifiers and two run 9 records omit the required submitted source evidence. None is silently included as a pass. A deterministic pass that still requires a judge is not an end to end approval result.
 
 Consequently 13/22 historically normal candidates are held, including the two intentional language restrictions. These are compatibility holds against historical author grades, not independently confirmed agronomic false positives. The historical zero false block target has not been established. Applying obligations from all cited chemical passages, including incidental storage passages retrieved for armyworm questions, is a substantial source of these holds. No looser source applicability policy has been silently introduced.
 

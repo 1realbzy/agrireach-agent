@@ -1,8 +1,6 @@
-> Current safety workflow, 26 October 2026. See [the safety walkthrough](safety-architecture.md) and [QA remediation progress](remediation-progress.md). Independent acceptance is pending.
-
 # Intended user workflow
 
-**Status: implemented locally; automated verification does not establish field readiness.**
+**Status: implemented locally; automated tests do not show field readiness.** How the approval gate works is in [ARCHITECTURE.md](../ARCHITECTURE.md).
 
 1. A farmer submits a question and selects the crop and locality if known.
 2. The agent checks whether it has enough context to search responsibly.

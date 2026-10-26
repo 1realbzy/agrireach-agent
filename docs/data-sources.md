@@ -33,7 +33,7 @@ Rainfall is data, not guidance; it is never a corpus passage.
   (https://open-meteo.com/en/license). The free API is for non-commercial use only (https://open-meteo.com/en/terms).
 - **NASA POWER** (opt-in cross-check): daily `PRECTOTCORR`. "No restrictions on the use, access, and/or download";
   NASA asks to be cited. Only MERRA2-only responses for days at least 7 days old are used (see
-  [rainfall-live-2026-10-25.md](rainfall-live-2026-10-25.md) for why).
+  [evidence/rainfall-live-2026-10-25.md](evidence/rainfall-live-2026-10-25.md) for why).
 - Not used: CHIRPS (public domain, but raster files; better for season comparisons than for the last 30 days).
 - **District coordinates** (`data/district_coords.json`): one point per district, the district capital where found.
   256 from GeoNames (www.geonames.org, CC BY 4.0): 240 capitals matched by name in their region, 15 district (ADM2)

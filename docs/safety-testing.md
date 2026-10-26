@@ -1,34 +1,30 @@
-# Testing the safety branch
+# Testing the safety gate
 
-For Round 2, run tests with `PYTHONPATH=tests:src` so optional ONNX telemetry is
-disabled in both pytest and speech subprocesses. Set AGRIREACH_REQUIRE_SPEECH=1
-for a speech acceptance run; any skip then fails. Use a verified pinned model cache.
-Run historical replay with --strict to validate record identity and explicitly
-retain the five known evidence gaps. See round2-report.md and round2-progress.md.
+CI (`.github/workflows/regression.yml`) runs two jobs on every push to `main` and `work/**` and on pull requests. No secrets are passed to either job.
 
-Install requirements.txt in an isolated Python environment. The investigation used Python 3.12.14; the historical project record used a different environment. Optional speech tests additionally need requirements-voice.txt and locally cached models.
+**Deterministic job.** Run the same steps locally from the repo root, in a virtual environment with `requirements.txt` installed:
 
 ```bash
-PYTHONPATH=src python -m pytest -q
-PYTHONPATH=src python -m pytest -q tests/test_safety_checkpoint1.py tests/test_safety_checkpoint2.py
-PYTHONPATH=src python -m pytest -q tests/test_mcp.py tests/test_agent.py tests/test_channels.py
+export PYTHONPATH=tests:src AGRIREACH_SOURCE_CHECK=0 AGRIREACH_RAINFALL=off AGRIREACH_STT=none SMS_ENABLED=0 WHATSAPP_ENABLED=0
+python -m pytest -q
+python scripts/replay_safety.py --strict
+python scripts/verify_legacy_migration.py
 ```
 
-The suite isolates DATABASE_URL, media and outbox paths. The gate tests use the frozen_cases.json corpus committed before the implementation. Keep fixture labels and the original source documents unchanged. Additional adversarial cases must be separate, with their rationale recorded.
+`PYTHONPATH=tests:src` also turns off optional ONNX telemetry in pytest and in speech subprocesses. The suite isolates `DATABASE_URL`, media and outbox paths. If your `.env` sets `AGRIREACH_JUDGE_BASE_URL`, unset it before running the suite; `tests/test_model_usage.py` fails when it is set.
 
-The transaction tests use real SQLite files and threads. Provider tests use mocked HTTP; simulator tests write an actual local outbox. MCP tests launch a real subprocess. None of these demonstrate real farmer delivery.
+`replay_safety.py` runs the deterministic gate over the approved texts recorded in the `docs/*run5*` to `docs/*run9*` live-eval folders. It fails if any labelled unsafe case is not `safety_blocked`. With `--strict` it also compares the record inventory with `docs/safety-remediation-replay.json`. It requires all 15 unsafe cases to be blocked and at least 17 normal cases to pass. Three unresolved-source and two missing-evidence records are known gaps.
 
-Live model calls are not required for deterministic blocks. No live advisory model configuration was available for remediation. Real Whisper and Piper verification is separate from mocked speech tests. Synthetic English clips do not validate Ghanaian accents or native languages. See docs/remediation-progress.md for actual results and pending independent acceptance.
+`verify_legacy_migration.py` upgrades a temporary copy of the synthetic legacy fixture. It checks backfill, publication, historical log rows, backups and read-only verification.
+
+**Speech job.** This job needs `requirements-voice.txt` and network access to download pinned public models:
 
 ```bash
-PYTHONPATH=src python scripts/replay_safety.py
-PYTHONPATH=src python scripts/verify_legacy_migration.py
-PYTHONPATH=src python -m pytest -q tests/test_qa_remediation.py
-pip install -r requirements-voice.txt
-export AGRIREACH_STT_DIR=/tmp/agrireach-whisper
-export AGRIREACH_TTS_DIR=/tmp/agrireach-piper
+export AGRIREACH_STT_DIR=/tmp/agrireach-whisper AGRIREACH_TTS_DIR=/tmp/agrireach-piper AGRIREACH_REQUIRE_SPEECH=1
 python scripts/cache_speech_models.py
-PYTHONPATH=src python -m pytest -q tests/test_stt_real.py
+python -m pytest -q tests/test_stt_real.py tests/test_qa_remediation.py
 ```
 
-The model cache script pins public speech model revisions. Downloads require network access. No API key or paid model is used. Without dependencies or cached assets the optional speech module skips; the model independent voice approval regression always runs in test_qa_remediation.py. CI has a separate speech job which downloads assets before running the module. Replay exits nonzero if any labelled unsafe case passes. The legacy migration check creates a temporary database from the synthetic SQL fixture and verifies backfill, publication, historical log rows, backups and read only verification.
+With `AGRIREACH_REQUIRE_SPEECH=1`, any skip fails. Without the models, the speech tests skip, but the voice-approval regression in `test_qa_remediation.py` still runs.
+
+**What the tests show and don't show.** Gate tests use `tests/fixtures/safety/frozen_cases.json` and the Round 4 acceptance lines in `tests/acceptance_r4.md`. Keep fixture labels and the source documents unchanged, and add new adversarial cases separately, with a note on why they were added. Transaction tests use real SQLite files and threads. Provider tests use mocked HTTP, simulator tests write a local outbox, and MCP tests start a real subprocess. None of this shows real farmer delivery, and synthetic English clips don't validate Ghanaian accents or local languages. Live model runs are recorded separately in [EVALS.md](../EVALS.md).
