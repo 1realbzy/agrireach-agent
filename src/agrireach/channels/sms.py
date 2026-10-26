@@ -197,6 +197,9 @@ class SmsChannel:
             return SendResult(False, f"outcome unknown: unreadable response from Africa's Talking "
                                      f"(HTTP {r.status_code}). {MAYBE_SENT}")
         code = rec.get("statusCode")
+        if not isinstance(code, int) or not rec.get("status"):
+            # A parseable but incomplete response does not establish rejection.
+            return SendResult(False, f"outcome unknown: incomplete recipient response. {MAYBE_SENT}")
         if code in ACCEPTED:
             return SendResult(True, f"accepted by Africa's Talking (status {code} {ACCEPTED[code]}; "
                                     f"{_parts(m.segments)}, {m.encoding})", provider_id=rec.get("messageId"))

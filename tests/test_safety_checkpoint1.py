@@ -99,9 +99,10 @@ def test_simulator_cli_cannot_release_unsafe_text(monkeypatch, capsys):
     token = db.add_officer(con, "Ama")
     db.save_contact(con, cid, channel="simulator", sender_id="sim:safety-test")
     monkeypatch.setenv("AGRIREACH_OFFICER_TOKEN", token)
-    simulator.main(["officer-approve", "--case", str(cid), "--officer", "Ama", "--revision",
+    exit_code = simulator.main(["officer-approve", "--case", str(cid), "--officer", "Ama", "--revision",
                     str(db.get_case(con, cid)["revision"]), "--farmer-text", "Spray pesticide every week."])
     response = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
     assert response["error"]["outcome"] == "safety_blocked"
     assert db.get_case(con, cid)["status"] == "pending_review"
     assert simulator.SimulatorChannel().messages() == []

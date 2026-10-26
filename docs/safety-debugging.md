@@ -1,6 +1,6 @@
 # Debugging approval and delivery
 
-This branch has passed local automated regression checks, but acceptance is pending the historical compatibility decision and independent review. Consult implementation-progress.md for actual status. Do not treat these developer checks as deployment authorisation.
+Acceptance remains with the independent reviewers. Consult remediation-progress.md for current developer verification and implementation-progress.md for the original record.
 
 ## Trace a case
 
@@ -24,6 +24,8 @@ Full text and snapshot records are officer restricted evidence, not application 
 HTTP 422 carries deterministic findings or a review hold. Inspect rule_id, sentence, evidence and recovery. No routine acknowledgement overrides these outcomes. HTTP 409 can indicate a stale revision or an eligible acknowledgement challenge. HTTP 503 means the required model assessment did not succeed. A failed judge is never evidence of support.
 
 Delivery state sending means a committed dispatch claim exists. unknown means acceptance cannot be established. Neither state permits automatic retry. An interrupted claim can be marked unknown using delivery.interrupted from trusted operator code. Reconciliation requires externally verified provider evidence, retained with the action. Do not use a speculative note to permit another send. Provider acceptance does not prove handset receipt.
+
+GET /officer/cases/{case_id}/delivery-jobs lists job IDs and dispositions without recipient data. POST /officer/delivery-jobs/{job_id}/reconcile requires bearer authentication, accepted (boolean) and provider_evidence (verified provider record reference). It resolves only an unknown job and never sends. The officer UI exposes the same action with an evidence field and explicit verification checkbox. Replayed/concurrent reconciliations return 409. accepted prevents retries; definitely_failed permits a separately requested release/retry if the case and approval remain eligible. Rejection preserves the external job disposition and does not claim to cancel a message.
 
 ## Targeted reproduction
 

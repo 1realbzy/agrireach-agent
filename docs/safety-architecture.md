@@ -8,4 +8,4 @@ The safety gate performs deterministic assessment without I/O. The approval serv
 
 Release validates the approval fingerprint and reruns deterministic rules. delivery.claim atomically reserves a unique job before external sending. A second caller cannot send the same active job. Dispatch results update the matching claim. A crash can still leave an unresolved provider outcome; exactly once external delivery is not claimed.
 
-Source support, agricultural correctness and actual farmer receipt are separate questions. Neither an exact quote nor a positive judge establishes all three. The current implementation and integration gaps are tracked in implementation-progress.md; this document is not a readiness signoff.
+Source support, agricultural correctness and actual farmer receipt are separate questions. Neither an exact quote nor a positive judge establishes all three. Current QA corrections and limitations are in remediation-progress.md; the original implementation evidence remains in implementation-progress.md.

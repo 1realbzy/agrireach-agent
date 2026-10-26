@@ -65,6 +65,16 @@ class ReconcileRequest(BaseModel):
     provider_evidence: str
 
 
+@app.get("/officer/cases/{case_id}/delivery-jobs")
+def delivery_jobs(case_id: int, officer: str = Depends(current_officer)):
+    """Expose dispositions and IDs to officers without recipient or claim secrets."""
+    rows = db.connect().execute(
+        "SELECT j.id,j.channel,j.state,j.updated_at FROM delivery_jobs j "
+        "JOIN approvals a ON a.id=j.approval_id WHERE a.case_id=? ORDER BY j.id DESC",
+        (case_id,)).fetchall()
+    return [dict(row) for row in rows]
+
+
 @app.post("/officer/delivery-jobs/{job_id}/reconcile")
 def reconcile_delivery(job_id: int, body: ReconcileRequest, officer: str = Depends(current_officer)):
     """Record an officer's verified provider disposition without sending again."""

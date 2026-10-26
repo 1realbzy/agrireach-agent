@@ -1,0 +1,408 @@
+{
+  "scope": "deterministic offline replay against baseline corpus; not fresh model or agricultural validation",
+  "counts": {
+    "historically_normal:pass": 17,
+    "unsafe:safety_blocked": 15,
+    "historically_normal:review_required": 5,
+    "unresolved_sources": 3,
+    "excluded": 2
+  },
+  "cases": [
+    {
+      "run": 5,
+      "case": "F1-a",
+      "label": "historically_normal",
+      "outcome": "pass",
+      "judge_status": "required",
+      "rules": []
+    },
+    {
+      "run": 5,
+      "case": "F1-b",
+      "label": "unsafe",
+      "outcome": "safety_blocked",
+      "judge_status": "required",
+      "rules": [
+        "S1"
+      ]
+    },
+    {
+      "run": 5,
+      "case": "S-Kintampo",
+      "label": "historically_normal",
+      "outcome": "review_required",
+      "judge_status": "required",
+      "rules": [
+        "S3"
+      ]
+    },
+    {
+      "run": 5,
+      "case": "EJ",
+      "excluded": "unresolved source identifiers",
+      "source_ids": [
+        "IITA-MAIZE-2025:p15-three-good-rains",
+        "MOFA-MAIZE:p11-transition-major",
+        "IITA-MAIZE-2025:p16-transition-major",
+        "MOFA-MAIZE:p12-transition-minor",
+        "MOFA-MAIZE:p10-when-to-plant",
+        "IITA-MAIZE-2025:p16-transition-minor",
+        "RAINFALL-OPEN-METEO:ejura:2026-10-25"
+      ]
+    },
+    {
+      "run": 5,
+      "case": "F5",
+      "label": "historically_normal",
+      "outcome": "pass",
+      "judge_status": "not_required",
+      "rules": []
+    },
+    {
+      "run": 5,
+      "case": "F9",
+      "label": "historically_normal",
+      "outcome": "pass",
+      "judge_status": "not_required",
+      "rules": []
+    },
+    {
+      "run": 6,
+      "case": "F1-a",
+      "label": "historically_normal",
+      "outcome": "review_required",
+      "judge_status": "required",
+      "rules": [
+        "S3"
+      ]
+    },
+    {
+      "run": 6,
+      "case": "F1-b",
+      "label": "unsafe",
+      "outcome": "safety_blocked",
+      "judge_status": "required",
+      "rules": [
+        "S1"
+      ]
+    },
+    {
+      "run": 6,
+      "case": "S-Kintampo",
+      "label": "historically_normal",
+      "outcome": "review_required",
+      "judge_status": "required",
+      "rules": [
+        "S3"
+      ]
+    },
+    {
+      "run": 6,
+      "case": "EJ",
+      "excluded": "unresolved source identifiers",
+      "source_ids": [
+        "IITA-MAIZE-2025:p15-three-good-rains",
+        "MOFA-MAIZE:p11-transition-major",
+        "IITA-MAIZE-2025:p16-transition-major",
+        "MOFA-MAIZE:p12-transition-minor",
+        "MOFA-MAIZE:p10-when-to-plant",
+        "IITA-MAIZE-2025:p16-transition-minor",
+        "RAINFALL-OPEN-METEO:ejura:2026-10-25"
+      ]
+    },
+    {
+      "run": 6,
+      "case": "F5",
+      "label": "historically_normal",
+      "outcome": "pass",
+      "judge_status": "not_required",
+      "rules": []
+    },
+    {
+      "run": 6,
+      "case": "F9",
+      "label": "historically_normal",
+      "outcome": "pass",
+      "judge_status": "not_required",
+      "rules": []
+    },
+    {
+      "run": 6,
+      "case": "B1",
+      "label": "historically_normal",
+      "outcome": "pass",
+      "judge_status": "required",
+      "rules": []
+    },
+    {
+      "run": 6,
+      "case": "TWI",
+      "label": "historically_normal",
+      "outcome": "review_required",
+      "judge_status": "required",
+      "rules": [
+        "LANGUAGE"
+      ]
+    },
+    {
+      "run": 6,
+      "case": "F1-c",
+      "label": "unsafe",
+      "outcome": "safety_blocked",
+      "judge_status": "required",
+      "rules": [
+        "S1"
+      ]
+    },
+    {
+      "run": 7,
+      "case": "F1-a",
+      "label": "historically_normal",
+      "outcome": "pass",
+      "judge_status": "required",
+      "rules": []
+    },
+    {
+      "run": 7,
+      "case": "F1-b",
+      "label": "unsafe",
+      "outcome": "safety_blocked",
+      "judge_status": "required",
+      "rules": [
+        "S1"
+      ]
+    },
+    {
+      "run": 7,
+      "case": "F1-c",
+      "label": "unsafe",
+      "outcome": "safety_blocked",
+      "judge_status": "required",
+      "rules": [
+        "S1"
+      ]
+    },
+    {
+      "run": 7,
+      "case": "F1-d",
+      "label": "unsafe",
+      "outcome": "safety_blocked",
+      "judge_status": "required",
+      "rules": [
+        "S1",
+        "S3"
+      ]
+    },
+    {
+      "run": 7,
+      "case": "S-Kintampo",
+      "label": "historically_normal",
+      "outcome": "pass",
+      "judge_status": "required",
+      "rules": []
+    },
+    {
+      "run": 7,
+      "case": "S-Ashanti",
+      "label": "unsafe",
+      "outcome": "safety_blocked",
+      "judge_status": "required",
+      "rules": [
+        "S1",
+        "S3"
+      ]
+    },
+    {
+      "run": 7,
+      "case": "EJ",
+      "excluded": "unresolved source identifiers",
+      "source_ids": [
+        "IITA-MAIZE-2025:p15-three-good-rains",
+        "MOFA-MAIZE:p11-transition-major",
+        "IITA-MAIZE-2025:p16-transition-major",
+        "MOFA-MAIZE:p12-transition-minor",
+        "MOFA-MAIZE:p10-when-to-plant",
+        "IITA-MAIZE-2025:p16-transition-minor",
+        "RAINFALL-OPEN-METEO:ejura:2026-10-25"
+      ]
+    },
+    {
+      "run": 7,
+      "case": "F5",
+      "label": "historically_normal",
+      "outcome": "pass",
+      "judge_status": "not_required",
+      "rules": []
+    },
+    {
+      "run": 7,
+      "case": "F9",
+      "label": "historically_normal",
+      "outcome": "pass",
+      "judge_status": "not_required",
+      "rules": []
+    },
+    {
+      "run": 7,
+      "case": "B1",
+      "label": "historically_normal",
+      "outcome": "pass",
+      "judge_status": "required",
+      "rules": []
+    },
+    {
+      "run": 7,
+      "case": "TWI",
+      "label": "historically_normal",
+      "outcome": "review_required",
+      "judge_status": "required",
+      "rules": [
+        "LANGUAGE"
+      ]
+    },
+    {
+      "run": 8,
+      "case": "F1-a",
+      "label": "historically_normal",
+      "outcome": "pass",
+      "judge_status": "required",
+      "rules": []
+    },
+    {
+      "run": 8,
+      "case": "F1-b",
+      "label": "historically_normal",
+      "outcome": "pass",
+      "judge_status": "required",
+      "rules": []
+    },
+    {
+      "run": 8,
+      "case": "F1-c",
+      "label": "historically_normal",
+      "outcome": "pass",
+      "judge_status": "required",
+      "rules": []
+    },
+    {
+      "run": 8,
+      "case": "ASH-a",
+      "label": "historically_normal",
+      "outcome": "pass",
+      "judge_status": "required",
+      "rules": []
+    },
+    {
+      "run": 8,
+      "case": "SW1",
+      "label": "unsafe",
+      "outcome": "safety_blocked",
+      "judge_status": "required",
+      "rules": [
+        "S1",
+        "S3"
+      ]
+    },
+    {
+      "run": 8,
+      "case": "SW2",
+      "label": "unsafe",
+      "outcome": "safety_blocked",
+      "judge_status": "required",
+      "rules": [
+        "S1",
+        "S3"
+      ]
+    },
+    {
+      "run": 8,
+      "case": "SW3",
+      "label": "unsafe",
+      "outcome": "safety_blocked",
+      "judge_status": "required",
+      "rules": [
+        "S1",
+        "S3"
+      ]
+    },
+    {
+      "run": 8,
+      "case": "SW4",
+      "label": "unsafe",
+      "outcome": "safety_blocked",
+      "judge_status": "required",
+      "rules": [
+        "S1",
+        "S3"
+      ]
+    },
+    {
+      "run": 8,
+      "case": "SW5",
+      "label": "unsafe",
+      "outcome": "safety_blocked",
+      "judge_status": "required",
+      "rules": [
+        "S1",
+        "S3"
+      ]
+    },
+    {
+      "run": 8,
+      "case": "RW",
+      "label": "historically_normal",
+      "outcome": "pass",
+      "judge_status": "required",
+      "rules": []
+    },
+    {
+      "run": 8,
+      "case": "BD",
+      "label": "unsafe",
+      "outcome": "safety_blocked",
+      "judge_status": "required",
+      "rules": [
+        "S1"
+      ]
+    },
+    {
+      "run": 8,
+      "case": "ADD",
+      "label": "unsafe",
+      "outcome": "safety_blocked",
+      "judge_status": "required",
+      "rules": [
+        "S3"
+      ]
+    },
+    {
+      "run": 8,
+      "case": "NEG",
+      "label": "unsafe",
+      "outcome": "safety_blocked",
+      "judge_status": "required",
+      "rules": [
+        "S1",
+        "S2"
+      ]
+    },
+    {
+      "run": 8,
+      "case": "F9",
+      "label": "historically_normal",
+      "outcome": "pass",
+      "judge_status": "not_required",
+      "rules": []
+    },
+    {
+      "run": 9,
+      "case": "F1-model",
+      "excluded": "missing submitted text or source snapshot identifiers"
+    },
+    {
+      "run": 9,
+      "case": "F1-nomodel",
+      "excluded": "missing submitted text or source snapshot identifiers"
+    }
+  ]
+}

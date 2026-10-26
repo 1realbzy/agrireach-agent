@@ -73,6 +73,16 @@ with officer:
             tag = "NOT DELIVERED"
         with st.expander(f"[{tag}] Case {c['id']}: {c['question']}"):
             if c["status"] == "not_delivered":
+                jobs = httpx.get(f"{API}/officer/cases/{c['id']}/delivery-jobs", headers=H, timeout=10).json()
+                for job in jobs:
+                    st.write({"delivery_job": job["id"], "state": job["state"]})
+                    if job["state"] == "unknown":
+                        evidence = st.text_input("Verified provider evidence reference", key=f"evidence{job['id']}")
+                        disposition = st.selectbox("Verified provider outcome", ["accepted", "definitely_failed"], key=f"disposition{job['id']}")
+                        verified = st.checkbox("I checked the provider record and verified this outcome", key=f"verified{job['id']}")
+                        if st.button("Record reconciliation without sending", key=f"reconcile{job['id']}", disabled=not (verified and evidence.strip())):
+                            st.write(httpx.post(f"{API}/officer/delivery-jobs/{job['id']}/reconcile", headers=H,
+                                json={"accepted": disposition == "accepted", "provider_evidence": evidence}, timeout=10).json())
                 st.error(f"Approved by {c['officer']} but not delivered: {c.get('delivery_problem')}. Edit the "
                          "farmer text and approve again, or retry sending the same text.")
                 if st.button("Retry sending the approved text", key=f"retry{c['id']}"):

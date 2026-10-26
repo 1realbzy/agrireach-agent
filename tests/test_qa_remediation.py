@@ -179,3 +179,60 @@ def test_acknowledgement_binding_ignores_explanation_wording(monkeypatch):
         db.officer_decide(con, cid, **args)
     db.officer_decide(con, cid, acknowledgement=exc.value.assessment["acknowledgement"], **args)
     assert db.get_case(con, cid)["status"] == "approved"
+
+
+def test_concurrent_reconciliation_has_one_winner():
+    import threading
+    from agrireach import db, delivery
+    from test_safety_checkpoint2 import ready
+    con, cid = ready()
+    db.release_to_farmer(con, cid)
+    job, claim = delivery.claim(con, cid)
+    delivery.complete(con, cid, job, claim, "unknown")
+    barrier = threading.Barrier(2)
+    outcomes = []
+    def reconcile():
+        connection = db.connect()
+        barrier.wait(timeout=5)
+        try:
+            delivery.reconcile(connection, job, officer="Ama", accepted=False,
+                               provider_evidence="Verified nonacceptance QA-concurrency")
+            outcomes.append("resolved")
+        except db.GateError:
+            outcomes.append("conflict")
+        finally:
+            connection.close()
+    threads = [threading.Thread(target=reconcile) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(10)
+        assert not thread.is_alive()
+    assert sorted(outcomes) == ["conflict", "resolved"]
+    assert con.execute("SELECT count(*) FROM audit_events WHERE event_name='delivery_reconciled'").fetchone()[0] == 1
+
+
+def test_unknown_rejection_keeps_external_disposition():
+    from agrireach import db, delivery
+    from test_safety_checkpoint2 import ready
+    con, cid = ready()
+    db.release_to_farmer(con, cid)
+    job, claim = delivery.claim(con, cid)
+    delivery.complete(con, cid, job, claim, "unknown")
+    db.mark_not_delivered(con, cid, "Unknown provider result", actor="QA")
+    db.officer_decide(con, cid, officer="Ama", decision="reject",
+                      expected_revision=db.get_case(con, cid)["revision"])
+    assert con.execute("SELECT state FROM delivery_jobs WHERE id=?", (job,)).fetchone()[0] == "unknown"
+    with pytest.raises(db.GateError):
+        delivery.claim(con, cid)
+
+
+@pytest.mark.parametrize("body", [{"SMSMessageData": {"Recipients": []}},
+    {"SMSMessageData": {"Recipients": [{"statusCode": 101}]}}])
+def test_incomplete_sms_response_remains_unknown(body):
+    import httpx
+    from agrireach.channels.sms import Config, SmsChannel
+    from agrireach.channels.base import OutboundMessage
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, json=body)))
+    result = SmsChannel(Config("sandbox", "fake", "fake"), client).send("+233200000000", OutboundMessage("hello"))
+    assert result.outcome == "unknown"

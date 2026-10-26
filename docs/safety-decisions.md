@@ -1,5 +1,13 @@
 # Engineering decisions and migration recovery
 
+## Acknowledgement response and identity
+
+HTTP 409 is intentional for an application workflow conflict requiring explicit warning acknowledgement. HTTP 428 describes HTTP conditional requests and is not this API contract. Critical holds use 422 and failed assessments use 503. Acknowledgement binds the exact case/context/text/credential and stable warning rule, sentence and evidence identity; model explanation prose is retained as evidence but does not invalidate an otherwise identical warning challenge.
+
+## Source applicability and unsupported materials
+
+Only known registered topics can be excluded from S1; the immutable question plus reply determine applicability. Unclassified context and changed source hashes keep safeguards enabled. C1 was corrected and verified before introducing this filter. Unknown material instruction shapes require nonacknowledgeable review even on nonchemical cases; this conservative choice can also hold legitimate nonchemical material instructions. Source hashes deliberately require review after corpus edits. A typo correction requires explicit policy/source registration review, not automatic hash acceptance.
+
 ## Why full sentences and explicit templates
 
 Word overlap accepted a negated consultation referral in the baseline. The shared gate therefore preserves polarity and conditions and holds unrecognised chemical paraphrases. This can restrict valid wording. It is intentionally not described as semantic proof.

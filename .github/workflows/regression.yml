@@ -1,0 +1,56 @@
+name: Regression
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, 'work/**']
+permissions:
+  contents: read
+jobs:
+  deterministic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PYTHONPATH: src
+      AGRIREACH_SOURCE_CHECK: '0'
+      AGRIREACH_RAINFALL: off
+      AGRIREACH_STT: none
+      SMS_ENABLED: '0'
+      WHATSAPP_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - run: pip install -r requirements.txt
+      # No secrets are passed to either job. Tests isolate endpoints and recipients.
+      - run: python -m pytest -q
+      - run: python scripts/replay_safety.py
+      - run: python scripts/verify_legacy_migration.py
+  speech:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: src
+      AGRIREACH_STT_DIR: /tmp/agrireach-whisper
+      AGRIREACH_TTS_DIR: /tmp/agrireach-piper
+      AGRIREACH_SOURCE_CHECK: '0'
+      AGRIREACH_RAINFALL: off
+      SMS_ENABLED: '0'
+      WHATSAPP_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - run: pip install -r requirements.txt -r requirements-voice.txt
+      - uses: actions/cache@v4
+        with:
+          path: |
+            /tmp/agrireach-whisper
+            /tmp/agrireach-piper
+          key: speech-ebe41f70-5041a7a4
+      - run: python scripts/cache_speech_models.py
+      - run: python -m pytest -q tests/test_stt_real.py tests/test_qa_remediation.py

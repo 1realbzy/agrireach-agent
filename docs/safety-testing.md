@@ -12,4 +12,17 @@ The suite isolates DATABASE_URL, media and outbox paths. The gate tests use the 
 
 The transaction tests use real SQLite files and threads. Provider tests use mocked HTTP; simulator tests write an actual local outbox. MCP tests launch a real subprocess. None of these demonstrate real farmer delivery.
 
-Live model calls are not required for deterministic blocks. Fresh live model and real speech verification have not been performed on this implementation. Do not infer availability from environment variable names or print key values. Run `PYTHONPATH=src python scripts/replay_safety.py` for deterministic historical replay; its JSON output separates normal historical candidates, deliberate attacks and missing evidence. No live model configuration was available during this implementation. Final acceptance remains blocked by the measured policy compatibility issue recorded in the progress report.
+Live model calls are not required for deterministic blocks. No live advisory model configuration was available for remediation. Real Whisper and Piper verification is separate from mocked speech tests. Synthetic English clips do not validate Ghanaian accents or native languages. See docs/remediation-progress.md for actual results and pending independent acceptance.
+
+```bash
+PYTHONPATH=src python scripts/replay_safety.py
+PYTHONPATH=src python scripts/verify_legacy_migration.py
+PYTHONPATH=src python -m pytest -q tests/test_qa_remediation.py
+pip install -r requirements-voice.txt
+export AGRIREACH_STT_DIR=/tmp/agrireach-whisper
+export AGRIREACH_TTS_DIR=/tmp/agrireach-piper
+python scripts/cache_speech_models.py
+PYTHONPATH=src python -m pytest -q tests/test_stt_real.py
+```
+
+The model cache script pins public speech model revisions. Downloads require network access. No API key or paid model is used. Without dependencies or cached assets the optional speech module skips; the model independent voice approval regression always runs in test_qa_remediation.py. CI has a separate speech job which downloads assets before running the module. Replay exits nonzero if any labelled unsafe case passes. The legacy migration check creates a temporary database from the synthetic SQL fixture and verifies backfill, publication, historical log rows, backups and read only verification.
