@@ -116,3 +116,10 @@ def test_retry_assessment_endpoint_is_read_only():
     assert response.json()["outcome"] in ("review_required", "safety_blocked")
     assert con.execute("SELECT COUNT(*) FROM approvals WHERE case_id=?", (cid,)).fetchone()[0] == 0
     assert db.get_case(con, cid)["status"] == "pending_review"
+
+
+def test_greeting_needs_no_source_but_advice_still_does(monkeypatch):
+    _judge(monkeypatch, lambda n: json.dumps({"verdicts": [
+        {"n": i + 1, "verdict": "supported", "why": "Synthetic"} for i in range(n)]}))
+    assert approval.assess_candidate("Thank you for your question, Kofi.", _ctx())["outcome"] == "pass"
+    assert approval.assess_candidate("Thank you. Intercrop maize with cowpea.", _ctx())["outcome"] == "review_required"

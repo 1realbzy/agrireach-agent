@@ -13,6 +13,10 @@ from datetime import datetime, timedelta, timezone
 from agrireach import db, knowledge, safety_gate
 
 
+# A short greeting or thanks needs no source; the safety gate still reads it.
+GREETING = re.compile(r"^(?:thank you|thanks|hello|hi|good (?:morning|afternoon|evening))\b[^\d.!?]{0,40}[.!]?$", re.I)
+
+
 def audit(con, case_id: int, actor: str, event: str, **details):
     """Append a redacted event in the caller's transaction; never commit here."""
     con.execute("INSERT INTO audit_events(case_id,event_name,actor,details,created_at) VALUES (?,?,?,?,?)",
@@ -63,12 +67,11 @@ def assess_candidate(text: str, ctx: dict) -> dict:
     from agrireach.farmer_reply import _ABBREV_WORDS
     # Deterministic rules have already inspected every sentence. Only an exact
     # code built caveat can be omitted from the probabilistic source comparison.
-    fixed_caveat = farmer_reply.zone_caveat(ctx["case"]["region"] or "")
-    fixed = {farmer_reply.CONFIRM, (fixed_caveat or {}).get("sentence")}
+    fixed = {farmer_reply.CONFIRM, (farmer_reply.zone_caveat(ctx["case"]["region"] or "") or {}).get("sentence")}
     source_sentences = {safety_gate.normalized(s) for p in ctx["sources"] for s in safety_gate.sentences(p["text"])}
     checked_sentences = [re.sub(rf"\b({_ABBREV_WORDS})\.(?=\s)", r"\1", s)
                          for s in safety_gate.sentences(text)
-                         if s not in fixed and not safety_gate.registered_template(s)
+                         if s not in fixed and not safety_gate.registered_template(s) and not GREETING.match(s)
                          and safety_gate.normalized(s) not in source_sentences]
     if not checked_sentences:
         return result | {"judge_status": "not_required"}

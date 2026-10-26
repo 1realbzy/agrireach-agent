@@ -47,7 +47,6 @@ def unsourced_input(sentence: str) -> str | None:
         return "does not say plainly what is applied"
     if (ON_PLANTS.search(s) and not LOOKING.search(s)) or CLAIM.search(s):
         return "puts something on the plants or claims a cure"
-    return None
 
 
 OFFICER = re.compile(r"\b(?:aeas?|extension|(?:the|your) agents?|agricultural (?:officer|agent)s?|officers?(?!-checked)|mofa staff)\b", re.I)
