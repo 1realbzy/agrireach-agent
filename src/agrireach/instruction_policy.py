@@ -10,8 +10,9 @@ import re
 APPLY = r"put|pour|apply|sprinkle|add|soak|dip|coat|wipe|rub|mix|give|use|smear|paint|spread|scatter|place"
 # Treating, dusting or drenching a crop is chemical work, whatever it is done with.
 TREAT = re.compile(r"\b(?:treat|dust|drench|dress|fumigate|coat)\w*\b(?! with (?:water|ash)\b)", re.I)
-REPEAT = re.compile(rf"\b(?:{APPLY}|spray|treat)\w*\b.*\b(?:twice|thrice|again|every|times|weekly|daily|once|each (?:day|week))\b"
-                    rf"|\bre-?appl|\brepeat\w*\b.*\b(?:{APPLY}|spray|treat)", re.I)  # how often is a dose too
+_V = r"(?:re-?)?(?:appl(?:y|ie[sd]|ying|ications?)|spray(?:s|ed|ing)?|treat(?:s|ed|ing|ments?)?)"  # how often is a dose too
+_W = r"twice|thrice|again|every|times|weekly|daily|once|each (?:day|week|season|time)|fortnight\w*|intervals?|second|repeat\w*"
+REPEAT = re.compile(rf"\b{_V}\b.*\b(?:{_W})\b|\b(?:{_W})\b.*\b{_V}\b|\bre-?appl", re.I)
 PRODUCT = re.compile(  # "sulphate of ammonia" is an ordinary fertiliser, not household ammonia
     r"\b(?:mancozeb|karate|lambda|actellic|phostoxin|gramoxone|paraquat|glyphosate|atrazine|attakan|emamectin|"
     r"tylosin|ampligo|coragen|kerosene|petrol|diesel|engine oil|detergent|bleach|carbide|battery|"

@@ -7,7 +7,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from agrireach import approval, db, judge, knowledge, safety_gate
+from agrireach import approval, db, instruction_policy, judge, knowledge, safety_gate
 from agrireach.api import app
 
 HARVEST = knowledge.reference("APNI-SARI-2023:harvest")
@@ -270,7 +270,12 @@ def test_repeat_application_is_held_even_when_no_chemical_passage_is_cited():
     assert result.outcome != "pass" and any(f.rule_id == "S3" for f in result.findings)
 
 
-@pytest.mark.parametrize("line", ["Apply once a week.", "Apply weekly.", "Reapply after rain."])
+REPEATS = ["Apply once a week.", "Apply weekly.", "Apply daily.", "Apply each week.", "Reapply next week.",
+           "A second application after rain helps.", "Repeat the application after one week.", "Spray at 14-day intervals.",
+           "Apply fortnightly.", "Do the spraying two times.", "Give a second treatment.", "Reapply after rain."]
+
+
+@pytest.mark.parametrize("line", REPEATS)
 @pytest.mark.parametrize("pid", ["APNI-SARI-2023:weeds-manual", "APNI-SARI-2023-MAIZE:p18-scouting"])
 def test_repeat_application_is_held_on_non_chemical_citations(line, pid):
     passage = next(p for p in knowledge.load()["passages"] if p["id"] == pid)
@@ -294,3 +299,10 @@ def test_definite_send_failure_is_not_called_uncertain():
     from agrireach.ui_feedback import feedback
     level, message = feedback(200, {"status": "not_delivered", "delivery": {"ok": False, "outcome": "definitely_failed"}})
     assert "nothing went out" in message and "uncertain" not in message
+
+
+@pytest.mark.parametrize("line", ["Use a hoe to weed every two weeks.", "It is useful to scout every week.",
+                                  "Add compost every season.", "Use the PICS bags again next season.",
+                                  "Place your sacks off the floor and check them every week.", "Repeat weeding after three weeks."])
+def test_repeat_rule_only_counts_apply_spray_and_treat_words(line):
+    assert not instruction_policy.REPEAT.search(line)

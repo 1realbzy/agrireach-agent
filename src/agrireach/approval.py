@@ -116,8 +116,7 @@ def decide(con, case_id: int, *, officer: str, decision: str, edited_text=None,
     """Assess, persist evidence and atomically decide on an unchanged case.
 
     Raises SafetyError with rule evidence, or GateError on stale state/challenge.
-    Rejected submissions remain in storage. Remote callers authenticate officer
-    before entry; direct Python calls are trusted local application code.
+    Rejected submissions remain in storage. Remote callers authenticate first; local calls are trusted.
     """
     row = db.get_case(con, case_id)
     if row is None:
