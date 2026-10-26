@@ -10,7 +10,7 @@ import re
 APPLY = r"put|pour|apply|sprinkle|add|soak|dip|coat|wipe|rub|mix|give|use|smear|paint|spread|scatter|place"
 # Treating, dusting or drenching a crop is chemical work, whatever it is done with.
 TREAT = re.compile(r"\b(?:treat|dust|drench|dress|fumigate|coat)\w*\b(?! with (?:water|ash)\b)", re.I)
-# How often to apply is a dose too: an apply, spray or treat word with a repeat word, or a re-application.
+# How often to apply is a dose: an apply/spray/treat word plus a repeat word. "Once at X and once at Y" is a split dose and passes.
 REPEAT_VERB = r"(?:re-?)?(?:appl(?:y|ie[sd]|ying|ications?)|spray(?:s|ed|ing)?|treat(?:s|ed|ing|ments?)?)"
 REPEAT_WORD = (r"twice|thrice|again|every|times|weekly|daily|fortnight\w*|intervals?|repeat\w*|keep applying|and in a week|"
                r"once (?:a|per|every|more|again)|once (?!at\b).*\bonce (?!at\b)|each (?:day|week|season)")
