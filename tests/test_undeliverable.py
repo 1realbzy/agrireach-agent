@@ -30,7 +30,7 @@ def test_opt_out_after_filing_makes_the_approved_case_undeliverable():
     asyncio.run(simulator.ask(SENDER, text="STOP"))
     h, c = _officer(), TestClient(api.app)
     r = c.post(f"/officer/cases/{cid}/decision", headers=h,
-               json={"decision": "approve", "farmer_text": "Harvest at 9 of 10 brown pods.", "confirmed": True})
+               json=({"decision": "approve", "farmer_text": "Harvest at 9 of 10 brown pods.", "confirmed": True}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]})
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "undeliverable" and body["delivery"]["ok"] is False
@@ -47,7 +47,7 @@ def test_opt_out_after_filing_makes_the_approved_case_undeliverable():
     assert fv["status"] == "undeliverable" and fv["answer"] is None and "Harvest" not in json.dumps(fv)
     # Terminal: no further decision, no release/retry, nothing sent.
     assert c.post(f"/officer/cases/{cid}/decision", headers=h,
-                  json={"decision": "approve", "farmer_text": "x", "confirmed": True}).status_code == 409
+                  json=({"decision": "approve", "farmer_text": "x", "confirmed": True}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]}).status_code == 409
     rel = c.post(f"/cases/{cid}/release", headers=h)
     assert rel.status_code == 409 and "undeliverable" in rel.json()["detail"]
     assert "no officer approval" not in rel.json()["detail"]
@@ -61,7 +61,7 @@ def test_retention_purge_after_filing_is_undeliverable_with_its_own_reason(monke
     later = (datetime.now(timezone.utc) + timedelta(days=31)).isoformat(timespec="seconds")
     monkeypatch.setenv("AGRIREACH_RETENTION_DAYS", "30")
     db.purge_old(con, now_ts=later)
-    out = simulator.officer_approve(cid, officer="Ama Mensah", farmer_text="Harvest.")
+    out = simulator.officer_approve(cid, officer="Ama Mensah", farmer_text="Harvest.", token=db.add_officer(db.connect(), "Ama Mensah"), expected_revision=db.get_case(db.connect(), cid)["revision"])
     assert out["ok"] is False
     assert db.get_case(con, cid)["status"] == "undeliverable"
     assert db.delivery_problem(con, cid) == "not sent: the number was removed by the retention purge"
@@ -79,7 +79,7 @@ def test_opted_out_marker_survives_a_later_purge(monkeypatch):
 
 def test_released_means_sent_for_channel_cases():
     cid = _case()
-    out = simulator.officer_approve(cid, officer="Ama Mensah", farmer_text="Harvest.")
+    out = simulator.officer_approve(cid, officer="Ama Mensah", farmer_text="Harvest.", token=db.add_officer(db.connect(), "Ama Mensah"), expected_revision=db.get_case(db.connect(), cid)["revision"])
     assert out["ok"] is True and db.get_case(db.connect(), cid)["status"] == "released"
 
 

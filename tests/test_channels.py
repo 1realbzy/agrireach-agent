@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from agrireach import api, db
+from agrireach import api, db, voice_script
 from agrireach.channels import service, simulator, stt, tts
 from agrireach.channels.base import mask_sender
 
@@ -65,11 +65,11 @@ def test_answer_is_sent_only_after_officer_approval_and_release():
     con = db.connect()
     chans = {"simulator": simulator.SimulatorChannel()}
     blocked = service.deliver(con, out["case_id"], chans)
-    assert blocked == {"ok": False, "detail": "not released after officer approval"}
+    assert blocked["ok"] is False and blocked["outcome"] == "blocked"
     assert len(outbox()) == 1  # still only the acknowledgement
     assert any("BLOCKED" in l["result_summary"] for l in db.case_log(con, out["case_id"]))
     db.officer_decide(con, out["case_id"], officer="Ama Mensah", decision="edit_approve",
-                      edited_text="Harvest when 9 out of 10 pods are brown.")
+                      edited_text="Harvest when 9 out of 10 pods are brown.", farmer_text="Harvest when 9 out of 10 pods are brown.", expected_revision=con.execute("SELECT revision FROM cases WHERE id=?", (out["case_id"],)).fetchone()[0])
     assert service.deliver(con, out["case_id"], chans)["ok"] is False  # approved but not released yet
     db.release_to_farmer(con, out["case_id"], actor="officer:Ama Mensah")
     assert service.deliver(con, out["case_id"], chans)["ok"] is True
@@ -81,7 +81,7 @@ def test_answer_is_sent_only_after_officer_approval_and_release():
 def test_rejected_case_is_never_sent():
     out = ask(text="When should I harvest my soybean? I farm near Tamale.")
     con = db.connect()
-    db.officer_decide(con, out["case_id"], officer="Ama Mensah", decision="reject")
+    db.officer_decide(con, out["case_id"], officer="Ama Mensah", decision="reject", expected_revision=con.execute("SELECT revision FROM cases WHERE id=?", (out["case_id"],)).fetchone()[0])
     with pytest.raises(db.GateError):
         db.release_to_farmer(con, out["case_id"])
     assert service.deliver(con, out["case_id"], {"simulator": simulator.SimulatorChannel()})["ok"] is False
@@ -123,8 +123,8 @@ def test_api_simulator_flow_and_officer_decision_delivers(monkeypatch):
     assert c.get(f"/officer/cases/{cid}/audio", headers=h).status_code == 200
     assert c.post(f"/cases/{cid}/release", headers=h).status_code == 409  # gate unchanged
     d = c.post(f"/officer/cases/{cid}/decision", headers=h,
-               json={"decision": "approve", "confirmed": True,
-                     "farmer_text": "Harvest when 9 of 10 pods are brown."}).json()
+               json=({"decision": "approve", "confirmed": True,
+                     "farmer_text": "Harvest when 9 of 10 pods are brown."}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]}).json()
     assert d["status"] == "released" and d["delivery"]["ok"]
     out = [m["text"] for m in c.get("/channels/simulator/outbox", params={"sender": SENDER}).json()]
     assert out[-1] == "Harvest when 9 of 10 pods are brown." != d["final_text"]  # officer view keeps citations
@@ -143,10 +143,10 @@ def test_optional_tts_attaches_audio_to_the_approved_answer(monkeypatch, tmp_pat
     out = ask(text="When should I harvest my soybean? I farm near Tamale.")
     con = db.connect()
     db.officer_decide(con, out["case_id"], officer="Ama Mensah", decision="edit_approve",
-                      edited_text="Harvest when 9 out of 10 pods are mature [APNI-SARI-2023:harvest].")
+                      edited_text="Harvest when 9 out of 10 pods are mature [APNI-SARI-2023:harvest].", farmer_text="Harvest when 9 out of 10 pods are mature.", approved_voice_script=voice_script.build("Harvest when 9 out of 10 pods are mature.", "Ama Mensah", "soybean").text, expected_revision=con.execute("SELECT revision FROM cases WHERE id=?", (out["case_id"],)).fetchone()[0])
     db.release_to_farmer(con, out["case_id"])
     res = service.deliver(con, out["case_id"], {"simulator": simulator.SimulatorChannel()})
     assert res["ok"] and res["audio"] and outbox()[-1]["audio"]
     assert spoken["text"].startswith("Hello. This is AgriReach") and "Ama Mensah" in spoken["text"]
     assert "[APNI" not in spoken["text"] and "9 out of 10" in spoken["text"]
-    assert outbox()[-1]["text"].endswith("[APNI-SARI-2023:harvest].")  # the text goes out exactly as approved
+    assert outbox()[-1]["text"] == "Harvest when 9 out of 10 pods are mature."  # the text goes out exactly as approved

@@ -43,8 +43,8 @@ def test_officer_is_warned_when_the_approved_farmer_text_drops_the_caveat():
     h = {"Authorization": f"Bearer {db.add_officer(db.connect(), 'Ama Mensah')}"}
     c = TestClient(app)
     cid = c.post("/ask", json={"question": "When should I harvest soybean in Kumasi?"}).json()["case_id"]
-    r = c.post(f"/officer/cases/{cid}/decision", headers=h, json={
-        "decision": "approve", "confirmed": True, "farmer_text": "Harvest when 9 out of 10 pods are brown."}).json()
+    r = c.post(f"/officer/cases/{cid}/decision", headers=h, json=({
+        "decision": "approve", "confirmed": True, "farmer_text": "Harvest when 9 out of 10 pods are brown."}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]}).json()
     assert r["status"] == "released"
     assert any("caveat" in w for w in r["warnings"])
     log = c.get(f"/officer/cases/{cid}", headers=h).json()["log"]
@@ -57,5 +57,5 @@ def test_no_warning_when_the_caveat_is_kept():
     cid = c.post("/ask", json={"question": "When should I harvest soybean in Kumasi?"}).json()["case_id"]
     text = c.get(f"/officer/cases/{cid}", headers=h).json()["farmer_draft"]["text"]
     r = c.post(f"/officer/cases/{cid}/decision", headers=h,
-               json={"decision": "approve", "confirmed": True, "farmer_text": text}).json()
+               json=({"decision": "approve", "confirmed": True, "farmer_text": text}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]}).json()
     assert r["status"] == "released" and r["warnings"] == []

@@ -26,6 +26,7 @@ class SendResult:
     ok: bool
     detail: str = ""
     outcome: str = ""
+    provider_id: str | None = None
 
     def __post_init__(self):
         # An adapter must explicitly establish nonacceptance; an unexplained

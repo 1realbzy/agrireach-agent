@@ -19,15 +19,15 @@ def test_end_to_end_officer_gate():
     assert proposed["text"] and "[" not in proposed["text"] and "9 out of 10 pods" in proposed["text"]
     # approving requires the exact farmer text, a signed-in officer, and an explicit source-check confirmation
     assert c.post(f"/officer/cases/{cid}/decision", headers=h,
-                  json={"decision": "approve", "confirmed": True}).status_code == 400
+                  json=({"decision": "approve", "confirmed": True}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]}).status_code == 400
     assert c.post(f"/officer/cases/{cid}/decision",
-                  json={"officer": "Ama Mensah", "decision": "approve", "farmer_text": proposed["text"],
-                        "confirmed": True}).status_code == 401
+                  json=({"officer": "Ama Mensah", "decision": "approve", "farmer_text": proposed["text"],
+                        "confirmed": True}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]}).status_code == 401
     assert c.post(f"/officer/cases/{cid}/decision", headers=h,
-                  json={"decision": "approve", "farmer_text": proposed["text"]}).status_code == 400
+                  json=({"decision": "approve", "farmer_text": proposed["text"]}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]}).status_code == 400
     sent = proposed["text"] + " Officer-checked."
     ok = c.post(f"/officer/cases/{cid}/decision", headers=h,
-                json={"decision": "approve", "farmer_text": sent, "confirmed": True}).json()
+                json=({"decision": "approve", "farmer_text": sent, "confirmed": True}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]}).json()
     assert ok["status"] == "released"
     f = c.get(f"/farmer/cases/{cid}").json()
     assert f["approved_by"] == "Ama Mensah" and f["answer"] == sent  # the farmer gets exactly the approved text

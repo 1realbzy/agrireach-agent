@@ -28,7 +28,7 @@ def test_officer_endpoints_refuse_without_sign_in():
     assert c.get("/officer/queue").status_code == 401
     assert c.get(f"/officer/cases/{cid}").status_code == 401
     assert c.post(f"/officer/cases/{cid}/decision",
-                  json={"decision": "approve", "farmer_text": "x", "confirmed": True}).status_code == 401
+                  json=({"decision": "approve", "farmer_text": "x", "confirmed": True}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]}).status_code == 401
     assert c.post(f"/cases/{cid}/release").status_code == 401
 
 
@@ -41,8 +41,8 @@ def test_officer_name_comes_from_the_sign_in_not_the_body():
     tok = _officer("Ama Mensah")
     cid = _case()
     r = c.post(f"/officer/cases/{cid}/decision", headers=_auth(tok),
-               json={"officer": "not-a-real-officer", "decision": "approve", "farmer_text": "Harvest at 9 of 10 pods.",
-                     "confirmed": True})
+               json=({"officer": "not-a-real-officer", "decision": "approve", "farmer_text": "Harvest at 9 of 10 pods.",
+                     "confirmed": True}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]})
     assert r.status_code == 200, r.text
     f = c.get(f"/farmer/cases/{cid}").json()
     assert f["approved_by"] == "Ama Mensah"
@@ -66,7 +66,7 @@ def test_concurrent_approvals_only_one_wins():
         con = db.connect()
         barrier.wait()
         try:
-            db.officer_decide(con, cid, officer="Ama Mensah", decision="approve", farmer_text=t)
+            db.officer_decide(con, cid, officer="Ama Mensah", decision="approve", farmer_text=t, expected_revision=con.execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0])
             codes[t] = "ok"
         except db.GateError:
             codes[t] = "refused"
@@ -98,7 +98,7 @@ def test_stale_decision_after_another_officer_decided_is_refused():
     db.get_case = get_then_race
     try:
         with pytest.raises(db.GateError):
-            db.officer_decide(con, cid, officer="Ama Mensah", decision="approve", farmer_text="late answer")
+            db.officer_decide(con, cid, officer="Ama Mensah", decision="approve", farmer_text="late answer", expected_revision=con.execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0])
     finally:
         db.get_case = real_get
     assert db.get_case(con, cid)["status"] == "rejected"

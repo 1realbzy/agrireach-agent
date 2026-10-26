@@ -46,6 +46,12 @@ def connect(path: str | None = None) -> sqlite3.Connection:
         Path(p).parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(p, timeout=10)
     con.row_factory = sqlite3.Row
+    from agrireach.migrations import validate_existing_ledger
+    try:
+        validate_existing_ledger(con)
+    except BaseException:
+        con.close()
+        raise
     con.executescript(
         """
         CREATE TABLE IF NOT EXISTS cases (
@@ -90,12 +96,13 @@ def connect(path: str | None = None) -> sqlite3.Connection:
     return con
 
 
-def log(con, actor: str, tool: str, args: dict, summary: str, ok: bool = True, case_id: int | None = None):
+def log(con, actor: str, tool: str, args: dict, summary: str, ok: bool = True, case_id: int | None = None, *, commit: bool = True):
     con.execute(
         "INSERT INTO tool_log(ts,case_id,actor,tool,args,result_summary,ok) VALUES (?,?,?,?,?,?,?)",
         (now(), case_id, actor, tool, json.dumps(args, ensure_ascii=False)[:2000], summary[:2000], int(ok)),
     )
-    con.commit()
+    if commit:
+        con.commit()
 
 
 def agent_upsert_case(con, *, status: str, question: str = "", case_id: int | None = None, crop=None, region=None,
@@ -126,23 +133,26 @@ def agent_upsert_case(con, *, status: str, question: str = "", case_id: int | No
         log(con, "agent", "create_or_update_case", {"case_id": case_id},
             f"BLOCKED: case already '{row['status']}' (officer-owned)", ok=False, case_id=case_id)
         raise GateError(f"case {case_id} is '{row['status']}' and can no longer be changed by the agent")
-    con.execute(
+    cur = con.execute(
         "UPDATE cases SET draft=COALESCE(?,draft), farmer_draft=COALESCE(?,farmer_draft), sources=?, priority=?,"
         " urgent_reasons=?, status=?, updated_at=?, revision=revision+1 WHERE id=? AND revision=?",
         (draft, farmer_draft, json.dumps(sources if sources is not None else json.loads(row["sources"])), priority,
          json.dumps(urgent_reasons or []), status, t, case_id, row["revision"]))
+    if cur.rowcount != 1:
+        con.rollback()
+        raise GateError("stale_revision: case changed during agent update")
     con.commit()
     return case_id
 
 
 def officer_decide(con, case_id: int, *, officer: str, decision: str, edited_text=None,
-                   note=None, farmer_text=None, expected_revision=None, acknowledgement=None) -> dict:
+                   note=None, farmer_text=None, expected_revision=None, acknowledgement=None, approved_voice_script=None) -> dict:
     """Enforced local workflow boundary; remote callers authenticate officer first."""
     from agrireach.approval import decide
     try:
         return decide(con, case_id, officer=officer, decision=decision, edited_text=edited_text,
                       note=note, farmer_text=farmer_text, expected_revision=expected_revision,
-                      acknowledgement=acknowledgement)
+                      acknowledgement=acknowledgement, approved_voice_script=approved_voice_script)
     except SafetyError:
         raise  # The assessment and rejected submission are already durable.
     except GateError:
@@ -158,7 +168,7 @@ def _token_hash(token: str) -> str:
 
 
 def reopen_case(con, case_id: int, *, officer: str, expected_revision: int, information: str) -> dict:
-    """Reopen needs_info explicitly, preserving the old draft and new officer evidence.
+    """Return a clarified or invalidated unsent approval to review, keeping evidence.
 
     Trusted local callers supply the officer; remote callers must authenticate it.
     Raises GateError on stale state. It never releases or approves advice.
@@ -166,13 +176,19 @@ def reopen_case(con, case_id: int, *, officer: str, expected_revision: int, info
     if not officer.strip() or not information.strip():
         raise ValueError("Officer and additional information are required")
     with con:
+        con.execute("BEGIN IMMEDIATE")
+        active = con.execute("SELECT 1 FROM delivery_jobs j JOIN approvals a ON a.id=j.approval_id WHERE a.case_id=? AND j.state IN ('sending','unknown','accepted')", (case_id,)).fetchone()
+        if active:
+            raise GateError("Active or unresolved delivery must be reconciled before reopening")
         changed = con.execute("UPDATE cases SET status='pending_review', revision=revision+1, updated_at=? "
-                              "WHERE id=? AND revision=? AND status='needs_info'",
+                              "WHERE id=? AND revision=? AND status IN ('needs_info','approved','not_delivered')",
                               (now(), case_id, expected_revision))
         if changed.rowcount != 1:
             raise GateError("stale_revision: reload the needs_info case")
         con.execute("INSERT INTO advisory_submissions(case_id,revision,officer,decision,note,created_at) "
                     "VALUES (?,?,?,'reopen',?,?)", (case_id, expected_revision, officer, information, now()))
+        from agrireach.approval import audit
+        audit(con, case_id, officer, "case_reopened", revision=expected_revision+1)
     return dict(get_case(con, case_id))
 
 
@@ -199,7 +215,17 @@ def officer_for_token(con, token: str | None) -> str | None:
 def release_to_farmer(con, case_id: int, actor: str = "system") -> dict:
     """Validate the exact approval before idempotent publication or channel release."""
     from agrireach.approval import release
-    return release(con, case_id, actor)
+    from agrireach.delivery import expire_claims
+    expire_claims(con, case_id)
+    try:
+        return release(con, case_id, actor)
+    except GateError as exc:
+        if get_case(con, case_id):
+            from agrireach.approval import audit
+            with con:
+                audit(con, case_id, actor, "release_blocked", rule_ids=[f["rule_id"] for f in getattr(exc, "assessment", {}).get("findings", [])])
+                log(con, actor, "release_to_farmer", {}, "BLOCKED: approval validation failed", ok=False, case_id=case_id, commit=False)
+        raise
 
 
 def mark_not_delivered(con, case_id: int, reason: str, actor: str = "system") -> bool:
@@ -255,6 +281,7 @@ def save_contact(con, case_id: int, *, channel: str, sender_id: str, audio_path:
     con.execute("INSERT OR REPLACE INTO channel_contacts(case_id,channel,sender_id,audio_path,transcript,stt,created_at)"
                 " VALUES (?,?,?,?,?,?,?)", (case_id, channel, sender_id, audio_path, transcript,
                                              json.dumps(stt or {}), now()))
+    con.execute("UPDATE cases SET revision=revision+1 WHERE id=?", (case_id,))
     con.commit()
 
 
@@ -266,7 +293,7 @@ def queue_with_contact(con, case_id: int, *, channel: str, sender_id: str, audio
         con.execute("INSERT OR REPLACE INTO channel_contacts(case_id,channel,sender_id,audio_path,transcript,stt,"
                     "created_at) VALUES (?,?,?,?,?,?,?)", (case_id, channel, sender_id, audio_path, transcript,
                                                            json.dumps(stt or {}), now()))
-        cur = con.execute("UPDATE cases SET status='pending_review', updated_at=? WHERE id=? AND status='draft'",
+        cur = con.execute("UPDATE cases SET status='pending_review', revision=revision+1, updated_at=? WHERE id=? AND status='draft'",
                           (now(), case_id))
         if cur.rowcount != 1:
             raise GateError(f"case {case_id} is not a draft; not queued")

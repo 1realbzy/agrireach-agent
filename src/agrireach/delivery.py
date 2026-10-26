@@ -2,8 +2,30 @@
 from __future__ import annotations
 
 import secrets
+import json
+from datetime import datetime, timedelta, timezone
 
 from agrireach import approval, db
+
+
+def expire_claims(con, case_id: int, *, current_time: datetime | None = None) -> None:
+    """After 15 minutes, interrupted claims become unknown, never retryable.
+
+    The bound exceeds the configured local TTS and provider request deadlines.
+    This maintenance runs before a release/claim attempt; no background worker is
+    required. A matching claim check prevents overwriting a completed send.
+    """
+    cutoff = ((current_time or datetime.now(timezone.utc)) - timedelta(minutes=15)).isoformat(timespec="seconds")
+    with con:
+        con.execute("BEGIN IMMEDIATE")
+        rows = con.execute("SELECT j.id,j.claim_id FROM delivery_jobs j JOIN approvals a ON a.id=j.approval_id WHERE a.case_id=? AND j.state='sending' AND j.updated_at<=?",
+                           (case_id, cutoff)).fetchall()
+        for row in rows:
+            con.execute("UPDATE delivery_jobs SET state='unknown',updated_at=? WHERE id=? AND claim_id=? AND state='sending'",
+                        (db.now(), row["id"], row["claim_id"]))
+            con.execute("UPDATE delivery_attempts SET outcome='unknown',completed_at=? WHERE claim_id=? AND outcome='sending'",
+                        (db.now(), row["claim_id"]))
+            approval.audit(con, case_id, "system", "delivery_unknown", job_id=row["id"], reason="claim expired")
 
 
 def claim(con, case_id: int) -> tuple[int, str] | None:
@@ -12,6 +34,7 @@ def claim(con, case_id: int) -> tuple[int, str] | None:
     Raises GateError for stale approval or unavailable release. External sends must
     start only after this transaction commits. Crashed claims require reconciliation.
     """
+    expire_claims(con, case_id)
     try:
         con.execute("BEGIN IMMEDIATE")
         record, payload = approval.validated_approval(con, case_id)
@@ -44,7 +67,7 @@ def claim(con, case_id: int) -> tuple[int, str] | None:
         raise
 
 
-def complete(con, case_id: int, job_id: int, claim_id: str, outcome: str):
+def complete(con, case_id: int, job_id: int, claim_id: str, outcome: str, *, provider_id: str | None = None):
     """Record only this claim's outcome; never overwrite a later attempt."""
     if outcome not in ("accepted", "definitely_failed", "unknown", "undeliverable"):
         raise ValueError("Invalid transport outcome")
@@ -53,8 +76,8 @@ def complete(con, case_id: int, job_id: int, claim_id: str, outcome: str):
                               (outcome, db.now(), job_id, claim_id))
         if changed.rowcount != 1:
             raise db.GateError("Claim is no longer active; reconcile its late result")
-        con.execute("UPDATE delivery_attempts SET outcome=?,completed_at=? WHERE claim_id=?",
-                    (outcome, db.now(), claim_id))
+        con.execute("UPDATE delivery_attempts SET outcome=?,completed_at=?,detail=? WHERE claim_id=?",
+                    (outcome, db.now(), json.dumps({"provider_id": provider_id}), claim_id))
         approval.audit(con, case_id, "channel", "delivery_" + outcome, job_id=job_id)
 
 

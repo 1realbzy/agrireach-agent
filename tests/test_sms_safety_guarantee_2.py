@@ -168,7 +168,7 @@ def test_approved_text_is_sent_byte_for_byte_and_never_re_proposed(monkeypatch):
     monkeypatch.setattr(fr, "ensure_safety_line", must_not_run)
     monkeypatch.setattr(fr, "propose", must_not_run)
     d = c.post(f"/officer/cases/{cid}/decision", headers=h,
-               json={"decision": "approve", "confirmed": True, "farmer_text": text}).json()
+               json=({"decision": "approve", "confirmed": True, "farmer_text": text}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]}).json()
     assert d["status"] == "released" and d["delivery"]["ok"], d
     assert not any("safety line" in w for w in d["warnings"]), d["warnings"]
     phone = simulator.SimulatorChannel().messages(SENDER)[-1]["text"]
@@ -185,10 +185,9 @@ def test_officer_who_removes_the_line_is_warned_and_it_is_not_put_back(monkeypat
     assert not fr.SAFETY_RE.search(edited)
     monkeypatch.setattr(fr, "ensure_safety_line", lambda *a, **k: (_ for _ in ()).throw(AssertionError("ran")))
     d = c.post(f"/officer/cases/{cid}/decision", headers=h,
-               json={"decision": "approve", "confirmed": True, "farmer_text": edited}).json()
-    assert d["status"] == "released"
-    assert any("drops the pesticide safety line" in w for w in d["warnings"]), d["warnings"]
-    log = c.get(f"/officer/cases/{cid}", headers=h).json()["log"]
-    assert any("drops the pesticide safety line" in str(e) for e in log)
-    phone = simulator.SimulatorChannel().messages(SENDER)[-1]["text"]
-    assert phone == edited and LINE not in phone and c.get(f"/farmer/cases/{cid}").json()["answer"] == edited
+               json=({"decision": "approve", "confirmed": True, "farmer_text": edited}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]}).json()
+    # Safety removal is now blocked; the submitted text is retained, never rewritten.
+    assert d["detail"]["outcome"] == "safety_blocked"
+    assert db.get_case(db.connect(), cid)["status"] == "pending_review"
+    assert c.get(f"/farmer/cases/{cid}").json()["answer"] is None
+    assert db.connect().execute("SELECT farmer_text FROM advisory_submissions WHERE case_id=? ORDER BY id DESC", (cid,)).fetchone()[0] == edited

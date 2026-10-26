@@ -108,7 +108,16 @@ async def core():
         r6 = f"blocked: {e}"
     print(json.dumps({"task": "6 release without approval", "result": r6,
                       "log": [l["result_summary"] for l in db.case_log(con, cid) if not l["ok"]]}))
-    row = db.officer_decide(con, cid, officer="Ama Mensah", decision="edit_approve", edited_text="Officer-edited text")
+    case = db.get_case(con, cid)
+    passages = [knowledge.reference(i) for i in json.loads(case["sources"])]
+    harvest = next(p for p in passages if "harvest" in p["text"].lower())
+    from agrireach.safety_gate import sentences
+    farmer_text = sentences(harvest["text"])[0]
+    if any(p.get("risk") == "chemical" for p in passages):
+        farmer_text = "Consult your local agricultural extension officer before choosing or applying a pesticide. " + farmer_text
+    row = db.officer_decide(con, cid, officer="Ama Mensah", decision="edit_approve",
+                            edited_text="Officer-edited text", farmer_text=farmer_text,
+                            expected_revision=case["revision"])
     row = db.release_to_farmer(con, cid)
     print(json.dumps({"task": "8 officer edit then approve", "status": row["status"], "officer": row["officer"],
                       "decided_at": row["decided_at"], "draft_kept": row["draft"][:40], "final": row["final_text"]}))

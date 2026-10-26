@@ -209,7 +209,7 @@ def test_inbound_to_answer_end_to_end_through_officer_gate():
     cid = res[0]["case_id"]
     assert service.deliver(con, cid, {"sms": ch})["ok"] is False                       # not approved: nothing sent
     assert len(at.requests) == 1
-    db.officer_decide(con, cid, officer="Ama Mensah", decision="edit_approve", edited_text="Harvest at 9 of 10 pods.")
+    db.officer_decide(con, cid, officer="Ama Mensah", decision="edit_approve", edited_text="Harvest at 9 of 10 pods.", farmer_text="Harvest at 9 of 10 pods.", expected_revision=con.execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0])
     db.release_to_farmer(con, cid)
     out = service.deliver(con, cid, {"sms": ch})
     assert out["ok"] is True
@@ -228,11 +228,12 @@ def test_overlong_approved_answer_is_recorded_as_failed_not_cut():
     con = db.connect()
     cid = res[0]["case_id"]
     long_text = "Wear gloves when you spray. " * 30
-    db.officer_decide(con, cid, officer="Ama Mensah", decision="edit_approve", edited_text=long_text)
-    db.release_to_farmer(con, cid)
-    out = service.deliver(con, cid, {"sms": ch})
-    assert out["ok"] is False and out["detail"].startswith("not sent, nothing was cut: too long for SMS")
-    assert len(at.requests) == 1                                                         # only the ack went out
+    # The shared gate now blocks an unsendable payload before approval, not after release.
+    with pytest.raises(db.SafetyError):
+        db.officer_decide(con, cid, officer="Ama Mensah", decision="edit_approve", edited_text=long_text,
+                          farmer_text=long_text, expected_revision=db.get_case(con, cid)["revision"])
+    assert db.get_case(con, cid)["status"] == "pending_review"
+    assert len(at.requests) == 1  # only the acknowledgement
 
 
 def test_consent_prompt_comes_first_over_sms(monkeypatch):

@@ -16,6 +16,21 @@ STATEMENTS = [
 CHECKSUM = hashlib.sha256("\n".join(STATEMENTS).encode()).hexdigest()
 
 
+def validate_existing_ledger(con):
+    """Reject unknown or incomplete upgraded databases before bootstrap writes."""
+    tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "schema_migrations" not in tables:
+        return
+    ledger = [tuple(r) for r in con.execute("SELECT version,checksum FROM schema_migrations ORDER BY version")]
+    if ledger not in ([(1, CHECKSUM)], [(1, CHECKSUM), (2, CHECKSUM_V2)]):
+        raise RuntimeError("Unsupported migration ledger; no bootstrap writes performed")
+    required = {"cases", "advisory_submissions", "safety_assessments"}
+    if len(ledger) == 2:
+        required |= {"approvals", "acknowledgement_challenges", "audit_events", "delivery_jobs", "delivery_attempts"}
+    if not required <= tables:
+        raise RuntimeError("Incomplete migration schema; stop writers and recover from verified evidence")
+
+
 def ensure_schema(con: sqlite3.Connection, path: str) -> None:
     """Apply version one atomically, backing up nonempty legacy databases first.
 
@@ -29,6 +44,13 @@ def ensure_schema(con: sqlite3.Connection, path: str) -> None:
         rows = con.execute("SELECT version,checksum FROM schema_migrations ORDER BY version").fetchall()
         if [(r[0], r[1]) for r in rows] not in ([(VERSION, CHECKSUM)], [(VERSION, CHECKSUM), (2, CHECKSUM_V2)]):
             raise RuntimeError("Unsupported migration ledger; stop writers and inspect the database")
+        if len(rows) == 1 and path != ":memory:":
+            backup_path = Path(f"{path}.before-v2-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f')}.sqlite")
+            backup_path.touch(mode=0o600, exist_ok=False)
+            with sqlite3.connect(backup_path) as backup:
+                con.backup(backup)
+                if backup.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                    raise RuntimeError("Version two backup verification failed")
         upgrade_v2(con)
         return
     if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
@@ -99,3 +121,29 @@ def upgrade_v2(con):
     except BaseException:
         con.rollback()
         raise
+
+
+def main():
+    """Offline operator migration/verification entry point. Never sends messages."""
+    import argparse
+    parser = argparse.ArgumentParser(description="Stop application writers before upgrading SQLite")
+    parser.add_argument("path", type=Path)
+    parser.add_argument("--verify-only", action="store_true")
+    args = parser.parse_args()
+    if args.verify_only:
+        with sqlite3.connect(f"file:{args.path.resolve()}?mode=ro", uri=True) as con:
+            if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok" or con.execute("PRAGMA foreign_key_check").fetchone():
+                raise RuntimeError("SQLite integrity verification failed")
+            ledger = con.execute("SELECT version,checksum FROM schema_migrations ORDER BY version").fetchall()
+            if ledger != [(1, CHECKSUM), (2, CHECKSUM_V2)]:
+                raise RuntimeError("Schema version or checksum mismatch")
+        print("Schema versions 1 and 2 verified; integrity and foreign keys OK")
+    else:
+        from agrireach import db
+        con = db.connect(str(args.path))
+        con.close()
+        print("Migration complete. Verify the backup and database before restarting writers.")
+
+
+if __name__ == "__main__":
+    main()

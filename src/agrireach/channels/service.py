@@ -273,10 +273,10 @@ def _deliver_transport(con, case_id: int, channels: dict[str, Channel]) -> dict 
     ch = channels.get(contact["channel"])
     audio = None
     if ch is not None and tts.enabled():
-        script = voice_script.build(text, row["officer"], row["crop"] or "")
-        if script.ok:
+        script_text = payload.get("voice_script")
+        if script_text:
             try:
-                audio = tts.synthesize(script.text, str(media_dir() / "out" / f"case{case_id}-{uuid.uuid4().hex[:8]}.wav"))
+                audio = tts.synthesize(script_text, str(media_dir() / "out" / f"case{case_id}-{uuid.uuid4().hex[:8]}.wav"))
             except Exception as e:  # text still goes out; the officer sees why there is no audio
                 db.log(con, "channel:tts", "synthesize", {}, f"failed: {type(e).__name__}", ok=False, case_id=case_id)
     r = ch.send(contact["sender_id"], OutboundMessage(text=text, audio_path=audio)) if ch else \
@@ -287,7 +287,7 @@ def _deliver_transport(con, case_id: int, channels: dict[str, Channel]) -> dict 
            ("sent: " if r.ok else "FAILED: ") + r.detail, ok=r.ok, case_id=case_id)
     if not r.ok:  # never looks delivered: back to the officer queue with the reason
         db.mark_not_delivered(con, case_id, r.detail, actor=f"channel:{contact['channel']}")
-    return {"ok": r.ok, "detail": r.detail, "audio": bool(audio), "outcome": r.outcome}
+    return {"ok": r.ok, "detail": r.detail, "audio": bool(audio), "outcome": r.outcome, "provider_id": r.provider_id}
 
 
 def deliver(con, case_id: int, channels: dict[str, Channel]) -> dict | None:
@@ -297,9 +297,24 @@ def deliver(con, case_id: int, channels: dict[str, Channel]) -> dict | None:
     crash leaves sending, also ineligible for a second claim.
     """
     from agrireach import delivery
-    claimed = delivery.claim(con, case_id)
+    contact = db.get_contact(con, case_id)
+    if not contact:
+        return None
+    if contact["sender_id"] in db.REMOVED:
+        why = "not sent: the farmer opted out (STOP)" if contact["sender_id"] == db.OPTED_OUT else "not sent: the number was removed by the retention purge"
+        return {"ok": False, "detail": why, "outcome": "undeliverable"}
+    try:
+        claimed = delivery.claim(con, case_id)
+    except db.SafetyError as exc:
+        return {"ok": False, "detail": str(exc), "outcome": "blocked", "assessment": exc.assessment}
+    except db.GateError as exc:
+        db.log(con, "channel", "send_answer", {}, "BLOCKED: " + str(exc), ok=False, case_id=case_id)
+        return {"ok": False, "detail": str(exc), "outcome": "blocked"}
     if claimed is None:
-        return {"ok": False, "detail": "No send: existing job or web publication", "outcome": "unchanged"}
+        job = con.execute("SELECT j.state FROM delivery_jobs j JOIN approvals a ON a.id=j.approval_id WHERE a.case_id=? ORDER BY j.id DESC LIMIT 1", (case_id,)).fetchone()
+        if job and job["state"] == "accepted":
+            return {"ok": True, "detail": "already delivered", "outcome": "accepted"}
+        return {"ok": False, "detail": "No send: existing job", "outcome": "unchanged"}
     job_id, claim_id = claimed
     try:
         result = _deliver_transport(con, case_id, channels)
@@ -307,7 +322,7 @@ def deliver(con, case_id: int, channels: dict[str, Channel]) -> dict | None:
         delivery.complete(con, case_id, job_id, claim_id, "unknown")
         raise
     outcome = result.get("outcome", "accepted" if result.get("ok") else "unknown")
-    delivery.complete(con, case_id, job_id, claim_id, outcome)
+    delivery.complete(con, case_id, job_id, claim_id, outcome, provider_id=result.get("provider_id"))
     return result
 
 

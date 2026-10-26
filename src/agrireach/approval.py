@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import re
 from datetime import datetime, timedelta, timezone
 
 from agrireach import db, knowledge, safety_gate
@@ -20,43 +21,73 @@ def audit(con, case_id: int, actor: str, event: str, **details):
 
 def context(con, row) -> dict:
     """Snapshot assessment relevant case data and complete resolved source contents."""
+    from agrireach.channels import tts
     sources = [knowledge.reference(i) for i in json.loads(row["sources"] or "[]")]
     if not all(sources):
         raise db.SafetyError({"outcome": "review_required", "reason": "Unresolved source", "findings": []})
+    sources = json.loads(json.dumps(sources))  # Detach cached corpus dictionaries before model I/O.
     contact = db.get_contact(con, row["id"])
-    return {"case": {k: row[k] for k in ("id", "revision", "draft", "question", "crop", "region", "farmer_draft")},
+    return {"case": {k: row[k] for k in ("id", "revision", "draft", "question", "crop", "region", "farmer_draft", "priority", "urgent_reasons")},
             "sources": sources, "contact": dict(contact) if contact else None,
-            "policy": safety_gate.POLICY_VERSION}
+            "policy": safety_gate.POLICY_VERSION, "voice_enabled": tts.enabled()}
 
 
 def assess_candidate(text: str, ctx: dict) -> dict:
     """Return structured deterministic and model outcomes without mutating storage."""
-    from agrireach import claim_check
+    from agrireach import citation_check, claim_check, farmer_reply, llm
+    from agrireach.channels import sms
     proposal = json.loads(ctx["case"]["farmer_draft"] or "null") or {}
     result = safety_gate.assess(text, ctx["sources"], language=proposal.get("language", "en")).to_dict()
+    caveat = proposal.get("zone_caveat")
+    result["informational"] = []
+    if not farmer_reply.caveat_kept(text or "", caveat):
+        result["informational"].append("The approved text omits the case zone caveat; review source applicability")
+    if ctx["contact"] and ctx["contact"]["channel"] == "sms" and text and sms.length_prompt(text):
+        return result | {"outcome": "safety_blocked", "reason": sms.length_prompt(text), "findings": [safety_gate.Finding("CHANNEL_LENGTH", text, sms.length_prompt(text)).to_dict()]}
     if result["outcome"] != "pass" or result["judge_status"] != "required":
         return result
     if not ctx["sources"]:
-        return result | {"outcome": "review_required", "reason": "No source supports the candidate"}
+        return result | {"outcome": "review_required", "reason": "No source supports the candidate", "findings": [safety_gate.Finding("SOURCE_SUPPORT", text, "No source supports the candidate").to_dict()]}
     ids = ", ".join(p["id"] for p in ctx["sources"])
-    draft = "\n".join(f"{s} [{ids}]" for s in safety_gate.sentences(text))
+    from agrireach.farmer_reply import _ABBREV_WORDS
+    # Deterministic rules have already inspected every sentence. Only an exact
+    # code built caveat can be omitted from the probabilistic source comparison.
+    fixed_caveat = farmer_reply.zone_caveat(ctx["case"]["region"] or "")
+    fixed = {farmer_reply.CONFIRM}
+    if fixed_caveat:
+        fixed.add(fixed_caveat["sentence"])
+    checked_sentences = [re.sub(rf"\b({_ABBREV_WORDS})\.(?=\s)", r"\1", s) for s in safety_gate.sentences(text) if s not in fixed]
+    draft = "\n".join(f"{s} [{ids}]" for s in checked_sentences)
+    figures = citation_check.check_draft(draft, ctx["sources"])
+    if not figures.ok:
+        return result | {"outcome": "review_required", "reason": "Figures do not match cited sources", "warnings": figures.problems, "findings": [safety_gate.Finding("SOURCE_FIGURES", "", problem, tuple(p["id"] for p in ctx["sources"])).to_dict() for problem in figures.problems]}
     checked = claim_check.check_claims(draft, ctx["sources"], judge=True)
     result["judge"] = checked.judge
     if checked.judge_failed:
-        return result | {"outcome": "assessment_unavailable", "judge_status": "failed"}
+        return result | {"outcome": "assessment_unavailable", "judge_status": "failed", "findings": [safety_gate.Finding("JUDGE_AVAILABILITY", "", "Required judge did not return a complete valid assessment", recovery=("retry_assessment", "revise", "reject", "request_info")).to_dict()]}
     if checked.problems:
         # Only noncritical probabilistic support verdicts may be acknowledged.
         # Lexical/source problems and chemical uncertainty need revision instead.
         model_warnings = [v for v in (checked.judge or {}).get("verdicts", []) if v["verdict"] == "not_supported"]
         chemical = any(p.get("risk") == "chemical" for p in ctx["sources"])
+        food_safety = bool(re.search(r"\b(?:aflatoxin|poison(?:ing)?|mouldy|moldy)\b", ctx["case"]["question"] + " " + text, re.I))
+        source_conflict = any(str(p).startswith("sources differ") for p in proposal.get("problems", []))
+        critical = chemical or food_safety or source_conflict
+        result["findings"] = [{"rule_id": "SOURCE_SUPPORT", "sentence": v["sentence"],
+                               "reason": v.get("why", "Unsupported source claim"), "evidence": v["cited"],
+                               "recovery": ["revise", "reject", "request_info"]} for v in model_warnings]
+        if not result["findings"]:
+            result["findings"] = [{"rule_id": "SOURCE_SUPPORT", "sentence": "", "reason": p,
+                                    "evidence": [s["id"] for s in ctx["sources"]],
+                                    "recovery": ["revise", "reject", "request_info"]} for p in checked.problems]
         result["warnings"] = checked.problems
-        return result | {"outcome": "acknowledgement_required" if model_warnings and len(model_warnings) == len(checked.problems) and not chemical else "review_required",
+        return result | {"outcome": "acknowledgement_required" if model_warnings and len(model_warnings) == len(checked.problems) and not critical else "review_required",
                          "judge_status": "concern"}
-    return result | {"judge_status": "supported"}
+    return result | {"judge_status": "supported" if checked.judge else "not_required"}
 
 
 def decide(con, case_id: int, *, officer: str, decision: str, edited_text=None,
-           farmer_text=None, note=None, expected_revision=None, acknowledgement=None) -> dict:
+           farmer_text=None, note=None, expected_revision=None, acknowledgement=None, approved_voice_script=None) -> dict:
     """Assess, persist evidence and atomically decide on an unchanged case.
 
     Raises SafetyError with rule evidence, or GateError on stale state/challenge.
@@ -66,8 +97,10 @@ def decide(con, case_id: int, *, officer: str, decision: str, edited_text=None,
     row = db.get_case(con, case_id)
     if row is None:
         raise ValueError("Case not found")
-    if not officer or not officer.strip() or decision not in db.OFFICER_DECISIONS:
-        raise ValueError("Named officer and valid decision required")
+    if not officer or not officer.strip():
+        raise db.GateError("Named officer required")
+    if decision not in db.OFFICER_DECISIONS:
+        raise ValueError("Valid decision required")
     if expected_revision is None or expected_revision != row["revision"]:
         raise db.GateError("stale_revision: reload the case")
     if row["status"] not in ("pending_review", "not_delivered"):
@@ -80,11 +113,21 @@ def decide(con, case_id: int, *, officer: str, decision: str, edited_text=None,
     if decision == "edit_approve" and not edited_text:
         raise ValueError("edited_text required")
     ctx = context(con, row) if approving else {"revision": row["revision"]}
-    assessment = assess_candidate(farmer_text, ctx) if approving else {"outcome": "pass", "judge_status": "not_required"}
+    from agrireach import llm
+    with llm.usage_logged(case_id, f"officer:{officer}", "approval_check"):
+        assessment = assess_candidate(farmer_text, ctx) if approving else {"outcome": "pass", "judge_status": "not_required"}
+    script_text = None
+    if approving and ctx["voice_enabled"]:
+        from agrireach import voice_script
+        script = voice_script.build(farmer_text or "", officer, row["crop"] or "")
+        if not script.ok or (farmer_text or "").strip() != voice_script.speakable(farmer_text or "") or approved_voice_script != script.text:
+            assessment = {"outcome": "review_required", "reason": "Preview and approve the exact spoken script; remove unsafe markup explicitly", "findings": [safety_gate.Finding("VOICE_APPROVAL", "", "Preview and approve the exact spoken script").to_dict()], "judge_status": "not_required"}
+        else:
+            script_text = script.text
     credential = con.execute("SELECT token_sha256 FROM officers WHERE name=?", (officer,)).fetchone()
     credential_hash = credential[0] if credential else None
     binding = safety_gate.fingerprint({"context": ctx, "farmer_text": farmer_text, "officer_text": final,
-                                       "decision": decision, "officer": officer, "credential": credential_hash,
+                                       "decision": decision, "officer": officer, "credential": credential_hash, "voice_script": script_text,
                                        "assessment": assessment})
     status = {"approve": "approved", "edit_approve": "approved", "reject": "rejected", "request_info": "needs_info"}[decision]
     blocked = None
@@ -100,6 +143,8 @@ def decide(con, case_id: int, *, officer: str, decision: str, edited_text=None,
             (case_id, json.dumps(ctx), json.dumps(assessment), db.now())).lastrowid
         outcome = assessment["outcome"]
         challenge_hash = None
+        if acknowledgement and outcome != "acknowledgement_required":
+            raise db.GateError("Acknowledgement does not match an eligible warning assessment")
         if outcome == "acknowledgement_required":
             if acknowledgement:
                 challenge_hash = db._token_hash(acknowledgement)
@@ -121,7 +166,7 @@ def decide(con, case_id: int, *, officer: str, decision: str, edited_text=None,
             approval_id = None
             if approving:
                 payload = {"farmer_text": farmer_text, "officer_text": final, "officer": officer,
-                           "context": ctx, "assessment": assessment, "binding": binding}
+                           "context": ctx, "assessment": assessment, "binding": binding, "voice_script": script_text}
                 approval_id = con.execute("INSERT INTO approvals(case_id,revision,submission_id,assessment_id,payload,fingerprint,provenance,created_at) VALUES (?,?,?,?,?,?,'assessed',?)",
                     (case_id, expected_revision + 1, submission, assessment_id, json.dumps(payload), safety_gate.fingerprint(payload), db.now())).lastrowid
                 if challenge_hash:
@@ -130,7 +175,7 @@ def decide(con, case_id: int, *, officer: str, decision: str, edited_text=None,
             con.execute("UPDATE cases SET status=?,final_text=?,farmer_text=?,officer=?,officer_note=?,decided_at=?,updated_at=?,revision=revision+1 WHERE id=?",
                         (status, final if approving else None, farmer_text if approving else None, officer, note, db.now(), db.now(), case_id))
             audit(con, case_id, officer, "approval_recorded" if approving else "officer_decision",
-                  revision=expected_revision + 1, approval_id=approval_id, submission_id=submission, decision=decision)
+                  revision=expected_revision + 1, approval_id=approval_id, submission_id=submission, decision=decision, informational=assessment.get("informational", []))
         con.commit()
     except BaseException:
         con.rollback()
@@ -168,13 +213,22 @@ def release(con, case_id: int, actor="system") -> dict:
         approval, payload = validated_approval(con, case_id)
         row = db.get_case(con, case_id)
         if row["status"] not in ("approved", "not_delivered", "released"):
-            raise db.GateError("Case is not eligible for release")
+            raise db.GateError(f"Case is {row['status']}; not eligible for release")
         contact = db.get_contact(con, case_id)
         if contact:
             if contact["sender_id"] in db.REMOVED:
-                raise db.GateError("Recipient removed; cannot release")
+                why = "not sent: the farmer opted out (STOP)" if contact["sender_id"] == db.OPTED_OUT else "not sent: the number was removed by the retention purge"
+                con.execute("UPDATE cases SET status='undeliverable',updated_at=? WHERE id=?", (db.now(), case_id))
+                con.execute("INSERT INTO channel_deliveries(case_id,channel,kind,ok,detail,ts) VALUES (?,?,'answer',0,?,?)", (case_id, contact["channel"], why, db.now()))
+                audit(con, case_id, actor, "delivery_undeliverable", approval_id=approval["id"])
+                db.log(con, actor, "mark_undeliverable", {}, why, ok=False, case_id=case_id, commit=False)
+                con.commit()
+                return dict(db.get_case(con, case_id))
             con.execute("INSERT INTO delivery_jobs(approval_id,channel,recipient_hash,state,updated_at) VALUES (?,?,?,'pending',?) ON CONFLICT(approval_id,channel) DO NOTHING",
                 (approval["id"], contact["channel"], db._token_hash(contact["sender_id"]), db.now()))
+            job = con.execute("SELECT state FROM delivery_jobs WHERE approval_id=? AND channel=?", (approval["id"], contact["channel"])).fetchone()
+            if job["state"] in ("sending", "unknown"):
+                raise db.GateError("Delivery is active or unknown; reconciliation required")
         con.execute("UPDATE cases SET status='released',updated_at=? WHERE id=?", (db.now(), case_id))
         audit(con, case_id, actor, "release_recorded", approval_id=approval["id"])
         con.commit()

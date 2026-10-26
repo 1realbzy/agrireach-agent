@@ -188,7 +188,8 @@ class SmsChannel:
             return SendResult(False, f"network error: {type(e).__name__} (not sent)", "definitely_failed")
         scrub = lambda s: str(s).replace(recipient_id, mask_sender(recipient_id))[:160]  # noqa: E731
         if r.status_code >= 400:
-            return SendResult(False, f"HTTP {r.status_code}: {scrub(r.text)}")
+            return SendResult(False, f"HTTP {r.status_code}: {scrub(r.text)}",
+                              "definitely_failed" if r.status_code in (400, 401, 403, 404) else "unknown")
         try:
             data = r.json()["SMSMessageData"]
             rec = (data.get("Recipients") or [{}])[0]
@@ -198,7 +199,7 @@ class SmsChannel:
         code = rec.get("statusCode")
         if code in ACCEPTED:
             return SendResult(True, f"accepted by Africa's Talking (status {code} {ACCEPTED[code]}; "
-                                    f"{_parts(m.segments)}, {m.encoding})")
+                                    f"{_parts(m.segments)}, {m.encoding})", provider_id=rec.get("messageId"))
         return SendResult(False, f"rejected by Africa's Talking: {code} {scrub(rec.get('status') or data.get('Message', ''))}", "definitely_failed")
 
 

@@ -32,10 +32,13 @@ def test_warns_even_when_the_stored_draft_has_no_pesticide_sentence(decision):
     body = {"decision": decision, "farmer_text": edited, "confirmed": True}
     if decision == "edit_approve":
         body["edited_text"] = edited
-    r = c.post(f"/officer/cases/{cid}/decision", headers=h, json=body)
-    assert r.status_code == 200, r.text
-    assert any("drops the pesticide safety line" in w for w in r.json()["warnings"]), r.json()["warnings"]
-    assert db.get_case(db.connect(), cid)["farmer_text"] == edited  # warned, never re-inserted
+    r = c.post(f"/officer/cases/{cid}/decision", headers=h, json=(body) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]})
+    # New approved contract: removal blocks rather than warning after release.
+    assert r.status_code == 422, r.text
+    assert any(f["rule_id"] == "S1" for f in r.json()["detail"]["findings"])
+    con = db.connect()
+    assert db.get_case(con, cid)["status"] == "pending_review"
+    assert con.execute("SELECT farmer_text FROM advisory_submissions WHERE case_id=? ORDER BY id DESC", (cid,)).fetchone()[0] == edited
 
 
 def test_needed_from_passages_or_original_proposal_not_from_the_draft():
@@ -61,7 +64,7 @@ def test_the_officer_draft_alone_never_decides_it():
     with con:
         con.execute("UPDATE cases SET draft=? WHERE id=?", (case["draft"] + "\nDo not spray herbicide near the seedlings.", cid))
     r = c.post(f"/officer/cases/{cid}/decision", headers=h,
-               json={"decision": "approve", "farmer_text": prop, "confirmed": True})
+               json=({"decision": "approve", "farmer_text": prop, "confirmed": True}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]})
     assert r.status_code == 200, r.text
     assert not any("pesticide safety line" in w for w in r.json()["warnings"]), r.json()["warnings"]
 

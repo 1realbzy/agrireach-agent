@@ -54,7 +54,7 @@ def test_farmer_draft_and_approval_model_calls_are_in_the_cost_log(monkeypatch):
     assert args["cost_usd"] is not None and "model calls succeeded" in rows[0]["result_summary"]
 
     r = c.post(f"/officer/cases/{cid}/decision", headers=h,
-               json={"decision": "approve", "farmer_text": fd["text"], "confirmed": True})
+               json=({"decision": "approve", "farmer_text": fd["text"], "confirmed": True}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]})
     assert r.status_code == 200, r.text
     rows = usage_rows(cid)[len(before) + 1:]
     assert len(rows) == 1, rows
@@ -78,8 +78,8 @@ def test_a_failed_model_call_is_logged_too(monkeypatch):
 
     monkeypatch.setattr(judge, "_call", lambda user: llm.create("judge", "fake-judge", Boom).choices[0])
     r = c.post(f"/officer/cases/{cid}/decision", headers=h,
-               json={"decision": "approve", "farmer_text": prop, "confirmed": True})
-    assert r.status_code == 200, r.text
+               json=({"decision": "approve", "farmer_text": prop + " Check your maize field carefully for damage.", "confirmed": True}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]})
+    assert r.status_code == 503, r.text
     rows = usage_rows(cid)[len(before):]
     assert len(rows) == 1 and not rows[0]["ok"], rows
     args = json.loads(rows[0]["args"])

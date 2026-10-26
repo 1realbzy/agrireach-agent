@@ -126,7 +126,7 @@ def test_voice_note_end_to_end_with_mocked_graph_api_and_gate():
     con = db.connect()
     cid = res[0]["case_id"]
     assert service.deliver(con, cid, {"whatsapp": ch})["ok"] is False  # not approved: nothing sent
-    db.officer_decide(con, cid, officer="Ama Mensah", decision="edit_approve", edited_text="Harvest at 9 of 10 pods.")
+    db.officer_decide(con, cid, officer="Ama Mensah", decision="edit_approve", edited_text="Harvest at 9 of 10 pods.", farmer_text="Harvest at 9 of 10 pods.", expected_revision=con.execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0])
     db.release_to_farmer(con, cid)
     assert service.deliver(con, cid, {"whatsapp": ch})["ok"] is True
     sends = [json.loads(r.content) for r in graph.requests if r.url.path.endswith("/messages")]

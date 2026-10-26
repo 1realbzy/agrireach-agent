@@ -57,6 +57,16 @@ with officer:
             tag = h["status"].upper().replace("_", " ")
             st.write(f"[{tag}] Case {h['id']}: {h['question']}"
                      + (f" ({h['delivery_problem']})" if h.get("delivery_problem") else ""))
+    with st.expander("Return an unsent case to review"):
+        recovery_id = st.number_input("Case ID to reopen", min_value=1, step=1, key="recoveryid")
+        recovery_reason = st.text_input("Additional information or reason for fresh review", key="recoveryreason")
+        if st.button("Reload and reopen case", key="reopen"):
+            detail = httpx.get(f"{API}/officer/cases/{recovery_id}", headers=H, timeout=10)
+            if detail.status_code == 200:
+                st.write(httpx.post(f"{API}/officer/cases/{recovery_id}/reopen", headers=H,
+                    json={"expected_revision": detail.json()["revision"], "information": recovery_reason}, timeout=10).json())
+            else:
+                st.write(detail.json())
     for c in q.json():
         tag = "URGENT" if c["priority"] == "urgent" else "routine"
         if c["status"] == "not_delivered":
@@ -100,6 +110,13 @@ with officer:
                     st.caption(f"Fits: {chk.get('parts')} of {chk.get('limit')} SMS parts ({chk.get('encoding')})")
             confirmed = st.checkbox("I checked every advice line in the farmer text against the cited sources",
                                     key=f"ok{c['id']}")
+            preview = httpx.post(f"{API}/officer/cases/{c['id']}/voice-preview", headers=H,
+                                 json={"officer_text": farmer_txt}, timeout=10).json()
+            approved_voice_script = None
+            if preview.get("enabled"):
+                st.code(preview["text"])
+                if st.checkbox("I reviewed this exact spoken script", key=f"voicescript{c['id']}"):
+                    approved_voice_script = preview["text"]
             cols = st.columns(3)
             for col, (label, dec) in zip(cols, [("Approve & release", "approve"), ("Reject", "reject"),
                                                 ("Request info", "request_info")]):
@@ -108,7 +125,24 @@ with officer:
                         dec = "edit_approve"
                     r = httpx.post(f"{API}/officer/cases/{c['id']}/decision", headers=H,
                                    json={"decision": dec, "edited_text": text, "farmer_text": farmer_txt,
-                                         "confirmed": confirmed}, timeout=60)
-                    st.write(r.json())
+                                         "confirmed": confirmed, "expected_revision": c["revision"], "approved_voice_script": approved_voice_script}, timeout=60)
+                    response = r.json()
+                    detail = response.get("detail", {})
+                    if isinstance(detail, dict) and detail.get("outcome") == "acknowledgement_required":
+                        st.session_state[f"challenge{c['id']}"] = {"token": detail["acknowledgement"], "text": farmer_txt, "officer_text": text, "revision": c["revision"]}
+                        st.warning("Review the model concerns below. They have not been acknowledged.")
+                        st.write({k: v for k, v in detail.items() if k != "acknowledgement"})
+                    else:
+                        st.write(response)
+            challenge = st.session_state.get(f"challenge{c['id']}")
+            if challenge and (challenge["text"], challenge["officer_text"], challenge["revision"]) == (farmer_txt, text, c["revision"]):
+                acknowledged = st.checkbox("I reviewed and explicitly acknowledge these model concerns", key=f"ack{c['id']}")
+                if st.button("Approve with acknowledgement", key=f"acksubmit{c['id']}", disabled=not acknowledged):
+                    response = httpx.post(f"{API}/officer/cases/{c['id']}/decision", headers=H, json={
+                        "decision": "edit_approve" if text != c["draft"] else "approve", "edited_text": text,
+                        "farmer_text": farmer_txt, "confirmed": confirmed, "expected_revision": c["revision"],
+                        "acknowledgement": challenge["token"], "approved_voice_script": approved_voice_script}, timeout=60)
+                    st.session_state.pop(f"challenge{c['id']}", None)
+                    st.write(response.json())
             if st.checkbox("Show tool-call log", key=f"l{c['id']}"):
                 st.dataframe(httpx.get(f"{API}/officer/cases/{c['id']}", headers=H, timeout=10).json()["log"])

@@ -600,3 +600,20 @@ Task 11's earlier intake failure ("Wa?" not recognised as a place) was fixed in 
 ## Run-to-run variation
 
 Stub mode: two runs were identical. LLM mode (two runs, temperature 0): statuses, priorities, flags and sources were identical across all tasks. Draft wording was identical for tasks 1, 3 and 4, and differed slightly for tasks 5, 10 and 11; the task 11 error appeared in both runs.
+
+
+## 26 October 2026: local safety hardening, acceptance pending
+
+This section records developer verification, not independent QA or agronomic signoff. Historical results above and raw historical evidence are unchanged.
+
+Baseline: 94bff8880f744e50d6df4d515bdc8c6b7a110198. Branch: work/safety-hardening. Python 3.12.14. The final full suite produced 738 passed and 1 optional speech module skipped in 178.75 seconds. Checkpoint commits are in docs/implementation-progress.md; exact validation is in docs/safety-verification.md.
+
+Frozen policy examples were committed before implementation: 40 source based legitimate cases, 40 unsafe cases and 3 uncertainty examples. The final bounded deterministic rules pass 40/40 legitimate cases and block 40/40 unsafe cases. The three uncertainty examples also omit mandatory safeguards and receive S1 blocks; this set does not establish calibrated uncertainty handling. No fixture was removed or relabelled.
+
+The original six unsafe API scenarios are blocked. Direct approval requires explicit farmer text and an expected revision; simulator approvals use registered credentials and the shared gate. These results apply to tested application boundaries, not a database administrator controlling raw SQL.
+
+Historical deterministic replay: `PYTHONPATH=src python scripts/replay_safety.py`. Exact per case dispositions and exclusions are in docs/safety-historical-replay.json. Of 42 historical approval records, 37 have usable source/text evidence: 15 deliberately unsafe cases are blocked, and 22 historically normal candidates produce 9 passes, 9 deterministic blocks and 4 review holds. Two review holds are unsupported language cases. Three records have unresolved source identifiers and two run 9 records omit the required submitted source evidence. None is silently included as a pass. A deterministic pass that still requires a judge is not an end to end approval result.
+
+Consequently 13/22 historically normal candidates are held, including the two intentional language restrictions. These are compatibility holds against historical author grades, not independently confirmed agronomic false positives. The historical zero false block target has not been established. Applying obligations from all cited chemical passages, including incidental storage passages retrieved for armyworm questions, is a substantial source of these holds. No looser source applicability policy has been silently introduced.
+
+Fresh live model and real speech tests were not performed: the required live model configuration and optional cached speech assets are unavailable. No real farmer messages were sent and no service was purchased. A model judge remains fallible and source accuracy is a separate validation problem.

@@ -26,12 +26,13 @@ def test_officer_removing_the_safety_line_sees_the_warning_in_the_response(decis
     body = {"decision": decision, "farmer_text": edited, "confirmed": True}
     if decision == "edit_approve":
         body["edited_text"] = edited
-    r = c.post(f"/officer/cases/{cid}/decision", headers=h, json=body)
-    assert r.status_code == 200 and r.json()["status"] == "released"
-    assert any("drops the pesticide safety line" in w for w in r.json()["warnings"]), r.json()["warnings"]
-    log = c.get(f"/officer/cases/{cid}", headers=h).json()["log"]
-    assert any(e["tool"] == "approval_warning" and "pesticide safety line" in e["result_summary"] for e in log)
-    assert db.get_case(db.connect(), cid)["farmer_text"] == edited  # warned, never re-inserted
+    r = c.post(f"/officer/cases/{cid}/decision", headers=h, json=(body) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]})
+    # New approved contract: removal blocks rather than warning after release.
+    assert r.status_code == 422, r.text
+    assert any(f["rule_id"] == "S1" for f in r.json()["detail"]["findings"])
+    con = db.connect()
+    assert db.get_case(con, cid)["status"] == "pending_review"
+    assert con.execute("SELECT farmer_text FROM advisory_submissions WHERE case_id=? ORDER BY id DESC", (cid,)).fetchone()[0] == edited
 
 
 def test_no_safety_warning_when_the_line_is_kept_in_an_edit():
@@ -39,5 +40,5 @@ def test_no_safety_warning_when_the_line_is_kept_in_an_edit():
     cid = c.post("/ask", json={"question": Q}).json()["case_id"]
     prop = c.get(f"/officer/cases/{cid}", headers=h).json()["farmer_draft"]["text"]
     r = c.post(f"/officer/cases/{cid}/decision", headers=h,
-               json={"decision": "edit_approve", "edited_text": prop, "farmer_text": prop, "confirmed": True}).json()
+               json=({"decision": "edit_approve", "edited_text": prop, "farmer_text": prop, "confirmed": True}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]}).json()
     assert not any("pesticide safety line" in w for w in r["warnings"]), r["warnings"]

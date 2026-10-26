@@ -1,3 +1,5 @@
+> Current local safety branch, 26 October 2026: approval uses a shared deterministic gate, revision/context binding, immutable approval records, single use acknowledgements and claimed delivery jobs. See [the safety walkthrough](safety-architecture.md) and the implementation progress record. Historical descriptions below remain preserved; their warning only approval and prehardening release semantics do not describe this branch. Acceptance is pending the historical compatibility decision and independent review.
+
 # Intended user workflow
 
 **Status: workflow proposal, not a working application.**

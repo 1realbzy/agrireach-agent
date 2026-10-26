@@ -1,3 +1,5 @@
+> Current local safety branch, 26 October 2026: approval uses a shared deterministic gate, revision/context binding, immutable approval records, single use acknowledgements and claimed delivery jobs. See [the safety walkthrough](docs/safety-architecture.md) and the implementation progress record. Historical descriptions below remain preserved; their warning only approval and prehardening release semantics do not describe this branch. Acceptance is pending the historical compatibility decision and independent review.
+
 # ARCHITECTURE.md
 
 **Status (25 Oct 2026):** as built on branch `fix/review-findings` at `f5d5990` (local, the frozen version; the code is unchanged since `e79c43c`, and later commits only touch docs). Runs locally with the open-weights model `mistralai/mistral-small-3.2-24b-instruct` (drafting) and `meta-llama/llama-3.3-70b-instruct` (judge) via an OpenAI-compatible endpoint, or in a labelled offline stub mode. Nothing is deployed. Measured results are in [EVALS.md](EVALS.md); the original pre-build design is in [docs/architecture.md](docs/architecture.md).

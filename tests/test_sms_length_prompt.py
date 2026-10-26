@@ -118,10 +118,12 @@ def test_officer_edit_is_checked_and_an_overlong_approval_is_refused_before_anyt
     ok = c.post(f"/officer/cases/{cid}/sms-check", json={"farmer_text": TWI_QUESTION}, headers=h).json()
     assert ok["prompt"] is None and ok["parts"] == 1
     r = c.post(f"/officer/cases/{cid}/decision", headers=h,
-               json={"decision": "approve", "farmer_text": TWI_REPLY, "confirmed": True})
-    assert r.status_code == 400 and r.json()["detail"] == sms.length_prompt(TWI_REPLY, 4)
+               json=({"decision": "approve", "farmer_text": TWI_REPLY, "confirmed": True}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]})
+    assert r.status_code == 422 and r.json()["detail"]["reason"] == sms.length_prompt(TWI_REPLY, 4)
     row = db.get_case(db.connect(), cid)
     assert row["status"] == "pending_review" and not row["farmer_text"]          # not approved, still editable
     r = c.post(f"/officer/cases/{cid}/decision", headers=h,
-               json={"decision": "approve", "farmer_text": TWI_QUESTION, "confirmed": True})
-    assert r.status_code == 200 and db.get_case(db.connect(), cid)["farmer_text"] == TWI_QUESTION
+               json=({"decision": "approve", "farmer_text": TWI_QUESTION, "confirmed": True}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]})
+    # Length fitting does not establish language safety: Twi remains held for review.
+    assert r.status_code == 422 and r.json()["detail"]["outcome"] == "review_required"
+    assert db.get_case(db.connect(), cid)["farmer_text"] is None

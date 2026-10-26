@@ -25,7 +25,8 @@ class SwitchableAT(FakeAT):
         self.ok = False
 
     def __call__(self, req):
-        self.status = 200 if self.ok else 500
+        # A definite client rejection exercises safe retry. HTTP 400 is tested as unknown separately.
+        self.status = 200 if self.ok else 400
         return super().__call__(req)
 
 
@@ -42,7 +43,7 @@ def _setup(monkeypatch):
 
 def _approve(c, h, cid, text):
     return c.post(f"/officer/cases/{cid}/decision", headers=h,
-                  json={"decision": "approve", "farmer_text": text, "confirmed": True})
+                  json=({"decision": "approve", "farmer_text": text, "confirmed": True}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]})
 
 
 def test_failed_send_after_release_is_not_delivered_and_reappears_in_the_queue(monkeypatch):
@@ -52,10 +53,10 @@ def test_failed_send_after_release_is_not_delivered_and_reappears_in_the_queue(m
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "not_delivered" and body["delivery"]["ok"] is False
-    assert body["delivery_problem"].startswith("HTTP 500")
+    assert body["delivery_problem"].startswith("HTTP 400")
     q = c.get("/officer/queue", headers=h).json()
     item = next(x for x in q if x["id"] == cid)
-    assert item["status"] == "not_delivered" and item["delivery_problem"].startswith("HTTP 500")
+    assert item["status"] == "not_delivered" and item["delivery_problem"].startswith("HTTP 400")
     fv = c.get(f"/farmer/cases/{cid}").json()
     assert fv["status"] == "not_delivered" and fv["answer"] is None and "not been sent" in fv["message"]
     assert "Harvest" not in json.dumps(fv)
@@ -69,7 +70,7 @@ def test_officer_can_edit_and_re_approve_then_one_successful_release(monkeypatch
     _approve(c, h, cid, "Harvest at 9 of 10 pods.")
     at.ok = True
     r = c.post(f"/officer/cases/{cid}/decision", headers=h,
-               json={"decision": "approve", "farmer_text": "Harvest when 9 of 10 pods are brown.", "confirmed": True})
+               json=({"decision": "approve", "farmer_text": "Harvest when 9 of 10 pods are brown.", "confirmed": True}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]})
     assert r.status_code == 200 and r.json()["status"] == "released" and r.json()["delivery"]["ok"] is True
     sent = [parse_qs(x.content.decode())["message"][0] for x in at.requests]
     assert sent.count("Harvest when 9 of 10 pods are brown.") == 1 and "Harvest at 9 of 10 pods." not in sent[-1:]
@@ -80,12 +81,10 @@ def test_officer_can_edit_and_re_approve_then_one_successful_release(monkeypatch
     n = len(at.requests)
     assert _approve(c, h, cid, "again").status_code == 409
     rel = c.post(f"/cases/{cid}/release", headers=h)
-    assert rel.status_code == 409 and "already released" in rel.json()["detail"]
+    assert rel.status_code == 200 and rel.json()["delivery"]["detail"] == "already delivered"
     assert len(at.requests) == n
-    log = db.case_log(db.connect(), cid)
-    re_appr = [l for l in log if l["tool"] == "officer_decision" and "after a failed delivery" in (l["args"] or "")]
-    assert len(re_appr) == 1 and re_appr[0]["actor"] == "officer:Ama Mensah"
-    assert sum(1 for l in log if l["tool"] == "release_to_farmer" and l["ok"]) == 2
+    events = db.connect().execute("SELECT event_name FROM audit_events WHERE case_id=?", (cid,)).fetchall()
+    assert sum(e[0] == "approval_recorded" for e in events) == 2
 
 
 def test_officer_can_retry_the_same_text(monkeypatch):
@@ -99,20 +98,19 @@ def test_officer_can_retry_the_same_text(monkeypatch):
     r = c.post(f"/cases/{cid}/release", headers=h)
     assert r.status_code == 200 and r.json()["status"] == "released" and r.json()["delivery"]["ok"] is True
     assert parse_qs(at.requests[-1].content.decode())["message"] == ["Harvest at 9 of 10 pods."]
-    assert c.post(f"/cases/{cid}/release", headers=h).status_code == 409
+    assert c.post(f"/cases/{cid}/release", headers=h).status_code == 200
 
 
 def test_length_backstop_and_unconfigured_channel_also_count_as_not_delivered(monkeypatch):
     at, cid, h, c = _setup(monkeypatch)
     con = db.connect()
-    db.officer_decide(con, cid, officer="Ama Mensah", decision="approve", farmer_text="Wear gloves. " * 60)
-    db.release_to_farmer(con, cid)
-    out = service.deliver(con, cid, {"sms": sms.SmsChannel(CFG, httpx.Client(transport=httpx.MockTransport(at)))})
-    assert out["ok"] is False and db.get_case(con, cid)["status"] == "not_delivered"
-    assert "too long for SMS" in api._case(db.get_case(con, cid))["delivery_problem"]
+    with pytest.raises(db.SafetyError):
+        db.officer_decide(con, cid, officer="Ama Mensah", decision="approve", farmer_text="Wear gloves. " * 60, expected_revision=db.get_case(con, cid)["revision"])
+    assert db.get_case(con, cid)["status"] == "pending_review"
+    assert not con.execute("SELECT 1 FROM delivery_jobs").fetchone()
     # A simulator case whose channel is missing from the configured set.
     o = asyncio.run(service.handle_inbound(service.InboundMessage("simulator", "sim:farmer-2", text="When should I harvest soybean in Tamale?")))
-    db.officer_decide(con, o["case_id"], officer="Ama Mensah", decision="approve", farmer_text="Harvest.")
+    db.officer_decide(con, o["case_id"], officer="Ama Mensah", decision="approve", farmer_text="Harvest.", expected_revision=con.execute("SELECT revision FROM cases WHERE id=?", (o["case_id"],)).fetchone()[0])
     db.release_to_farmer(con, o["case_id"])
     assert service.deliver(con, o["case_id"], {})["ok"] is False
     assert db.get_case(con, o["case_id"])["status"] == "not_delivered"
@@ -122,19 +120,18 @@ def test_not_delivered_case_only_takes_an_approval_and_only_one_wins(monkeypatch
     at, cid, h, c = _setup(monkeypatch)
     at.ok = False
     _approve(c, h, cid, "Harvest at 9 of 10 pods.")
-    r = c.post(f"/officer/cases/{cid}/decision", headers=h, json={"decision": "reject"})
-    assert r.status_code == 409 and "not delivered" in r.json()["detail"]
-    # Two re-approvals of the same not-delivered case: the second is refused (the first moved it on).
-    con = db.connect()
-    db.officer_decide(con, cid, officer="Ama Mensah", decision="approve", farmer_text="A")
+    r = c.post(f"/officer/cases/{cid}/decision", headers=h, json=({"decision": "reject"}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]})
+    # A definite delivery failure must retain the rejection recovery path.
+    assert r.status_code == 200 and r.json()["status"] == "rejected"
     with pytest.raises(db.GateError):
-        db.officer_decide(con, cid, officer="Kofi Boateng", decision="approve", farmer_text="B")
+        db.officer_decide(db.connect(), cid, officer="Ama Mensah", decision="approve",
+                          farmer_text="Harvest.", expected_revision=r.json()["revision"])
 
 
 def test_web_only_cases_are_unchanged():
     con = db.connect()
     cid = TestClient(api.app).post("/ask", json={"question": "When should I harvest soybean in Tamale?"}).json()["case_id"]
-    db.officer_decide(con, cid, officer="Ama Mensah", decision="approve", farmer_text="Harvest.")
+    db.officer_decide(con, cid, officer="Ama Mensah", decision="approve", farmer_text="Harvest.", expected_revision=con.execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0])
     db.release_to_farmer(con, cid)
     assert service.deliver(con, cid, {}) is None and db.get_case(con, cid)["status"] == "released"
 

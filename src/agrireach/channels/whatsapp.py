@@ -121,7 +121,13 @@ class WhatsAppChannel:
             # e.g. outside the 24-hour customer-service window a template message is required (see setup doc)
             err = (r.json().get("error") or {}) if r.headers.get("content-type", "").startswith("application/json") else {}
             return SendResult(False, f"HTTP {r.status_code} code {err.get('code', '?')}: {str(err.get('message', ''))[:120]}")
-        return SendResult(True, "accepted by WhatsApp Cloud API")
+        try:
+            provider_id = r.json()["messages"][0]["id"]
+            if not isinstance(provider_id, str) or not provider_id:
+                raise ValueError("missing message id")
+        except (ValueError, KeyError, IndexError, TypeError):
+            return SendResult(False, "outcome unknown: unreadable WhatsApp success response", "unknown")
+        return SendResult(True, "accepted by WhatsApp Cloud API", provider_id=provider_id)
 
     def download_media(self, media_id: str) -> tuple[bytes, str]:
         meta = self.client.get(self.cfg.url(media_id), headers=self._auth())

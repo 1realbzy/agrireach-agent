@@ -70,7 +70,7 @@ async def ask(sender: str, text: str | None = None, audio: str | None = None, tr
                                         channel=SimulatorChannel(), transcriber=transcriber)
 
 
-def officer_approve(case_id: int, officer: str, farmer_text: str, edited_text: str | None = None, *, token: str, expected_revision: int) -> dict:
+def officer_approve(case_id: int, officer: str, farmer_text: str, edited_text: str | None = None, *, token: str, expected_revision: int, acknowledgement: str | None = None, approved_voice_script: str | None = None) -> dict:
     """The officer's decision (named officer required) on the exact farmer_text to send, then release and delivery."""
     if not (farmer_text or "").strip():
         raise ValueError("farmer_text required: the officer approves the exact text the farmer will receive")
@@ -78,7 +78,7 @@ def officer_approve(case_id: int, officer: str, farmer_text: str, edited_text: s
     if db.officer_for_token(con, token) != officer:
         raise db.GateError("registered officer credential required")
     db.officer_decide(con, case_id, officer=officer, decision="edit_approve" if edited_text else "approve",
-                      edited_text=edited_text, farmer_text=farmer_text, expected_revision=expected_revision)
+                      edited_text=edited_text, farmer_text=farmer_text, expected_revision=expected_revision, acknowledgement=acknowledgement, approved_voice_script=approved_voice_script)
     db.release_to_farmer(con, case_id, actor=f"officer:{officer}")
     return service.deliver(con, case_id, service.configured_channels()) or {}
 
@@ -95,6 +95,7 @@ def main(argv=None):
     o.add_argument("--officer", required=True)
     o.add_argument("--edited-text")
     o.add_argument("--revision", type=int, required=True)
+    o.add_argument("--voice-script-file", help="UTF8 file containing the exact reviewed spoken script")
     g = o.add_mutually_exclusive_group(required=True)
     g.add_argument("--farmer-text", help="the exact text the farmer will receive")
     g.add_argument("--accept-proposed", action="store_true",
@@ -110,8 +111,15 @@ def main(argv=None):
             row = db.get_case(db.connect(), args.case)
             text = (json.loads(row["farmer_draft"] or "null") or {}).get("text", "") if row else ""
             print(f"Approving this farmer text:\n{text}\n")
-        out = officer_approve(args.case, args.officer, text, args.edited_text,
-                              token=os.getenv("AGRIREACH_OFFICER_TOKEN", ""), expected_revision=args.revision)
+        try:
+            out = officer_approve(args.case, args.officer, text, args.edited_text,
+                                  token=os.getenv("AGRIREACH_OFFICER_TOKEN", ""), expected_revision=args.revision,
+                                  acknowledgement=os.getenv("AGRIREACH_ACKNOWLEDGEMENT"),
+                                  approved_voice_script=Path(args.voice_script_file).read_text() if args.voice_script_file else None)
+        except db.SafetyError as exc:
+            out = {"error": exc.assessment}  # Challenge is returned only to this local officer, never logged.
+        except db.GateError as exc:
+            out = {"error": {"outcome": "conflict", "reason": str(exc)}}
     else:
         out = SimulatorChannel().messages(args.sender)
     print(json.dumps(out, indent=2, ensure_ascii=False))

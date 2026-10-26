@@ -77,3 +77,31 @@ def test_source_edits_invalidate_revision():
         con.execute("UPDATE cases SET sources='[]' WHERE id=?", (cid,))
     with pytest.raises(db.GateError, match="stale_revision"):
         db.officer_decide(con, cid, officer="Ama", decision="reject", expected_revision=1)
+
+
+def test_referral_must_cover_each_chemical_requirement():
+    faw = knowledge.reference("APNI-SARI-2023-MAIZE:p20-faw-control")
+    storage = knowledge.reference("APNI-SARI-2023-MAIZE:p22-sacks")
+    herbicide = knowledge.reference("APNI-SARI-2023:weeds-herbicide")
+    referral = safety_gate.sentences(faw["text"])[1]
+    assert safety_gate.assess(referral, [faw]).outcome == "pass"
+    # An armyworm referral cannot replace a separate preuse storage obligation.
+    assert safety_gate.assess(referral, [faw, storage]).outcome == "safety_blocked"
+    assert safety_gate.assess(referral, [herbicide]).outcome == "safety_blocked"
+    general = "Consult your local agricultural extension officer before choosing or applying a pesticide."
+    assert safety_gate.assess(general, [faw, storage, herbicide]).outcome == "pass"
+
+
+def test_simulator_cli_cannot_release_unsafe_text(monkeypatch, capsys):
+    from agrireach.channels import simulator
+    con = db.connect()
+    cid = create_case(con)
+    token = db.add_officer(con, "Ama")
+    db.save_contact(con, cid, channel="simulator", sender_id="sim:safety-test")
+    monkeypatch.setenv("AGRIREACH_OFFICER_TOKEN", token)
+    simulator.main(["officer-approve", "--case", str(cid), "--officer", "Ama", "--revision",
+                    str(db.get_case(con, cid)["revision"]), "--farmer-text", "Spray pesticide every week."])
+    response = json.loads(capsys.readouterr().out)
+    assert response["error"]["outcome"] == "safety_blocked"
+    assert db.get_case(con, cid)["status"] == "pending_review"
+    assert simulator.SimulatorChannel().messages() == []

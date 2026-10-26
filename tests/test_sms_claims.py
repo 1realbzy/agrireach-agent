@@ -71,13 +71,13 @@ def test_officer_approving_an_unsourced_sms_is_warned_and_logged_not_blocked(mon
     h = {"Authorization": f"Bearer {db.add_officer(db.connect(), 'Ama Mensah')}"}
     c = TestClient(app)
     cid = c.post("/ask", json={"question": "My maize is mouldy, can I feed it to my animals in Tamale?"}).json()["case_id"]
-    r = c.post(f"/officer/cases/{cid}/decision", headers=h, json={
+    r = c.post(f"/officer/cases/{cid}/decision", headers=h, json=({
         "decision": "approve", "confirmed": True,
-        "farmer_text": "Dispose of the mouldy maize. Do not feed it to animals."})
-    assert r.status_code == 200 and r.json()["status"] == "released"
-    assert any("Dispose" in w for w in r.json()["warnings"])
-    log = c.get(f"/officer/cases/{cid}", headers=h).json()["log"]
-    assert any(e.get("tool") == "approval_warning" and "Dispose" in str(e) for e in log)
+        "farmer_text": "Dispose of the mouldy maize. Do not feed it to animals."}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]})
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"]["outcome"] in ("safety_blocked", "review_required")
+    assert db.get_case(db.connect(), cid)["status"] == "pending_review"
+    assert TestClient(app).get(f"/farmer/cases/{cid}").json()["answer"] is None
 
 
 def test_unconfigured_judge_reads_plainly(monkeypatch):

@@ -45,6 +45,7 @@ class Decision(BaseModel):
     # The exact farmer-facing text being approved (required to approve): this, and only this, is delivered.
     farmer_text: str | None = None
     # Approving requires the officer to confirm they checked the farmer text against the cited sources.
+    approved_voice_script: str | None = None
     acknowledgement: str | None = None
     expected_revision: int | None = None
     confirmed: bool = False
@@ -52,6 +53,23 @@ class Decision(BaseModel):
 
 class OfficerText(BaseModel):
     officer_text: str
+
+
+class ReopenRequest(BaseModel):
+    expected_revision: int
+    information: str
+
+
+@app.post("/officer/cases/{case_id}/reopen")
+def reopen(case_id: int, body: ReopenRequest, officer: str = Depends(current_officer)):
+    """Return a clarified needs_info case to review without approving any advice."""
+    try:
+        return _case(db.reopen_case(db.connect(), case_id, officer=officer,
+                     expected_revision=body.expected_revision, information=body.information))
+    except db.GateError as exc:
+        raise HTTPException(409, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
 
 def _case(row) -> dict:
@@ -104,6 +122,19 @@ def case_detail(case_id: int, officer: str = Depends(current_officer)):
     return _case(row) | {"log": db.case_log(con, case_id)}
 
 
+@app.post("/officer/cases/{case_id}/voice-preview")
+def voice_preview(case_id: int, body: OfficerText, officer: str = Depends(current_officer)):
+    """Preview the exact optional spoken script without synthesis or dispatch."""
+    from agrireach import voice_script
+    from agrireach.channels import tts
+    row = db.get_case(db.connect(), case_id)
+    if not row:
+        raise HTTPException(404, "not found")
+    script = voice_script.build(body.officer_text, officer, row["crop"] or "")
+    return {"enabled": tts.enabled(), "text": script.text, "ok": script.ok,
+            "problems": script.problems, "expected_revision": row["revision"]}
+
+
 @app.post("/officer/cases/{case_id}/decision")
 def decide(case_id: int, d: Decision, officer: str = Depends(current_officer)):
     con = db.connect()
@@ -114,11 +145,13 @@ def decide(case_id: int, d: Decision, officer: str = Depends(current_officer)):
     warnings = []
     try:
         row = db.officer_decide(con, case_id, officer=officer, decision=d.decision, edited_text=d.edited_text,
-                                note=d.note, farmer_text=d.farmer_text, expected_revision=d.expected_revision, acknowledgement=d.acknowledgement)
+                                note=d.note, farmer_text=d.farmer_text, expected_revision=d.expected_revision, acknowledgement=d.acknowledgement, approved_voice_script=d.approved_voice_script)
+        latest_assessment = con.execute("SELECT assessment FROM safety_assessments WHERE case_id=? ORDER BY id DESC LIMIT 1", (case_id,)).fetchone()
+        warnings = json.loads(latest_assessment[0]).get("informational", []) if latest_assessment else []
         delivery = None
         if row["status"] == "approved":
             row = db.release_to_farmer(con, case_id, actor=f"officer:{officer}")
-            delivery = service.deliver(con, case_id, service.configured_channels())
+            delivery = service.deliver(con, case_id, service.configured_channels()) if row["status"] == "released" else {"ok": False, "outcome": "undeliverable"}
             row = db.get_case(con, case_id)  # 'not_delivered' if the channel send failed
     except db.SafetyError as e:
         raise HTTPException({"acknowledgement_required": 409, "assessment_unavailable": 503}.get(e.assessment["outcome"], 422), e.assessment)
@@ -200,10 +233,21 @@ def farmer_view(case_id: int):
     if row["status"] != "released":
         return {"case_id": case_id, "status": row["status"], "answer": None,
                 "message": "Waiting for an extension officer to review your question."}
+    contact = db.get_contact(con, case_id)
+    job = con.execute("SELECT j.state FROM delivery_jobs j JOIN approvals a ON a.id=j.approval_id WHERE a.case_id=? ORDER BY j.id DESC LIMIT 1", (case_id,)).fetchone()
+    if contact and job and job["state"] != "accepted":
+        return {"case_id": case_id, "status": row["status"], "delivery_status": job["state"], "answer": None,
+                "message": "Delivery acceptance has not been confirmed."}
     from agrireach.approval import validated_approval
     try:
         _approval, payload = validated_approval(con, case_id)
     except db.GateError:
+        # Grandfather only already published historical text; never enqueue it.
+        legacy = con.execute("SELECT payload FROM approvals WHERE case_id=? AND provenance='legacy_unvalidated' ORDER BY id DESC LIMIT 1", (case_id,)).fetchone()
+        historic = json.loads(legacy[0]) if legacy else {}
+        if historic.get("status") == "released":
+            return {"case_id": case_id, "status": "released", "answer": historic.get("farmer_text") or historic.get("final_text"),
+                    "assessment_status": "legacy_unvalidated", "approved_by": historic.get("officer")}
         return {"case_id": case_id, "status": "review_required", "answer": None}
     return {"case_id": case_id, "status": "released", "answer": payload["farmer_text"],
             "approved_by": row["officer"],
