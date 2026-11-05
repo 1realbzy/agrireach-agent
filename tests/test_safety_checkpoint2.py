@@ -158,7 +158,7 @@ def test_changed_acknowledgement_binding_is_refused(monkeypatch, change):
 
 def test_migration_ledger_and_foreign_keys():
     con = db.connect()
-    assert [r[0] for r in con.execute("SELECT version FROM schema_migrations ORDER BY version")] == [1, 2, 3]
+    assert [r[0] for r in con.execute("SELECT version FROM schema_migrations ORDER BY version")] == [1, 2, 3, 4]
     assert con.execute("PRAGMA foreign_keys").fetchone()[0] == 1
     assert not con.execute("PRAGMA foreign_key_check").fetchall()
     assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
