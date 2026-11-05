@@ -20,10 +20,12 @@ def _con():
 
 
 @mcp.tool()
-def search_guidance(query: str, crop: str = "soybean", region: str = "") -> str:
+def search_guidance(query: str, crop: str, region: str = "") -> str:
     """Search the curated extension corpus (see data/knowledge.json for the crops covered). Returns verbatim passages with source ids and URLs.
     Returns an empty list when nothing matches; never invents guidance."""
-    hits = knowledge.search(query, crop=crop or None, region=region or None)
+    if not crop or not crop.strip():
+        raise ValueError("crop is required for guidance search")
+    hits = knowledge.search(query, crop=crop.strip(), region=region or None)
     con = _con()
     db.log(con, "agent", "search_guidance", {"query": query, "crop": crop, "region": region},
            f"{len(hits)} hits: {[h['id'] for h in hits]}")
