@@ -86,3 +86,72 @@ def test_pending_inbox_is_never_purged(tmp_path):
     db.enqueue_inbound(con, "sms", "pending", {"text": "not processed"})
     future = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
     assert db.purge_inbound(con, older_than=future) == 0
+
+
+def test_opt_out_removes_inbox_payload(tmp_path):
+    con = db.connect(str(tmp_path / "privacy.sqlite"))
+    db.enqueue_inbound(con, "sms", "private1", {"text": "private question"}, sender_id="+233000000001")
+    db.enqueue_inbound(con, "sms", "private2", {"text": "another question"}, sender_id="+233000000002")
+    db.forget_sender(con, "sms", "+233000000001")
+    assert con.execute("SELECT count(*) FROM channel_inbox WHERE message_id='private1'").fetchone()[0] == 0
+    assert con.execute("SELECT count(*) FROM channel_inbox WHERE message_id='private2'").fetchone()[0] == 1
+
+
+def test_retention_removes_expired_pending_payload(tmp_path):
+    con = db.connect(str(tmp_path / "privacy.sqlite"))
+    db.enqueue_inbound(con, "sms", "old", {"text": "private"}, sender_id="+233000000001")
+    future = (datetime.now(timezone.utc) + timedelta(days=100)).isoformat()
+    result = db.purge_old(con, days=90, now_ts=future)
+    assert result["inbox"] == 1
+    assert con.execute("SELECT count(*) FROM channel_inbox").fetchone()[0] == 0
+
+
+def test_outcome_reason_required_and_recorded(tmp_path):
+    con = db.connect(str(tmp_path / "reason.sqlite"))
+    db.enqueue_inbound(con, "sms", "reason", {"text": "maize"})
+    claim, _ = db.claim_inbound(con, "sms", "reason")
+    with pytest.raises(ValueError):
+        db.finish_inbound(con, "sms", "reason", claim, "uncertain")
+    assert db.finish_inbound(con, "sms", "reason", claim, "uncertain", reason="case state ambiguous")
+    row = con.execute("SELECT state,outcome_reason FROM channel_inbox WHERE message_id='reason'").fetchone()
+    assert (row["state"], row["outcome_reason"]) == ("uncertain", "case state ambiguous")
+
+
+@pytest.mark.parametrize("version", [1, 2, 3, 4])
+def test_upgrade_from_historical_schema_versions(tmp_path, version):
+    from agrireach import migrations
+    path = str(tmp_path / "history.sqlite")
+    con = db.connect(path)
+    # Construct an actual historical schema by dropping only later additive
+    # migrations in reverse order on a disposable database.
+    con.execute("DROP INDEX channel_inbox_sender_idx")
+    con.execute("DROP TABLE channel_inbox")
+    con.execute("DELETE FROM schema_migrations WHERE version>=4")
+    if version < 3:
+        con.execute("DROP TABLE farmer_case_access")
+        con.execute("DELETE FROM schema_migrations WHERE version=3")
+    if version < 2:
+        for name in ("approvals", "acknowledgement_challenges", "audit_events",
+                     "delivery_attempts", "delivery_jobs"):
+            con.execute(f"DROP TABLE {name}")
+        for name in ("approvals", "advisory_submissions", "safety_assessments", "audit_events"):
+            for action in ("update", "delete"):
+                con.execute(f"DROP TRIGGER IF EXISTS {name}_{action}")
+        con.execute("DROP TRIGGER cases_content_revision")
+        con.execute(migrations.STATEMENTS[1])
+        con.execute("DELETE FROM schema_migrations WHERE version=2")
+    con.commit()
+    con.close()
+    if version == 4:
+        # Version 4 retains its table but not the v5 sender/reason columns.
+        raw = sqlite3.connect(path)
+        for stmt in migrations.STATEMENTS_V4:
+            raw.execute(stmt)
+        raw.execute("INSERT INTO schema_migrations VALUES (4,?,?)",
+                    (migrations.CHECKSUM_V4, db.now()))
+        raw.commit()
+        raw.close()
+    upgraded = db.connect(path)
+    assert [r[0] for r in upgraded.execute("SELECT version FROM schema_migrations ORDER BY version")] == [1,2,3,4,5]
+    assert upgraded.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    assert upgraded.execute("PRAGMA foreign_key_check").fetchall() == []
