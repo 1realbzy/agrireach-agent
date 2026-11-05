@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from urllib.parse import urlsplit
 import json
 import os
 import re
@@ -30,6 +31,7 @@ from agrireach import db
 from agrireach.channels import service
 from agrireach.channels.base import InboundMessage, OutboundMessage, SendResult, mask_sender
 
+MAX_AUDIO_BYTES = 16_000_000  # Bound downloaded voice notes before storing or transcribing.
 MAX_BODY_BYTES = 3_000_000   # Meta documents webhook payloads up to 3 MB; media arrives as an id, not bytes
 MAX_TEXT_CHARS = 4096        # WhatsApp text message body limit
 AUDIO_SUFFIX = {"audio/ogg": ".ogg", "audio/mpeg": ".mp3", "audio/mp4": ".m4a", "audio/aac": ".aac", "audio/amr": ".amr"}
@@ -138,9 +140,23 @@ class WhatsAppChannel:
         meta = self.client.get(self.cfg.url(media_id), headers=self._auth())
         meta.raise_for_status()
         info = meta.json()
-        data = self.client.get(info["url"], headers=self._auth())
-        data.raise_for_status()
-        return data.content, info.get("mime_type", "")
+        media_url = info["url"]
+        parsed = urlsplit(media_url)
+        host = (parsed.hostname or "").lower()
+        trusted = ("fbsbx.com", "fbcdn.net", "facebook.com", "whatsapp.net")
+        if (parsed.scheme != "https" or parsed.username or parsed.password or parsed.port not in (None, 443)
+                or not any(host == domain or host.endswith("." + domain) for domain in trusted)):
+            raise ValueError("untrusted WhatsApp media URL")
+        data = bytearray()
+        with self.client.stream("GET", media_url, headers=self._auth(), follow_redirects=False) as response:
+            response.raise_for_status()
+            if int(response.headers.get("content-length") or 0) > MAX_AUDIO_BYTES:
+                raise ValueError("WhatsApp audio exceeds the size limit")
+            for chunk in response.iter_bytes():
+                if len(data) + len(chunk) > MAX_AUDIO_BYTES:
+                    raise ValueError("WhatsApp audio exceeds the size limit")
+                data.extend(chunk)
+        return bytes(data), info.get("mime_type", "")
 
 
 async def process(cfg: Config, items: list[dict], channel: WhatsAppChannel | None = None, transcriber=None) -> list:
