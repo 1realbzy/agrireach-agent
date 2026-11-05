@@ -272,7 +272,7 @@ async def intake(s: S, tools: Tools) -> S:
         topics.add("when")
     clar = ""
     if not crop and not contact:
-        clar = f"Which crop is this about? AgriReach currently covers {_join(covered or ['soybean'])} only."
+        clar = f"Which crop is this about? Supported crops: {_join(covered) if covered else 'none currently available'}."
     elif crop and not uncovered and not region and topics & {"plant", "planting", "sow", "when", "spacing",
                                                                "seed", "seeds"}:
         clar = "Which district or region is your farm in? Planting guidance differs by region."
