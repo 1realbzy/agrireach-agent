@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import secrets
+from contextlib import closing
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -345,11 +346,24 @@ def _inbox_connection(con):
     return other
 
 
+from contextlib import contextmanager
+
+
+@contextmanager
+def _inbox_transaction(inbox):
+    try:
+        yield
+        inbox.commit()
+    except BaseException:
+        inbox.rollback()
+        raise
+
+
 def enqueue_inbound(con, channel: str, message_id: str, payload: dict) -> bool:
     """Commit an inbound event without committing unrelated caller transactions."""
     if not channel or not message_id:
         raise ValueError("channel and message_id are required")
-    with _inbox_connection(con) as inbox:
+    with closing(_inbox_connection(con)) as inbox, _inbox_transaction(inbox):
         cur = inbox.execute(
             "INSERT INTO channel_inbox(channel,message_id,payload,state,created_at,updated_at) "
             "VALUES (?,?,?,'pending',?,?) ON CONFLICT(channel,message_id) DO NOTHING",
@@ -360,7 +374,7 @@ def enqueue_inbound(con, channel: str, message_id: str, payload: dict) -> bool:
 def claim_inbound(con, channel: str, message_id: str) -> tuple[str, dict] | None:
     """Generate a private claim ID; a crash leaves an item for reconciliation."""
     claim_id = secrets.token_urlsafe(32)
-    with _inbox_connection(con) as inbox:
+    with closing(_inbox_connection(con)) as inbox, _inbox_transaction(inbox):
         inbox.execute("BEGIN IMMEDIATE")
         row = inbox.execute(
             "SELECT id,payload FROM channel_inbox WHERE channel=? AND message_id=? AND state='pending'",
@@ -381,7 +395,7 @@ def finish_inbound(con, channel: str, message_id: str, claim_id: str,
         raise ValueError("invalid inbound outcome")
     if state == "completed" and case_id is None:
         raise ValueError("completed inbound processing requires a case ID")
-    with _inbox_connection(con) as inbox:
+    with closing(_inbox_connection(con)) as inbox, _inbox_transaction(inbox):
         cur = inbox.execute(
             "UPDATE channel_inbox SET state=?,case_id=?,lease_id=NULL,updated_at=? "
             "WHERE channel=? AND message_id=? AND lease_id=? AND state='processing'",
@@ -391,7 +405,7 @@ def finish_inbound(con, channel: str, message_id: str, claim_id: str,
 
 def reconcile_interrupted_inbound(con, *, older_than: str) -> int:
     """Conservatively mark abandoned claims uncertain; never resend automatically."""
-    with _inbox_connection(con) as inbox:
+    with closing(_inbox_connection(con)) as inbox, _inbox_transaction(inbox):
         cur = inbox.execute(
             "UPDATE channel_inbox SET state='uncertain',lease_id=NULL,updated_at=? "
             "WHERE state='processing' AND updated_at<?", (now(), older_than))
@@ -411,7 +425,7 @@ def purge_inbound(con, *, older_than: str, channel: str | None = None,
             return 0
         where += " AND message_id IN (" + ",".join("?" for _ in message_ids) + ")"
         args.extend(message_ids)
-    with _inbox_connection(con) as inbox:
+    with closing(_inbox_connection(con)) as inbox, _inbox_transaction(inbox):
         cur = inbox.execute("DELETE FROM channel_inbox WHERE " + where, args)
         return cur.rowcount
 
