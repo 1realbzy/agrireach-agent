@@ -289,6 +289,13 @@ def _deliver_transport(con, case_id: int, channels: dict[str, Channel]) -> dict 
             simulator.check_sender(contact["sender_id"])
         except ValueError as e:
             bad_sender = SendResult(False, f"not sent: {e}", "definitely_failed")
+    # Re-read the committed contact immediately before transport. STOP may have
+    # anonymised it while approval checks or TTS were running.
+    current = db.get_contact(con, case_id)
+    if current is None or current["sender_id"] != contact["sender_id"] or current["sender_id"] in db.REMOVED:
+        why = "not sent: contact revoked before transport"
+        db.mark_undeliverable(con, case_id, why, actor=f"channel:{contact['channel']}")
+        return {"ok": False, "detail": why, "outcome": "undeliverable"}
     r = bad_sender or (ch.send(contact["sender_id"], OutboundMessage(text=text, audio_path=audio)) if ch else
                        SendResult(False, f"channel '{contact['channel']}' is not configured", "definitely_failed"))
     db.record_delivery(con, case_id, contact["channel"], "answer", r.ok, r.detail)
