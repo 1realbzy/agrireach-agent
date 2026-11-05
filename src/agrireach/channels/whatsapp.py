@@ -182,6 +182,7 @@ async def process(cfg: Config, items: list[dict], channel: WhatsAppChannel | Non
         except Exception as e:
             db.log(con, "channel:whatsapp", "inbound_message", {"from": mask_sender(sender)},
                    f"FAILED: {type(e).__name__}", ok=False)
+            raise
     return results
 
 
