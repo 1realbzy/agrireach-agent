@@ -365,9 +365,9 @@ def enqueue_inbound(con, channel: str, message_id: str, payload: dict, *, sender
         raise ValueError("channel and message_id are required")
     with closing(_inbox_connection(con)) as inbox, _inbox_transaction(inbox):
         cur = inbox.execute(
-            "INSERT INTO channel_inbox(channel,message_id,payload,state,created_at,updated_at) "
-            "VALUES (?,?,?,'pending',?,?) ON CONFLICT(channel,message_id) DO NOTHING",
-            (channel, message_id, json.dumps(payload, ensure_ascii=False), now(), now()))
+            "INSERT INTO channel_inbox(channel,message_id,payload,state,created_at,updated_at,sender_id) "
+            "VALUES (?,?,?,'pending',?,?,?) ON CONFLICT(channel,message_id) DO NOTHING",
+            (channel, message_id, json.dumps(payload, ensure_ascii=False), now(), now(), sender_id))
         return cur.rowcount == 1
 
 
@@ -399,9 +399,9 @@ def finish_inbound(con, channel: str, message_id: str, claim_id: str,
         raise ValueError("failed or uncertain processing requires an outcome reason")
     with closing(_inbox_connection(con)) as inbox, _inbox_transaction(inbox):
         cur = inbox.execute(
-            "UPDATE channel_inbox SET state=?,case_id=?,lease_id=NULL,updated_at=? "
+            "UPDATE channel_inbox SET state=?,case_id=?,outcome_reason=?,lease_id=NULL,updated_at=? "
             "WHERE channel=? AND message_id=? AND lease_id=? AND state='processing'",
-            (state, case_id, now(), channel, message_id, claim_id))
+            (state, case_id, reason, now(), channel, message_id, claim_id))
         return cur.rowcount == 1
 
 
@@ -409,7 +409,8 @@ def reconcile_interrupted_inbound(con, *, older_than: str) -> int:
     """Conservatively mark abandoned claims uncertain; never resend automatically."""
     with closing(_inbox_connection(con)) as inbox, _inbox_transaction(inbox):
         cur = inbox.execute(
-            "UPDATE channel_inbox SET state='uncertain',lease_id=NULL,updated_at=? "
+            "UPDATE channel_inbox SET state='uncertain',lease_id=NULL,updated_at=?, "
+            "outcome_reason='interrupted claim; reconciliation required' "
             "WHERE state='processing' AND updated_at<?", (now(), older_than))
         return cur.rowcount
 
