@@ -97,8 +97,8 @@ class FakeGraph:
         self.requests.append(req)
         assert req.headers["authorization"] == "Bearer token-abc"
         if req.url.path == "/v26.0/MEDIA1":
-            return httpx.Response(200, json={"url": "https://media.test/MEDIA1", "mime_type": "audio/ogg; codecs=opus"})
-        if req.url.host == "media.test":
+            return httpx.Response(200, json={"url": "https://lookaside.fbsbx.com/MEDIA1", "mime_type": "audio/ogg; codecs=opus"})
+        if req.url.host == "lookaside.fbsbx.com":
             return httpx.Response(200, content=b"OggS-fake-audio")
         if req.url.path == "/v26.0/1234567890/messages":
             if self.send_status != 200:
@@ -133,6 +133,32 @@ def test_voice_note_end_to_end_with_mocked_graph_api_and_gate():
     assert sends[-1]["text"]["body"] == "Harvest at 9 of 10 pods."
     all_logs = json.dumps([dict(r) for r in con.execute("SELECT * FROM tool_log")])
     assert FARMER not in all_logs and mask_sender(FARMER) in all_logs and "token-abc" not in all_logs
+
+
+def test_media_download_rejects_untrusted_destination_without_sending_credentials():
+    seen = []
+
+    def transport(req):
+        seen.append(req)
+        if req.url.path.endswith("/MEDIA1"):
+            return httpx.Response(200, json={"url": "http://127.0.0.1/private", "mime_type": "audio/ogg"})
+        return httpx.Response(200, content=b"should never download")
+
+    ch = whatsapp.WhatsAppChannel(CFG, httpx.Client(transport=httpx.MockTransport(transport)))
+    with pytest.raises(ValueError, match="untrusted"):
+        ch.download_media("MEDIA1")
+    assert len(seen) == 1
+
+
+def test_media_download_refuses_oversized_stream():
+    def transport(req):
+        if req.url.path.endswith("/MEDIA1") and req.url.host == "graph.test":
+            return httpx.Response(200, json={"url": "https://lookaside.fbsbx.com/MEDIA1", "mime_type": "audio/ogg"})
+        return httpx.Response(200, content=b"x" * (whatsapp.MAX_AUDIO_BYTES + 1))
+
+    ch = whatsapp.WhatsAppChannel(CFG, httpx.Client(transport=httpx.MockTransport(transport)))
+    with pytest.raises(ValueError, match="size limit"):
+        ch.download_media("MEDIA1")
 
 
 def test_send_failure_is_reported_not_hidden():
