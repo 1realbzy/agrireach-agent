@@ -333,55 +333,87 @@ def answer_delivered(con, case_id: int) -> bool:
                        (case_id,)).fetchone() is not None
 
 
-def enqueue_inbound(con, channel: str, message_id: str, payload: dict) -> bool:
-    """Persist a callback before acknowledgement. Duplicate IDs never overwrite the first payload.
+def _inbox_connection(con):
+    """Use a separate SQLite connection so inbox commits never commit caller writes."""
+    row = con.execute("PRAGMA database_list").fetchone()
+    path = row[2]
+    if not path:
+        raise ValueError("Durable inbox requires a file-backed SQLite database")
+    other = sqlite3.connect(path, timeout=10)
+    other.row_factory = sqlite3.Row
+    other.execute("PRAGMA foreign_keys=ON")
+    return other
 
-    This only records a pending item. It does not send a message or bypass consent.
-    """
+
+def enqueue_inbound(con, channel: str, message_id: str, payload: dict) -> bool:
+    """Commit an inbound event without committing unrelated caller transactions."""
     if not channel or not message_id:
         raise ValueError("channel and message_id are required")
-    cur = con.execute(
-        "INSERT OR IGNORE INTO channel_inbox(channel,message_id,payload,state,created_at,updated_at) "
-        "VALUES (?,?,?,'pending',?,?)",
-        (channel, message_id, json.dumps(payload, ensure_ascii=False), now(), now()))
-    con.commit()
-    return cur.rowcount == 1
+    with _inbox_connection(con) as inbox:
+        cur = inbox.execute(
+            "INSERT INTO channel_inbox(channel,message_id,payload,state,created_at,updated_at) "
+            "VALUES (?,?,?,'pending',?,?) ON CONFLICT(channel,message_id) DO NOTHING",
+            (channel, message_id, json.dumps(payload, ensure_ascii=False), now(), now()))
+        return cur.rowcount == 1
 
 
-def claim_inbound(con, channel: str, message_id: str, lease_id: str) -> dict | None:
-    """Single-winner durable claim. An interrupted claim remains uncertain, not auto-retried."""
-    if not lease_id:
-        raise ValueError("lease_id is required")
-    try:
-        con.execute("BEGIN IMMEDIATE")
-        row = con.execute(
+def claim_inbound(con, channel: str, message_id: str) -> tuple[str, dict] | None:
+    """Generate a private claim ID; a crash leaves an item for reconciliation."""
+    claim_id = secrets.token_urlsafe(32)
+    with _inbox_connection(con) as inbox:
+        inbox.execute("BEGIN IMMEDIATE")
+        row = inbox.execute(
             "SELECT id,payload FROM channel_inbox WHERE channel=? AND message_id=? AND state='pending'",
             (channel, message_id)).fetchone()
         if row is None:
-            con.rollback()
             return None
-        con.execute(
+        inbox.execute(
             "UPDATE channel_inbox SET state='processing',attempt_count=attempt_count+1,"
             "lease_id=?,updated_at=? WHERE id=? AND state='pending'",
-            (lease_id, now(), row["id"]))
-        con.commit()
-        return json.loads(row["payload"])
-    except BaseException:
-        con.rollback()
-        raise
+            (claim_id, now(), row["id"]))
+        return claim_id, json.loads(row["payload"])
 
 
-def finish_inbound(con, channel: str, message_id: str, lease_id: str,
+def finish_inbound(con, channel: str, message_id: str, claim_id: str,
                    state: str, case_id: int | None = None) -> bool:
-    """Record an outcome only for the holder of the active claim."""
+    """Only the current claim holder may finish; case association is validated."""
     if state not in ("completed", "failed", "uncertain"):
         raise ValueError("invalid inbound outcome")
-    cur = con.execute(
-        "UPDATE channel_inbox SET state=?,case_id=?,lease_id=NULL,updated_at=? "
-        "WHERE channel=? AND message_id=? AND lease_id=? AND state='processing'",
-        (state, case_id, now(), channel, message_id, lease_id))
-    con.commit()
-    return cur.rowcount == 1
+    if state == "completed" and case_id is None:
+        raise ValueError("completed inbound processing requires a case ID")
+    with _inbox_connection(con) as inbox:
+        cur = inbox.execute(
+            "UPDATE channel_inbox SET state=?,case_id=?,lease_id=NULL,updated_at=? "
+            "WHERE channel=? AND message_id=? AND lease_id=? AND state='processing'",
+            (state, case_id, now(), channel, message_id, claim_id))
+        return cur.rowcount == 1
+
+
+def reconcile_interrupted_inbound(con, *, older_than: str) -> int:
+    """Conservatively mark abandoned claims uncertain; never resend automatically."""
+    with _inbox_connection(con) as inbox:
+        cur = inbox.execute(
+            "UPDATE channel_inbox SET state='uncertain',lease_id=NULL,updated_at=? "
+            "WHERE state='processing' AND updated_at<?", (now(), older_than))
+        return cur.rowcount
+
+
+def purge_inbound(con, *, older_than: str, channel: str | None = None,
+                  message_ids: list[str] | None = None) -> int:
+    """Remove sensitive inbox payloads only for terminal records, preserving pending work."""
+    where = "state IN ('completed','failed','uncertain') AND updated_at<?"
+    args = [older_than]
+    if channel is not None:
+        where += " AND channel=?"
+        args.append(channel)
+    if message_ids is not None:
+        if not message_ids:
+            return 0
+        where += " AND message_id IN (" + ",".join("?" for _ in message_ids) + ")"
+        args.extend(message_ids)
+    with _inbox_connection(con) as inbox:
+        cur = inbox.execute("DELETE FROM channel_inbox WHERE " + where, args)
+        return cur.rowcount
 
 
 def first_time_seen(con, channel: str, message_id: str) -> bool:
