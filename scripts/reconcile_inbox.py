@@ -24,6 +24,18 @@ def inspect(con, older_than: str) -> dict[str, int]:
         "SELECT COUNT(*) FROM channel_inbox WHERE state='processing' AND updated_at<?",
         (older_than,),
     ).fetchone()[0])
+    # Report evidence without assuming an uncertain event is safe to replay.
+    result["uncertain_with_case"] = int(con.execute(
+        "SELECT COUNT(*) FROM channel_inbox i JOIN cases c ON c.id=i.case_id "
+        "WHERE i.state='uncertain'"
+    ).fetchone()[0])
+    result["uncertain_without_case"] = int(con.execute(
+        "SELECT COUNT(*) FROM channel_inbox WHERE state='uncertain' AND case_id IS NULL"
+    ).fetchone()[0])
+    result["uncertain_missing_case"] = int(con.execute(
+        "SELECT COUNT(*) FROM channel_inbox i LEFT JOIN cases c ON c.id=i.case_id "
+        "WHERE i.state='uncertain' AND i.case_id IS NOT NULL AND c.id IS NULL"
+    ).fetchone()[0])
     return result
 
 
