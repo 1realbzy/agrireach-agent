@@ -121,7 +121,8 @@ def test_outcome_reason_required_and_recorded(tmp_path):
 def test_upgrade_from_historical_schema_versions(tmp_path, version):
     from agrireach import migrations
     path = str(tmp_path / "history.sqlite")
-    con = db.connect(path)
+    db.connect(path).close()
+    con = sqlite3.connect(path)
     # Construct an actual historical schema by dropping only later additive
     # migrations in reverse order on a disposable database.
     con.execute("DROP INDEX channel_inbox_sender_idx")
