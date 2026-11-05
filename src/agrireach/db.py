@@ -333,6 +333,57 @@ def answer_delivered(con, case_id: int) -> bool:
                        (case_id,)).fetchone() is not None
 
 
+def enqueue_inbound(con, channel: str, message_id: str, payload: dict) -> bool:
+    """Persist a callback before acknowledgement. Duplicate IDs never overwrite the first payload.
+
+    This only records a pending item. It does not send a message or bypass consent.
+    """
+    if not channel or not message_id:
+        raise ValueError("channel and message_id are required")
+    cur = con.execute(
+        "INSERT OR IGNORE INTO channel_inbox(channel,message_id,payload,state,created_at,updated_at) "
+        "VALUES (?,?,?,'pending',?,?)",
+        (channel, message_id, json.dumps(payload, ensure_ascii=False), now(), now()))
+    con.commit()
+    return cur.rowcount == 1
+
+
+def claim_inbound(con, channel: str, message_id: str, lease_id: str) -> dict | None:
+    """Single-winner durable claim. An interrupted claim remains uncertain, not auto-retried."""
+    if not lease_id:
+        raise ValueError("lease_id is required")
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute(
+            "SELECT id,payload FROM channel_inbox WHERE channel=? AND message_id=? AND state='pending'",
+            (channel, message_id)).fetchone()
+        if row is None:
+            con.rollback()
+            return None
+        con.execute(
+            "UPDATE channel_inbox SET state='processing',attempt_count=attempt_count+1,"
+            "lease_id=?,updated_at=? WHERE id=? AND state='pending'",
+            (lease_id, now(), row["id"]))
+        con.commit()
+        return json.loads(row["payload"])
+    except BaseException:
+        con.rollback()
+        raise
+
+
+def finish_inbound(con, channel: str, message_id: str, lease_id: str,
+                   state: str, case_id: int | None = None) -> bool:
+    """Record an outcome only for the holder of the active claim."""
+    if state not in ("completed", "failed", "uncertain"):
+        raise ValueError("invalid inbound outcome")
+    cur = con.execute(
+        "UPDATE channel_inbox SET state=?,case_id=?,lease_id=NULL,updated_at=? "
+        "WHERE channel=? AND message_id=? AND lease_id=? AND state='processing'",
+        (state, case_id, now(), channel, message_id, lease_id))
+    con.commit()
+    return cur.rowcount == 1
+
+
 def first_time_seen(con, channel: str, message_id: str) -> bool:
     """True the first time a (channel, message id) arrives; webhook retries can deliver the same message twice."""
     try:
