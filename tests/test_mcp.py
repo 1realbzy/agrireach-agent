@@ -24,6 +24,8 @@ def test_tools_discoverable_and_gate_enforced_over_mcp():
         ("get_crop_calendar", {"crop": "cocoa"}),
         ("get_crop_calendar", {"crop": "maize", "region": "northern"}),
         ("search_guidance", {"query": "soybean seed rate per hectare"}),
+        ("search_guidance", {"query": "soybean seed rate per hectare", "crop": ""}),
+        ("search_guidance", {"query": "soybean seed rate per hectare", "crop": "  "}),
     ]))
     assert names == ["create_or_update_case", "get_crop_calendar", "get_recent_rainfall", "get_zone_planting_guidance",
                      "retrieve_reference", "search_guidance"]
@@ -36,3 +38,5 @@ def test_tools_discoverable_and_gate_enforced_over_mcp():
     maize = json.loads(res[4].content[0].text)
     assert maize and all(r["passage"]["source_id"] == "APNI-SARI-2023-MAIZE" for r in maize)
     assert res[5].isError  # missing crop must not silently select soybean
+    assert res[6].isError  # empty crop must not search all crops
+    assert res[7].isError  # whitespace crop must not search all crops
