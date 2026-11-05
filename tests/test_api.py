@@ -20,9 +20,9 @@ def test_farmer_case_access_is_private_and_unpredictable():
     cid, token = first["case_id"], first["access_token"]
     assert token and token != second["access_token"]
     assert c.get(f"/farmer/cases/{cid}").status_code == 404
-    assert c.get(f"/farmer/cases/{cid}", params={"access_token": second["access_token"]}).status_code == 404
-    assert c.get(f"/farmer/cases/{cid}", params={"access_token": "wrong"}).status_code == 404
-    assert c.get(f"/farmer/cases/{cid}", params={"access_token": token}).status_code == 200
+    assert c.get(f"/farmer/cases/{cid}", headers={"X-Case-Access-Token": second["access_token"]}).status_code == 404
+    assert c.get(f"/farmer/cases/{cid}", headers={"X-Case-Access-Token": "wrong"}).status_code == 404
+    assert c.get(f"/farmer/cases/{cid}", headers={"X-Case-Access-Token": token}).status_code == 200
     assert token not in "\n".join(db.connect().iterdump())
 
 
@@ -31,7 +31,7 @@ def test_end_to_end_officer_gate():
     r = c.post("/ask", json={"question": "When should I harvest soybean in Tamale?"}).json()
     cid = r["case_id"]
     token = r["access_token"]
-    assert c.get(f"/farmer/cases/{cid}", params={"access_token": token}).json()["answer"] is None
+    assert c.get(f"/farmer/cases/{cid}", headers={"X-Case-Access-Token": token}).json()["answer"] is None
     assert c.post(f"/cases/{cid}/release", headers=h).status_code == 409  # no bypass, even signed in
     assert c.get("/officer/queue").status_code == 401  # the queue needs a signed-in officer
     assert cid in [x["id"] for x in c.get("/officer/queue", headers=h).json()]
@@ -50,5 +50,5 @@ def test_end_to_end_officer_gate():
     ok = c.post(f"/officer/cases/{cid}/decision", headers=h,
                 json=({"decision": "approve", "farmer_text": sent, "confirmed": True}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]}).json()
     assert ok["status"] == "released"
-    f = c.get(f"/farmer/cases/{cid}", params={"access_token": token}).json()
+    f = c.get(f"/farmer/cases/{cid}", headers={"X-Case-Access-Token": token}).json()
     assert f["approved_by"] == "Ama Mensah" and f["answer"] == sent  # the farmer gets exactly the approved text
