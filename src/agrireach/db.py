@@ -359,7 +359,7 @@ def _inbox_transaction(inbox):
         raise
 
 
-def enqueue_inbound(con, channel: str, message_id: str, payload: dict) -> bool:
+def enqueue_inbound(con, channel: str, message_id: str, payload: dict, *, sender_id: str | None = None) -> bool:
     """Commit an inbound event without committing unrelated caller transactions."""
     if not channel or not message_id:
         raise ValueError("channel and message_id are required")
@@ -389,12 +389,14 @@ def claim_inbound(con, channel: str, message_id: str) -> tuple[str, dict] | None
 
 
 def finish_inbound(con, channel: str, message_id: str, claim_id: str,
-                   state: str, case_id: int | None = None) -> bool:
+                   state: str, case_id: int | None = None, *, reason: str | None = None) -> bool:
     """Only the current claim holder may finish; case association is validated."""
     if state not in ("completed", "failed", "uncertain"):
         raise ValueError("invalid inbound outcome")
     if state == "completed" and case_id is None:
         raise ValueError("completed inbound processing requires a case ID")
+    if state in ("failed", "uncertain") and not (reason or "").strip():
+        raise ValueError("failed or uncertain processing requires an outcome reason")
     with closing(_inbox_connection(con)) as inbox, _inbox_transaction(inbox):
         cur = inbox.execute(
             "UPDATE channel_inbox SET state=?,case_id=?,lease_id=NULL,updated_at=? "
@@ -503,6 +505,7 @@ def forget_sender(con, channel: str, sender_id: str) -> dict:
                 (OPTED_OUT, channel, sender_id))
     con.execute("DELETE FROM channel_pending WHERE channel=? AND sender_id=?", (channel, sender_id))
     con.execute("DELETE FROM channel_consent WHERE channel=? AND sender_id=?", (channel, sender_id))
+    con.execute("DELETE FROM channel_inbox WHERE channel=? AND sender_id=?", (channel, sender_id))
     con.commit()
     return {"contacts": len(contacts), "held": len(held)}
 
@@ -525,5 +528,7 @@ def purge_old(con, days: int | None = None, now_ts: str | None = None) -> dict:
                 "AND sender_id NOT IN (?,?)", (PURGED, cutoff, *REMOVED))
     con.execute("DELETE FROM channel_pending WHERE created_at <= ?", (cutoff,))
     n_consent = con.execute("DELETE FROM channel_consent WHERE COALESCE(decided_at, asked_at) <= ?", (cutoff,)).rowcount
+    # Expired unprocessed events are discarded, never replayed after consent data expires.
+    n_inbox = con.execute("DELETE FROM channel_inbox WHERE created_at <= ?", (cutoff,)).rowcount
     con.commit()
-    return {"contacts": len(old), "held": len(held), "consent": n_consent, "cutoff": cutoff}
+    return {"contacts": len(old), "held": len(held), "consent": n_consent, "inbox": n_inbox, "cutoff": cutoff}
