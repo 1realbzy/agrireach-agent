@@ -235,6 +235,7 @@ async def process(cfg: Config, items: list[dict], channel: SmsChannel | None = N
             kinds = ", ".join(type(x).__name__ for x in service._leaves(e))
             db.log(con, "channel:sms", "inbound_message", {"from": mask_sender(sender)},
                    f"FAILED: {type(e).__name__} ({kinds})", ok=False)
+            raise
     return results
 
 
