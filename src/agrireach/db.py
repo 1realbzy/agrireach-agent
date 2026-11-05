@@ -192,6 +192,22 @@ def reopen_case(con, case_id: int, *, officer: str, expected_revision: int, info
     return dict(get_case(con, case_id))
 
 
+def issue_farmer_case_token(con, case_id: int) -> str:
+    """Issue one unguessable capability for a web case. Only its digest is stored."""
+    token = secrets.token_urlsafe(32)
+    con.execute("INSERT INTO farmer_case_access(case_id,token_sha256,created_at) VALUES (?,?,?)",
+                (case_id, _token_hash(token), now()))
+    con.commit()
+    return token
+
+
+def farmer_case_token_valid(con, case_id: int, token: str | None) -> bool:
+    if not token or len(token) > 256:
+        return False
+    return con.execute("SELECT 1 FROM farmer_case_access WHERE case_id=? AND token_sha256=?",
+                       (case_id, _token_hash(token))).fetchone() is not None
+
+
 def add_officer(con, name: str) -> str:
     """Register a named officer (or replace their sign-in) and return a new sign-in token. Only its SHA-256 is stored,
     so the token is shown once (scripts/add_officer.py) and cannot be read back from the database."""
