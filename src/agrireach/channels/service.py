@@ -34,7 +34,10 @@ def save_audio(data: bytes, suffix: str = ".ogg") -> str:
     d = media_dir()
     d.mkdir(parents=True, exist_ok=True)
     p = d / f"{uuid.uuid4().hex}{suffix if suffix.startswith('.') else '.' + suffix}"
-    p.write_bytes(data)
+    # Voice notes can contain sensitive personal information; never create world-readable files.
+    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "wb") as stream:
+        stream.write(data)
     return str(p)
 
 
