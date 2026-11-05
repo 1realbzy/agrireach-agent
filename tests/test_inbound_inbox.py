@@ -16,7 +16,7 @@ def test_inbox_persists_and_deduplicates(tmp_path):
     row = reopened.execute("SELECT state,attempt_count,payload FROM channel_inbox").fetchone()
     assert row["state"] == "pending" and row["attempt_count"] == 0
     assert '"maize"' in row["payload"] and "overwritten" not in row["payload"]
-    assert [r[0] for r in reopened.execute("SELECT version FROM schema_migrations ORDER BY version")] == [1, 2, 3, 4]
+    assert [r[0] for r in reopened.execute("SELECT version FROM schema_migrations ORDER BY version")] == [1, 2, 3, 4, 5]
 
 
 def test_only_one_worker_can_claim_and_finish(tmp_path):
@@ -26,9 +26,9 @@ def test_only_one_worker_can_claim_and_finish(tmp_path):
     claim, payload = db.claim_inbound(a, "whatsapp", "m2")
     assert payload == {"text": "soybean"} and len(claim) >= 32
     assert db.claim_inbound(b, "whatsapp", "m2") is None
-    assert not db.finish_inbound(b, "whatsapp", "m2", "wrong-claim", "failed")
-    assert db.finish_inbound(a, "whatsapp", "m2", claim, "failed")
-    assert not db.finish_inbound(a, "whatsapp", "m2", claim, "failed")
+    assert not db.finish_inbound(b, "whatsapp", "m2", "wrong-claim", "failed", reason="rejected")
+    assert db.finish_inbound(a, "whatsapp", "m2", claim, "failed", reason="provider unavailable")
+    assert not db.finish_inbound(a, "whatsapp", "m2", claim, "failed", reason="provider unavailable")
     assert db.claim_inbound(b, "whatsapp", "m2") is None
 
 
