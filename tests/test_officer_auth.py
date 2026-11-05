@@ -44,7 +44,7 @@ def test_officer_name_comes_from_the_sign_in_not_the_body():
                json=({"officer": "not-a-real-officer", "decision": "approve", "farmer_text": "Harvest at 9 of 10 pods.",
                      "confirmed": True}) | {"expected_revision": db.connect().execute("SELECT revision FROM cases WHERE id=?", (cid,)).fetchone()[0]})
     assert r.status_code == 200, r.text
-    f = c.get(f"/farmer/cases/{cid}").json()
+    f = c.get(f"/farmer/cases/{cid}", params={"access_token": db.issue_farmer_case_token(db.connect(), cid)}).json()
     assert f["approved_by"] == "Ama Mensah"
 
 
