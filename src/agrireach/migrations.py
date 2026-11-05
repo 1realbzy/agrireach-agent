@@ -27,8 +27,10 @@ def validate_existing_ledger(con):
     required = {"cases", "advisory_submissions", "safety_assessments"}
     if len(ledger) >= 2:
         required |= {"approvals", "acknowledgement_challenges", "audit_events", "delivery_jobs", "delivery_attempts"}
-    if len(ledger) == 3:
+    if len(ledger) >= 3:
         required.add("farmer_case_access")
+    if len(ledger) >= 4:
+        required.add("channel_inbox")
     if not required <= tables:
         raise RuntimeError("Incomplete migration schema; stop writers and recover from verified evidence")
 
@@ -55,6 +57,7 @@ def ensure_schema(con: sqlite3.Connection, path: str) -> None:
                     raise RuntimeError("Version two backup verification failed")
         upgrade_v2(con)
         upgrade_v3(con)
+        upgrade_v4(con)
         return
     if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
         raise RuntimeError("Database integrity check failed; no migration applied")
@@ -81,6 +84,7 @@ def ensure_schema(con: sqlite3.Connection, path: str) -> None:
         con.commit()
         upgrade_v2(con)
         upgrade_v3(con)
+        upgrade_v4(con)
     except BaseException:
         con.rollback()
         raise
@@ -108,10 +112,18 @@ STATEMENTS_V3 = [
 CHECKSUM_V3 = hashlib.sha256("\n".join(STATEMENTS_V3).encode()).hexdigest()
 
 
+STATEMENTS_V4 = [
+    "CREATE TABLE channel_inbox(id INTEGER PRIMARY KEY AUTOINCREMENT, channel TEXT NOT NULL, message_id TEXT NOT NULL, payload TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN (\'pending\',\'processing\',\'completed\',\'failed\',\'uncertain\')), attempt_count INTEGER NOT NULL DEFAULT 0, lease_id TEXT, case_id INTEGER REFERENCES cases(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(channel,message_id))",
+    "CREATE INDEX channel_inbox_pending_idx ON channel_inbox(state,created_at,id)",
+]
+CHECKSUM_V4 = hashlib.sha256("\n".join(STATEMENTS_V4).encode()).hexdigest()
+
+
 def _valid_ledgers():
     first = [(1, CHECKSUM)]
     second = first + [(2, CHECKSUM_V2)]
-    return (first, second, second + [(3, CHECKSUM_V3)])
+    third = second + [(3, CHECKSUM_V3)]
+    return (first, second, third, third + [(4, CHECKSUM_V4)])
 
 
 def upgrade_v2(con):
@@ -157,6 +169,25 @@ def upgrade_v3(con):
         raise
 
 
+def upgrade_v4(con):
+    """Create the durable inbound ledger; existing message IDs are not silently replayed."""
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        if con.execute("SELECT 1 FROM schema_migrations WHERE version=4").fetchone():
+            con.rollback()
+            return
+        for statement in STATEMENTS_V4:
+            con.execute(statement)
+        con.execute("INSERT INTO schema_migrations VALUES (4,?,?)",
+                    (CHECKSUM_V4, datetime.now(timezone.utc).isoformat()))
+        if con.execute("PRAGMA foreign_key_check").fetchone():
+            raise RuntimeError("Foreign key verification failed")
+        con.commit()
+    except BaseException:
+        con.rollback()
+        raise
+
+
 def main():
     """Offline operator migration/verification entry point. Never sends messages."""
     import argparse
@@ -169,9 +200,9 @@ def main():
             if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok" or con.execute("PRAGMA foreign_key_check").fetchone():
                 raise RuntimeError("SQLite integrity verification failed")
             ledger = con.execute("SELECT version,checksum FROM schema_migrations ORDER BY version").fetchall()
-            if ledger != [(1, CHECKSUM), (2, CHECKSUM_V2), (3, CHECKSUM_V3)]:
+            if ledger != [(1, CHECKSUM), (2, CHECKSUM_V2), (3, CHECKSUM_V3), (4, CHECKSUM_V4)]:
                 raise RuntimeError("Schema version or checksum mismatch")
-        print("Schema versions 1, 2 and 3 verified; integrity and foreign keys OK")
+        print("Schema versions 1, 2, 3 and 4 verified; integrity and foreign keys OK")
     else:
         from agrireach import db
         con = db.connect(str(args.path))
