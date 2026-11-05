@@ -66,3 +66,39 @@ def test_real_langgraph_mcp_creation_links_claim():
     result = asyncio.run(agent.run('maize', use_fetch=False, queue=False, inbound_claim=claim))
     assert con.execute('SELECT case_id FROM channel_inbox').fetchone()[0] == result['case_id']
     assert db.get_case(con, result['case_id'])['status'] == 'draft'
+
+
+def test_stop_serialized_after_contact_removes_it():
+    con = db.connect()
+    claim = claimed(con)
+    cid = db.agent_upsert_case(con, status='draft', question='maize', inbound_claim=claim)
+    db.queue_with_contact(con, cid, channel='sms', sender_id='+233000000001', inbound_claim=claim)
+    db.forget_sender(db.connect(), 'sms', '+233000000001')
+    assert db.get_contact(con, cid)['sender_id'] == db.OPTED_OUT
+    with pytest.raises(db.GateError, match='revoked'):
+        db.queue_with_contact(con, cid, channel='sms', sender_id='+233000000001', inbound_claim=claim)
+
+
+def test_worker_crash_after_mcp_commit_keeps_link_and_duplicate_does_not_replay(monkeypatch):
+    from agrireach.channels import sms
+    from agrireach.channels.base import SendResult
+    con = db.connect()
+    item = {'message_id': 'crash-mcp', 'from': '+233000000001', 'text': 'maize'}
+    db.enqueue_inbound(con, 'sms', item['message_id'], item, sender_id=item['from'])
+    original = agent.Tools.call
+    async def crash_after_create(self, name, args):
+        result = await original(self, name, args)
+        if name == 'create_or_update_case' and not args.get('case_id'):
+            raise TimeoutError('injected crash after MCP commit')
+        return result
+    monkeypatch.setattr(agent.Tools, 'call', crash_after_create)
+    monkeypatch.setattr(sms.SmsChannel, 'send', lambda *args: SendResult(True, 'synthetic'))
+    cfg = sms.Config('sandbox', 'unused', 'x' * 24)
+    with pytest.raises(Exception):
+        asyncio.run(sms.process_durable(cfg, item))
+    row = con.execute("SELECT * FROM channel_inbox WHERE message_id='crash-mcp'").fetchone()
+    assert row['state'] == 'uncertain' and row['case_id'] is not None
+    assert db.get_case(con, row['case_id'])['status'] == 'draft'
+    asyncio.run(sms.process_durable(cfg, item))
+    assert con.execute('SELECT count(*) FROM cases').fetchone()[0] == 1
+    assert con.execute('SELECT count(*) FROM channel_contacts').fetchone()[0] == 0
