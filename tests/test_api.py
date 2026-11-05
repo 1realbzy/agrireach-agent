@@ -6,6 +6,14 @@ from agrireach.api import app
 c = TestClient(app)
 
 
+def test_public_ask_rejects_blank_and_oversized_questions():
+    assert c.post("/ask", json={"question": "   "}).status_code == 422
+    assert c.post("/ask", json={"question": "x" * 2001}).status_code == 422
+    assert c.post("/ask", json={"question": "maize", "crop": "a" * 101}).status_code == 422
+    assert c.post("/ask", json={"question": "maize", "region": "a" * 101}).status_code == 422
+    assert db.connect().execute("SELECT COUNT(*) FROM cases").fetchone()[0] == 0
+
+
 def test_end_to_end_officer_gate():
     h = {"Authorization": f"Bearer {db.add_officer(db.connect(), 'Ama Mensah')}"}
     r = c.post("/ask", json={"question": "When should I harvest soybean in Tamale?"}).json()
