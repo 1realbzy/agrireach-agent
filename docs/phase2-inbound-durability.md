@@ -11,3 +11,9 @@ Next work: connect authenticated webhooks to persistent enqueue, build a durable
 Tests required: duplicate callbacks, concurrent claims, crash recovery at each boundary, migration integrity, privacy deletion, full Python regression suite, safety replay, and speech tests.
 
 The existing officer approval and delivery safety rules must remain unchanged. This is not a production readiness signoff.
+
+## Checkpoint 1 review corrections
+
+The review found seven issues. This branch now uses a separate SQLite connection for inbox writes to avoid committing unrelated caller transactions; explicit conflict handling; generated claim tokens; conservative transition of interrupted processing to `uncertain`; and a terminal-state-only purge primitive. Tests cover these properties. A second connection cannot write while the caller holds a SQLite write transaction, so callers must not invoke inbox functions inside an active writer transaction. No automatic replay or outbound send is performed.
+
+**Still open before checkpoint 2:** a scheduled purge and STOP integration; error/reconciliation reason evidence; complete migration upgrade matrix for versions 1 through 3 and corrupt ledgers; durable case-to-inbox association; worker recovery decisions based on case and outbound evidence. Existing live webhook processing is unchanged. The audit findings are not all closed. Do not merge or deploy this foundation as a complete reliability fix.
