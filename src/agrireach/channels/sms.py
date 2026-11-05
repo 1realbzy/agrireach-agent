@@ -248,7 +248,11 @@ async def process_durable(cfg: Config, item: dict) -> None:
             return
         claim_id, stored = claimed
         try:
-            result = await process(cfg, [stored])
+            context_token = service.INBOUND_CLAIM.set({"channel": "sms", "message_id": item["message_id"], "lease_id": claim_id})
+            try:
+                result = await process(cfg, [stored])
+            finally:
+                service.INBOUND_CLAIM.reset(context_token)
             if not result:
                 db.finish_inbound(con, "sms", item["message_id"], claim_id,
                                   "uncertain", reason="no processing result; operator review required")

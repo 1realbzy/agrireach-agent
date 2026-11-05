@@ -107,7 +107,7 @@ def log(con, actor: str, tool: str, args: dict, summary: str, ok: bool = True, c
 
 
 def agent_upsert_case(con, *, status: str, question: str = "", case_id: int | None = None, crop=None, region=None,
-                      draft=None, sources=None, priority="routine", urgent_reasons=None, farmer_draft=None) -> int:
+                      draft=None, sources=None, priority="routine", urgent_reasons=None, farmer_draft=None, inbound_claim: dict | None = None) -> int:
     """farmer_draft: AgriReach's PROPOSED farmer-facing text (JSON, see farmer_reply). Only the officer's approved
     farmer_text is ever delivered."""
     if status not in AGENT_STATUSES:
@@ -117,6 +117,25 @@ def agent_upsert_case(con, *, status: str, question: str = "", case_id: int | No
     if priority not in {"routine", "urgent"}:
         raise ValueError("priority must be routine or urgent")
     t = now()
+    if case_id is None and not question:
+        raise ValueError("question required for a new case")
+    if case_id is None and inbound_claim:
+        try:
+            con.execute("BEGIN IMMEDIATE")
+            inbox = require_inbound_claim(con, inbound_claim)
+            if inbox["case_id"] is not None:
+                raise GateError("Inbound already has a case; reconcile without replay")
+            cur = con.execute(
+                "INSERT INTO cases(question,crop,region,draft,sources,priority,urgent_reasons,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (question, crop, region, draft, json.dumps(sources or []), priority,
+                 json.dumps(urgent_reasons or []), status, t, t))
+            cid = cur.lastrowid
+            con.execute("UPDATE channel_inbox SET case_id=?,updated_at=? WHERE id=?", (cid, t, inbox["id"]))
+            con.commit()
+            return cid
+        except BaseException:
+            con.rollback()
+            raise
     if case_id is None:
         if not question:
             raise ValueError("question required for a new case")
@@ -293,20 +312,34 @@ def case_log(con, case_id: int) -> list[dict]:
 # --- Channel contacts (voice notes, WhatsApp). sender_id is personal data: it is stored only so the approved answer
 # can be sent back, and is never written to tool_log or shown unmasked (see channels.base.mask_sender).
 
+def require_inbound_claim(con, claim: dict):
+    row = con.execute("SELECT * FROM channel_inbox WHERE channel=? AND message_id=? AND lease_id=? AND state='processing'",
+                      (claim["channel"], claim["message_id"], claim["lease_id"])).fetchone()
+    if row is None:
+        raise GateError("Inbound claim revoked or interrupted; no further processing")
+    return row
+
+
 def save_contact(con, case_id: int, *, channel: str, sender_id: str, audio_path: str | None = None,
-                 transcript: str | None = None, stt: dict | None = None):
-    con.execute("INSERT OR REPLACE INTO channel_contacts(case_id,channel,sender_id,audio_path,transcript,stt,created_at)"
-                " VALUES (?,?,?,?,?,?,?)", (case_id, channel, sender_id, audio_path, transcript,
-                                             json.dumps(stt or {}), now()))
-    con.execute("UPDATE cases SET revision=revision+1 WHERE id=?", (case_id,))
-    con.commit()
+                 transcript: str | None = None, stt: dict | None = None, inbound_claim: dict | None = None):
+    with con:
+        con.execute("BEGIN IMMEDIATE")
+        if inbound_claim:
+            require_inbound_claim(con, inbound_claim)
+        con.execute("INSERT OR REPLACE INTO channel_contacts(case_id,channel,sender_id,audio_path,transcript,stt,created_at)"
+                    " VALUES (?,?,?,?,?,?,?)", (case_id, channel, sender_id, audio_path, transcript,
+                                                 json.dumps(stt or {}), now()))
+        con.execute("UPDATE cases SET revision=revision+1 WHERE id=?", (case_id,))
 
 
 def queue_with_contact(con, case_id: int, *, channel: str, sender_id: str, audio_path: str | None = None,
-                       transcript: str | None = None, stt: dict | None = None):
+                       transcript: str | None = None, stt: dict | None = None, inbound_claim: dict | None = None):
     """Save a channel case's contact and move the case from 'draft' to the officer queue in one transaction: a case
     is never in the queue without the contact its approved answer goes back to (live run 5 lost one that way)."""
     with con:  # commits both, or rolls both back
+        con.execute("BEGIN IMMEDIATE")
+        if inbound_claim:
+            require_inbound_claim(con, inbound_claim)
         con.execute("INSERT OR REPLACE INTO channel_contacts(case_id,channel,sender_id,audio_path,transcript,stt,"
                     "created_at) VALUES (?,?,?,?,?,?,?)", (case_id, channel, sender_id, audio_path, transcript,
                                                            json.dumps(stt or {}), now()))
@@ -402,9 +435,10 @@ def finish_inbound(con, channel: str, message_id: str, claim_id: str,
         raise ValueError("failed or uncertain processing requires an outcome reason")
     with closing(_inbox_connection(con)) as inbox, _inbox_transaction(inbox):
         cur = inbox.execute(
-            "UPDATE channel_inbox SET state=?,case_id=?,outcome_reason=?,lease_id=NULL,updated_at=? "
-            "WHERE channel=? AND message_id=? AND lease_id=? AND state='processing'",
-            (state, case_id, reason, now(), channel, message_id, claim_id))
+            "UPDATE channel_inbox SET state=?,case_id=COALESCE(?,case_id),outcome_reason=?,lease_id=NULL,updated_at=? "
+            "WHERE channel=? AND message_id=? AND lease_id=? AND state='processing' "
+            "AND (case_id IS NULL OR ? IS NULL OR case_id=?)",
+            (state, case_id, reason, now(), channel, message_id, claim_id, case_id, case_id))
         return cur.rowcount == 1
 
 

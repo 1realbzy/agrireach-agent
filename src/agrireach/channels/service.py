@@ -9,6 +9,7 @@ ones the /ask API already returns to a farmer.
 from __future__ import annotations
 
 import json
+from contextvars import ContextVar
 import logging
 import os
 import re
@@ -19,6 +20,8 @@ from pathlib import Path
 from agrireach import agent, db, voice_script
 from agrireach.channels import location, stt, tts
 from agrireach.channels.base import Channel, InboundMessage, OutboundMessage, SendResult, mask_sender  # noqa: F401
+
+INBOUND_CLAIM = ContextVar("inbound_claim", default=None)
 
 ACK = "Thank you. Your question was sent to an extension officer for review. You will get the answer here."
 RESEND = "Sorry, AgriReach could not take your question just now. Please send it again."
@@ -56,6 +59,8 @@ def _system_send(con, channel: Channel | None, msg: InboundMessage, text: str, w
     """A fixed system text (consent prompt, location question, opt-out confirmation): no case, no officer needed."""
     if channel is None:
         return None
+    if INBOUND_CLAIM.get() and what != "stopped":
+        db.require_inbound_claim(con, INBOUND_CLAIM.get())
     r = channel.send(msg.sender_id, OutboundMessage(text=text))
     db.log(con, f"channel:{msg.channel}", f"send_{what}", {"to": mask_sender(msg.sender_id)},
            "sent" if r.ok else f"FAILED: {r.detail}", ok=r.ok)
@@ -196,7 +201,8 @@ def log_failure(con, msg: InboundMessage, e: BaseException) -> None:
 async def _file(con, msg: InboundMessage, channel, question, extra, audio_path, transcript_text, stt_info) -> dict:
     try:
         # queue=False: the case is filed as a draft and only queued below, together with its contact.
-        out = await agent.run(question, extra_urgent_reasons=extra, queue=False)
+        out = await agent.run(question, extra_urgent_reasons=extra, queue=False,
+                              **({"inbound_claim": INBOUND_CLAIM.get()} if INBOUND_CLAIM.get() else {}))
     except Exception as e:
         # The case (if one was saved) stays a draft, out of the officer queue: nobody could send its answer. The
         # farmer is asked to send the question again, every sub-exception is logged, and the error is re-raised.
@@ -207,7 +213,7 @@ async def _file(con, msg: InboundMessage, channel, question, extra, audio_path, 
     if msg.channel == "sms":
         _add_sms_review(con, case_id)
     contact = dict(channel=msg.channel, sender_id=msg.sender_id, audio_path=audio_path, transcript=transcript_text,
-                   stt=stt_info)
+                   stt=stt_info, inbound_claim=INBOUND_CLAIM.get())
     if out["status"] == "draft" and not out["clarification"]:
         db.queue_with_contact(con, case_id, **contact)  # contact + pending_review in one transaction
         out["status"] = "pending_review"
@@ -220,6 +226,8 @@ async def _file(con, msg: InboundMessage, channel, question, extra, audio_path, 
     reply = out["clarification"] or ACK
     sent = None
     if channel is not None:
+        if INBOUND_CLAIM.get():
+            db.require_inbound_claim(con, INBOUND_CLAIM.get())
         r = channel.send(msg.sender_id, OutboundMessage(text=reply))
         kind = "clarification" if out["clarification"] else "ack"
         db.record_delivery(con, case_id, msg.channel, kind, r.ok, r.detail)
