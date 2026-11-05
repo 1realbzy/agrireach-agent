@@ -43,7 +43,7 @@ def test_opt_out_after_filing_makes_the_approved_case_undeliverable():
     assert c.get("/officer/cases", params={"status": "bogus"}, headers=h).status_code == 400
     assert c.get("/officer/cases").status_code == 401
     # Farmer view: no claim that an answer was sent, no answer text.
-    fv = c.get(f"/farmer/cases/{cid}", params={"access_token": db.issue_farmer_case_token(db.connect(), cid)}).json()
+    fv = c.get(f"/farmer/cases/{cid}", headers={"X-Case-Access-Token": db.issue_farmer_case_token(db.connect(), cid)}).json()
     assert fv["status"] == "undeliverable" and fv["answer"] is None and "Harvest" not in json.dumps(fv)
     # Terminal: no further decision, no release/retry, nothing sent.
     assert c.post(f"/officer/cases/{cid}/decision", headers=h,
