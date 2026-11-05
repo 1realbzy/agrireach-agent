@@ -242,7 +242,7 @@ def main():
         access_token = st.text_input("Case access token", type="password",
                                      value=st.session_state.get("farmer_case_token", ""))
         if st.button("Check answer"):
-            status, data = request("GET", f"/farmer/cases/{cid}", params={"access_token": access_token})
+            status, data = request("GET", f"/farmer/cases/{cid}", headers={"X-Case-Access-Token": access_token})
             if status == 200:
                 st.info(data.get("answer") or "Your case is waiting for officer review or confirmed delivery.")
             else:
