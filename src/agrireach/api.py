@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from agrireach import approval, agent, db, farmer_reply, knowledge, llm
 from agrireach.channels import service, simulator, sms, whatsapp
@@ -22,9 +22,17 @@ if sms.enabled():  # off by default; see docs/sms-setup.md
 
 
 class Ask(BaseModel):
-    question: str
-    crop: str = ""
-    region: str = ""
+    question: str = Field(min_length=1, max_length=2000)
+    crop: str = Field(default="", max_length=100)
+    region: str = Field(default="", max_length=100)
+
+    @field_validator("question")
+    @classmethod
+    def question_is_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("question must contain text")
+        return value
 
 
 def current_officer(authorization: str | None = Header(None)) -> str:
@@ -317,7 +325,7 @@ async def simulator_inbound(sender: str = Form(...), text: str = Form(""), audio
         raise HTTPException(400, str(e))
     audio_path = None
     if audio is not None and audio.filename:
-        data = await audio.read()
+        data = await audio.read(16_000_001)
         if len(data) > 16_000_000:
             raise HTTPException(413, "voice note over 16 MB")
         audio_path = service.save_audio(data, Path(audio.filename).suffix or ".wav")
