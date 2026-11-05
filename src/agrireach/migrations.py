@@ -1,6 +1,7 @@
 """Versioned SQLite upgrades. Never discard evidence in a destructive downgrade."""
 from __future__ import annotations
 
+from contextlib import closing
 import hashlib
 import sqlite3
 from datetime import datetime, timezone
@@ -55,7 +56,7 @@ def ensure_schema(con: sqlite3.Connection, path: str) -> None:
         if len(rows) == 1 and path != ":memory:":
             backup_path = Path(f"{path}.before-v2-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f')}.sqlite")
             backup_path.touch(mode=0o600, exist_ok=False)
-            with sqlite3.connect(backup_path) as backup:
+            with closing(sqlite3.connect(backup_path)) as backup:
                 con.backup(backup)
                 if backup.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                     raise RuntimeError("Version two backup verification failed")
@@ -70,7 +71,7 @@ def ensure_schema(con: sqlite3.Connection, path: str) -> None:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
         backup = Path(f"{path}.before-safety-{stamp}.sqlite")
         backup.touch(mode=0o600, exist_ok=False)
-        with sqlite3.connect(backup) as target:
+        with closing(sqlite3.connect(backup)) as target:
             con.backup(target)
             if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise RuntimeError("Backup verification failed; no migration applied")
@@ -230,7 +231,7 @@ def main():
     parser.add_argument("--verify-only", action="store_true")
     args = parser.parse_args()
     if args.verify_only:
-        with sqlite3.connect(f"file:{args.path.resolve()}?mode=ro", uri=True) as con:
+        with closing(sqlite3.connect(f"file:{args.path.resolve()}?mode=ro", uri=True)) as con:
             if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok" or con.execute("PRAGMA foreign_key_check").fetchone():
                 raise RuntimeError("SQLite integrity verification failed")
             ledger = con.execute("SELECT version,checksum FROM schema_migrations ORDER BY version").fetchall()
