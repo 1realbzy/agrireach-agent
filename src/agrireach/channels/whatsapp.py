@@ -185,6 +185,41 @@ async def process(cfg: Config, items: list[dict], channel: WhatsAppChannel | Non
     return results
 
 
+async def process_durable(cfg: Config, item: dict) -> None:
+    """Claim a persisted message before any media download or advisory work."""
+    con = db.connect()
+    try:
+        claimed = db.claim_inbound(con, "whatsapp", item["message_id"])
+        if claimed is None:
+            return
+        claim_id, stored = claimed
+        try:
+            result = await process(cfg, [stored])
+            if not result:
+                db.finish_inbound(con, "whatsapp", item["message_id"], claim_id,
+                                  "uncertain", reason="no processing result; operator review required")
+                return
+            outcome = result[0]
+            case_id = outcome.get("case_id")
+            status = outcome.get("status", "")
+            if case_id is not None:
+                db.finish_inbound(con, "whatsapp", item["message_id"], claim_id,
+                                  "completed", case_id=case_id)
+            elif status in ("forgotten", "consented", "awaiting_consent", "awaiting_location"):
+                db.finish_inbound(con, "whatsapp", item["message_id"], claim_id,
+                                  "completed", event_kind="stop" if status == "forgotten" else status,
+                                  reason=status)
+            else:
+                db.finish_inbound(con, "whatsapp", item["message_id"], claim_id,
+                                  "uncertain", reason="unlinked processing result; operator review required")
+        except BaseException:
+            db.finish_inbound(con, "whatsapp", item["message_id"], claim_id,
+                              "uncertain", reason="processing interrupted; outcome not verified")
+            raise
+    finally:
+        con.close()
+
+
 def router(cfg: Config) -> APIRouter:
     r = APIRouter()
 
@@ -207,7 +242,23 @@ def router(cfg: Config) -> APIRouter:
             items = parse(json.loads(raw))
         except ValueError:
             raise HTTPException(400, "invalid JSON")
-        background.add_task(process, cfg, items)
-        return {"ok": True, "messages": len(items)}
+        con = db.connect()
+        accepted = []
+        try:
+            for item in items:
+                if not item.get("message_id") or not item.get("from"):
+                    raise HTTPException(422, "provider message ID and sender required")
+                if db.enqueue_inbound(con, "whatsapp", item["message_id"], item,
+                                      sender_id=item["from"]):
+                    accepted.append(item)
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(503, "inbound persistence unavailable")
+        finally:
+            con.close()
+        for item in accepted:
+            background.add_task(process_durable, cfg, item)
+        return {"ok": True, "messages": len(items), "queued": len(accepted)}
 
     return r
