@@ -12,6 +12,13 @@ def test_routine_case_cited_and_pending():
     assert out["draft"].startswith("[OFFLINE STUB DRAFT")
 
 
+def test_missing_crop_asks_clarification_without_searching_soybean():
+    out = run("When should I plant in Tamale?")
+    assert out["status"] == "draft" and "crop" in out["clarification"].lower()
+    tools = [r["tool"] for r in db.case_log(db.connect(), out["case_id"])]
+    assert "search_guidance" not in tools
+
+
 def test_missing_region_asks_clarification():
     out = run("When should I plant soybean?")
     assert out["status"] == "draft" and "region" in out["clarification"]
