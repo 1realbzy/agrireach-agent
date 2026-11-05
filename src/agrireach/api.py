@@ -6,7 +6,7 @@ import os
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, Query
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 
@@ -273,11 +273,11 @@ def release(case_id: int, officer: str = Depends(current_officer)):
 
 
 @app.get("/farmer/cases/{case_id}")
-def farmer_view(case_id: int, access_token: str | None = Query(None)):
+def farmer_view(case_id: int, x_case_access_token: str | None = Header(None)):
     """Case numbers are sequential; require a separate secret for every farmer view."""
     con = db.connect()
     row = db.get_case(con, case_id)
-    if not row or not db.farmer_case_token_valid(con, case_id, access_token):
+    if not row or not db.farmer_case_token_valid(con, case_id, x_case_access_token):
         raise HTTPException(404, "not found")
     if row["status"] == "undeliverable":  # approved, but the number was removed (STOP or retention purge)
         return {"case_id": case_id, "status": "undeliverable", "answer": None,
