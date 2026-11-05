@@ -290,7 +290,7 @@ async def intake(s: S, tools: Tools) -> S:
     return {"crop": crop, "region": region, "urgent_reasons": reasons, "clarification": clar, "language": lang,
             "search_query": search_query, "case_id": case["case_id"], "notes": [], "errors": [],
             "received": case.get("created_at", ""), "region_from_text": region_from_text,
-            "skip_retrieval": uncovered or (contact and not crop)}
+            "skip_retrieval": uncovered or not crop}
 
 async def retrieve(s: S, tools: Tools) -> S:
     """Calls the MCP read tools: corpus search, reference check, zone planting windows, crop calendar, rainfall.
@@ -316,19 +316,19 @@ async def retrieve(s: S, tools: Tools) -> S:
     query = s.get("search_query") or s["question"]
     try:
         passages = await tools.call("search_guidance", {"query": s.get("search_query") or s["question"],
-                                                         "crop": s["crop"] or "soybean", "region": ""})
+                                                         "crop": s["crop"], "region": ""})
         verified = []
         for p in passages:
             verified.append(await tools.call("retrieve_reference", {"passage_id": p["id"]}))
         passages = verified
         if zone and PLANTING_Q.search(query):
             # The farmer's own zone's planting windows (verbatim table rows), whatever the keyword search found.
-            got = await tools.call("get_zone_planting_guidance", {"crop": s["crop"] or "soybean", "place": region,
+            got = await tools.call("get_zone_planting_guidance", {"crop": s["crop"], "place": region,
                                                                    "season": zones.detect_season(query)})
             have = {p["id"] for p in passages}
             passages += [p for p in got["passages"] if p["id"] not in have]
         if re.search(r"\b(when|calendar|season)\b", query.lower()):
-            cal = await tools.call("get_crop_calendar", {"crop": s["crop"] or "soybean", "region": "northern"})
+            cal = await tools.call("get_crop_calendar", {"crop": s["crop"], "region": "northern"})
     except Exception as e:  # tool failure: never invent results
         errors.append(str(e))
         passages = []
@@ -402,7 +402,7 @@ async def check_sources(s: S, tools: Tools) -> S:
             r = await asyncio.wait_for(tools.fetch.call_tool("fetch", {"url": src["landing_url"], "max_length": 20000,
                                                                       "raw": True}), timeout=30)
             body = r.content[0].text if r.content else ""
-            ok = (not r.isError) and bool(re.search(_crop_pattern(p.get("crop") or "soybean"), body, re.I))
+            ok = (not r.isError) and bool(re.search(_crop_pattern(p["crop"]), body, re.I))
             checks.append({"source_id": p["source_id"], "url": src["landing_url"], "reachable": ok,
                            "detail": "" if ok else body[:160]})
         except Exception as e:
