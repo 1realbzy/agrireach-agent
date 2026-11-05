@@ -57,7 +57,7 @@ def test_failed_send_after_release_is_not_delivered_and_reappears_in_the_queue(m
     q = c.get("/officer/queue", headers=h).json()
     item = next(x for x in q if x["id"] == cid)
     assert item["status"] == "not_delivered" and item["delivery_problem"].startswith("HTTP 400")
-    fv = c.get(f"/farmer/cases/{cid}").json()
+    fv = c.get(f"/farmer/cases/{cid}", params={"access_token": db.issue_farmer_case_token(db.connect(), cid)}).json()
     assert fv["status"] == "not_delivered" and fv["answer"] is None and "not been sent" in fv["message"]
     assert "Harvest" not in json.dumps(fv)
     logs = json.dumps(db.case_log(db.connect(), cid))
@@ -74,7 +74,7 @@ def test_officer_can_edit_and_re_approve_then_one_successful_release(monkeypatch
     assert r.status_code == 200 and r.json()["status"] == "released" and r.json()["delivery"]["ok"] is True
     sent = [parse_qs(x.content.decode())["message"][0] for x in at.requests]
     assert sent.count("Harvest when 9 of 10 pods are brown.") == 1 and "Harvest at 9 of 10 pods." not in sent[-1:]
-    fv = c.get(f"/farmer/cases/{cid}").json()
+    fv = c.get(f"/farmer/cases/{cid}", params={"access_token": db.issue_farmer_case_token(db.connect(), cid)}).json()
     assert fv["status"] == "released" and fv["answer"] == "Harvest when 9 of 10 pods are brown."
     assert cid not in [x["id"] for x in c.get("/officer/queue", headers=h).json()]
     # Delivered: a further decision or release is refused as before (409), and nothing more is sent.
