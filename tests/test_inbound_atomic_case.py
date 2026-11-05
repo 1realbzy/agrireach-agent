@@ -102,3 +102,11 @@ def test_worker_crash_after_mcp_commit_keeps_link_and_duplicate_does_not_replay(
     asyncio.run(sms.process_durable(cfg, item))
     assert con.execute('SELECT count(*) FROM cases').fetchone()[0] == 1
     assert con.execute('SELECT count(*) FROM channel_contacts').fetchone()[0] == 0
+
+
+def test_consent_without_held_question_is_completed_system_event():
+    con = db.connect()
+    claim = claimed(con)
+    assert db.finish_inbound(con, 'sms', 'atomic-1', claim['lease_id'],
+                             'completed', event_kind='consented', reason='consented')
+    assert con.execute('SELECT state FROM channel_inbox').fetchone()[0] == 'completed'

@@ -427,7 +427,7 @@ def finish_inbound(con, channel: str, message_id: str, claim_id: str,
     """Only the current claim holder may finish; case association is validated."""
     if state not in ("completed", "failed", "uncertain"):
         raise ValueError("invalid inbound outcome")
-    if state == "completed" and case_id is None and event_kind not in ("consent", "stop", "location", "awaiting_consent", "awaiting_location"):
+    if state == "completed" and case_id is None and event_kind not in ("consent", "consented", "stop", "location", "awaiting_consent", "awaiting_location"):
         raise ValueError("completed advisory inbound processing requires a case ID")
     if state == "completed" and case_id is None and not (reason or "").strip():
         raise ValueError("non-advisory completion requires a reason")
