@@ -6,7 +6,7 @@ import os
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 
@@ -128,7 +128,8 @@ def health():
 async def ask(a: Ask):
     out = await agent.run(a.question, a.crop, a.region)
     # The farmer gets only an acknowledgement or a clarifying question, never the draft.
-    return {"case_id": out["case_id"], "status": out["status"], "clarification": out["clarification"],
+    access_token = db.issue_farmer_case_token(db.connect(), out["case_id"])
+    return {"case_id": out["case_id"], "access_token": access_token, "status": out["status"], "clarification": out["clarification"],
             "message": out["clarification"] or "Your question was sent to an extension officer for review."}
 
 
@@ -272,10 +273,11 @@ def release(case_id: int, officer: str = Depends(current_officer)):
 
 
 @app.get("/farmer/cases/{case_id}")
-def farmer_view(case_id: int):
+def farmer_view(case_id: int, access_token: str | None = Query(None)):
+    """Case numbers are sequential; require a separate secret for every farmer view."""
     con = db.connect()
     row = db.get_case(con, case_id)
-    if not row:
+    if not row or not db.farmer_case_token_valid(con, case_id, access_token):
         raise HTTPException(404, "not found")
     if row["status"] == "undeliverable":  # approved, but the number was removed (STOP or retention purge)
         return {"case_id": case_id, "status": "undeliverable", "answer": None,
