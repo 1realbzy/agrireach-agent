@@ -4,6 +4,8 @@ Scope: one Windows PC, two people taking turns in separate browser sessions. Bin
 
 ## Setup (PowerShell, Python 3.13 and Git installed)
 
+Use a folder in your private Windows user profile; SQLite databases and migration backups inherit its Windows ACLs. POSIX mode bits do not verify Windows file privacy. Keep this synthetic pilot out of shared or synced folders.
+
 Run from a normal PowerShell window. No activation script or execution-policy change is needed:
 
 ```powershell
