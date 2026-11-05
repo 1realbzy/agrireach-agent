@@ -77,7 +77,7 @@ def test_officer_approving_an_unsourced_sms_is_warned_and_logged_not_blocked(mon
     assert r.status_code == 422, r.text
     assert r.json()["detail"]["outcome"] in ("safety_blocked", "review_required")
     assert db.get_case(db.connect(), cid)["status"] == "pending_review"
-    assert TestClient(app).get(f"/farmer/cases/{cid}", params={"access_token": db.issue_farmer_case_token(db.connect(), cid)}).json()["answer"] is None
+    assert TestClient(app).get(f"/farmer/cases/{cid}", headers={"X-Case-Access-Token": db.issue_farmer_case_token(db.connect(), cid)}).json()["answer"] is None
 
 
 def test_unconfigured_judge_reads_plainly(monkeypatch):
