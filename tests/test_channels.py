@@ -33,6 +33,13 @@ def outbox():
     return simulator.SimulatorChannel().messages(SENDER)
 
 
+def test_saved_voice_note_is_private(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGRIREACH_MEDIA_DIR", str(tmp_path))
+    path = Path(service.save_audio(b"RIFF", ".wav"))
+    assert path.read_bytes() == b"RIFF"
+    assert path.stat().st_mode & 0o077 == 0
+
+
 def test_mask_sender_keeps_only_last_two_characters():
     assert mask_sender("+15555550100") == "**********00"
     assert mask_sender("sim:farmer-1") == "**********-1"
