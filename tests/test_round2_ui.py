@@ -20,6 +20,10 @@ def test_public_messages_do_not_echo_internal_exceptions(status, outcome):
 
 def test_streamlit_signed_out_renders_all_tabs(monkeypatch):
     from streamlit.testing.v1 import AppTest
+    from streamlit import env_util
+    # AppTest is not a REPL. Avoid Streamlit's inspect.stack()/Windows path walk
+    # for its first-use warning; this test checks the rendered workflow.
+    monkeypatch.setattr(env_util, "is_repl", lambda: False)
     calls = []
     def backend(method, url, **kwargs):
         calls.append((url, kwargs.get("headers")))
