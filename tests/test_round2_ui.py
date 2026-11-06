@@ -27,7 +27,8 @@ def test_streamlit_signed_out_renders_all_tabs(monkeypatch):
         assert url.endswith("/health")
         return httpx.Response(200, json={"draft_mode": "stub"})
     monkeypatch.setattr(httpx, "request", backend)
-    app = AppTest.from_file(str(Path(__file__).parents[1] / "src/agrireach/ui.py")).run()
+    # Cold Streamlit imports on the pilot PC can exceed AppTest's three-second default.
+    app = AppTest.from_file(str(Path(__file__).parents[1] / "src/agrireach/ui.py"), default_timeout=15).run()
     assert not app.exception
     assert len(app.tabs) == 3
     assert len(calls) == 1
