@@ -19,6 +19,7 @@ def _leaves(exc):
 
 def _process(monkeypatch, *, fail_active=False):
     stdin_closed, delivered, active = anyio.Event(), anyio.Event(), anyio.Event()
+    reader_ready = anyio.Event()
     sends = []
     original_send = MemoryObjectSendStream.send
 
@@ -37,6 +38,7 @@ def _process(monkeypatch, *, fail_active=False):
         done = False
 
         async def receive(self, max_bytes=65536):
+            reader_ready.set()
             if fail_active:
                 await active.wait()
                 raise OSError("synthetic active transport failure")
@@ -73,6 +75,9 @@ def _process(monkeypatch, *, fail_active=False):
         return process
 
     monkeypatch.setattr(sdk, "_create_platform_compatible_process", spawn)
+    # This is a fake process: real Windows PATH discovery is unrelated to the race.
+    monkeypatch.setattr(sdk, "_get_executable_command", lambda command: command)
+    process.reader_ready = reader_ready
     return process, sends, active
 
 
@@ -84,6 +89,7 @@ def test_late_response_does_not_break_shutdown_or_hide_request_failure(monkeypat
         try:
             with anyio.fail_after(5):  # deadlock watchdog, not application waiting
                 async with stdio_client(StdioServerParameters(command="synthetic")) as (read, write):
+                    await process.reader_ready.wait()
                     async with ClientSession(read, write):
                         await anyio.lowlevel.checkpoint()
                         if failure is not None:
