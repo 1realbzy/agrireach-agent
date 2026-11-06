@@ -37,7 +37,7 @@ STOP = set("a an the is are of to in on for my i we do how what should can and o
 
 @lru_cache
 def load(path: str | None = None) -> dict:
-    return json.loads(Path(path or os.getenv("AGRIREACH_KNOWLEDGE", DEFAULT)).read_text())
+    return json.loads(Path(path or os.getenv("AGRIREACH_KNOWLEDGE", DEFAULT)).read_text(encoding="utf-8"))
 
 
 def tokens(s: str) -> list[str]:

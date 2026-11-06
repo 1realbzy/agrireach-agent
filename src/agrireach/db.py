@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import secrets
+from contextlib import closing
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -106,7 +107,7 @@ def log(con, actor: str, tool: str, args: dict, summary: str, ok: bool = True, c
 
 
 def agent_upsert_case(con, *, status: str, question: str = "", case_id: int | None = None, crop=None, region=None,
-                      draft=None, sources=None, priority="routine", urgent_reasons=None, farmer_draft=None) -> int:
+                      draft=None, sources=None, priority="routine", urgent_reasons=None, farmer_draft=None, inbound_claim: dict | None = None) -> int:
     """farmer_draft: AgriReach's PROPOSED farmer-facing text (JSON, see farmer_reply). Only the officer's approved
     farmer_text is ever delivered."""
     if status not in AGENT_STATUSES:
@@ -116,6 +117,25 @@ def agent_upsert_case(con, *, status: str, question: str = "", case_id: int | No
     if priority not in {"routine", "urgent"}:
         raise ValueError("priority must be routine or urgent")
     t = now()
+    if case_id is None and not question:
+        raise ValueError("question required for a new case")
+    if case_id is None and inbound_claim:
+        try:
+            con.execute("BEGIN IMMEDIATE")
+            inbox = require_inbound_claim(con, inbound_claim)
+            if inbox["case_id"] is not None:
+                raise GateError("Inbound already has a case; reconcile without replay")
+            cur = con.execute(
+                "INSERT INTO cases(question,crop,region,draft,sources,priority,urgent_reasons,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (question, crop, region, draft, json.dumps(sources or []), priority,
+                 json.dumps(urgent_reasons or []), status, t, t))
+            cid = cur.lastrowid
+            con.execute("UPDATE channel_inbox SET case_id=?,updated_at=? WHERE id=?", (cid, t, inbox["id"]))
+            con.commit()
+            return cid
+        except BaseException:
+            con.rollback()
+            raise
     if case_id is None:
         if not question:
             raise ValueError("question required for a new case")
@@ -292,20 +312,34 @@ def case_log(con, case_id: int) -> list[dict]:
 # --- Channel contacts (voice notes, WhatsApp). sender_id is personal data: it is stored only so the approved answer
 # can be sent back, and is never written to tool_log or shown unmasked (see channels.base.mask_sender).
 
+def require_inbound_claim(con, claim: dict):
+    row = con.execute("SELECT * FROM channel_inbox WHERE channel=? AND message_id=? AND lease_id=? AND state='processing'",
+                      (claim["channel"], claim["message_id"], claim["lease_id"])).fetchone()
+    if row is None:
+        raise GateError("Inbound claim revoked or interrupted; no further processing")
+    return row
+
+
 def save_contact(con, case_id: int, *, channel: str, sender_id: str, audio_path: str | None = None,
-                 transcript: str | None = None, stt: dict | None = None):
-    con.execute("INSERT OR REPLACE INTO channel_contacts(case_id,channel,sender_id,audio_path,transcript,stt,created_at)"
-                " VALUES (?,?,?,?,?,?,?)", (case_id, channel, sender_id, audio_path, transcript,
-                                             json.dumps(stt or {}), now()))
-    con.execute("UPDATE cases SET revision=revision+1 WHERE id=?", (case_id,))
-    con.commit()
+                 transcript: str | None = None, stt: dict | None = None, inbound_claim: dict | None = None):
+    with con:
+        con.execute("BEGIN IMMEDIATE")
+        if inbound_claim:
+            require_inbound_claim(con, inbound_claim)
+        con.execute("INSERT OR REPLACE INTO channel_contacts(case_id,channel,sender_id,audio_path,transcript,stt,created_at)"
+                    " VALUES (?,?,?,?,?,?,?)", (case_id, channel, sender_id, audio_path, transcript,
+                                                 json.dumps(stt or {}), now()))
+        con.execute("UPDATE cases SET revision=revision+1 WHERE id=?", (case_id,))
 
 
 def queue_with_contact(con, case_id: int, *, channel: str, sender_id: str, audio_path: str | None = None,
-                       transcript: str | None = None, stt: dict | None = None):
+                       transcript: str | None = None, stt: dict | None = None, inbound_claim: dict | None = None):
     """Save a channel case's contact and move the case from 'draft' to the officer queue in one transaction: a case
     is never in the queue without the contact its approved answer goes back to (live run 5 lost one that way)."""
     with con:  # commits both, or rolls both back
+        con.execute("BEGIN IMMEDIATE")
+        if inbound_claim:
+            require_inbound_claim(con, inbound_claim)
         con.execute("INSERT OR REPLACE INTO channel_contacts(case_id,channel,sender_id,audio_path,transcript,stt,"
                     "created_at) VALUES (?,?,?,?,?,?,?)", (case_id, channel, sender_id, audio_path, transcript,
                                                            json.dumps(stt or {}), now()))
@@ -331,6 +365,109 @@ def record_delivery(con, case_id: int, channel: str, kind: str, ok: bool, detail
 def answer_delivered(con, case_id: int) -> bool:
     return con.execute("SELECT 1 FROM channel_deliveries WHERE case_id=? AND kind='answer' AND ok=1",
                        (case_id,)).fetchone() is not None
+
+
+def _inbox_connection(con):
+    """Use a separate SQLite connection so inbox commits never commit caller writes."""
+    row = con.execute("PRAGMA database_list").fetchone()
+    path = row[2]
+    if not path:
+        raise ValueError("Durable inbox requires a file-backed SQLite database")
+    other = sqlite3.connect(path, timeout=10)
+    other.row_factory = sqlite3.Row
+    other.execute("PRAGMA foreign_keys=ON")
+    return other
+
+
+from contextlib import contextmanager
+
+
+@contextmanager
+def _inbox_transaction(inbox):
+    try:
+        yield
+        inbox.commit()
+    except BaseException:
+        inbox.rollback()
+        raise
+
+
+def enqueue_inbound(con, channel: str, message_id: str, payload: dict, *, sender_id: str | None = None) -> bool:
+    """Commit an inbound event without committing unrelated caller transactions."""
+    if not channel or not message_id:
+        raise ValueError("channel and message_id are required")
+    with closing(_inbox_connection(con)) as inbox, _inbox_transaction(inbox):
+        cur = inbox.execute(
+            "INSERT INTO channel_inbox(channel,message_id,payload,state,created_at,updated_at,sender_id) "
+            "VALUES (?,?,?,'pending',?,?,?) ON CONFLICT(channel,message_id) DO NOTHING",
+            (channel, message_id, json.dumps(payload, ensure_ascii=False), now(), now(), sender_id))
+        return cur.rowcount == 1
+
+
+def claim_inbound(con, channel: str, message_id: str) -> tuple[str, dict] | None:
+    """Generate a private claim ID; a crash leaves an item for reconciliation."""
+    claim_id = secrets.token_urlsafe(32)
+    with closing(_inbox_connection(con)) as inbox, _inbox_transaction(inbox):
+        inbox.execute("BEGIN IMMEDIATE")
+        row = inbox.execute(
+            "SELECT id,payload FROM channel_inbox WHERE channel=? AND message_id=? AND state='pending'",
+            (channel, message_id)).fetchone()
+        if row is None:
+            return None
+        inbox.execute(
+            "UPDATE channel_inbox SET state='processing',attempt_count=attempt_count+1,"
+            "lease_id=?,updated_at=? WHERE id=? AND state='pending'",
+            (claim_id, now(), row["id"]))
+        return claim_id, json.loads(row["payload"])
+
+
+def finish_inbound(con, channel: str, message_id: str, claim_id: str,
+                   state: str, case_id: int | None = None, *, reason: str | None = None,
+                   event_kind: str = "advisory") -> bool:
+    """Only the current claim holder may finish; case association is validated."""
+    if state not in ("completed", "failed", "uncertain"):
+        raise ValueError("invalid inbound outcome")
+    if state == "completed" and case_id is None and event_kind not in ("consent", "consented", "stop", "location", "awaiting_consent", "awaiting_location"):
+        raise ValueError("completed advisory inbound processing requires a case ID")
+    if state == "completed" and case_id is None and not (reason or "").strip():
+        raise ValueError("non-advisory completion requires a reason")
+    if state in ("failed", "uncertain") and not (reason or "").strip():
+        raise ValueError("failed or uncertain processing requires an outcome reason")
+    with closing(_inbox_connection(con)) as inbox, _inbox_transaction(inbox):
+        cur = inbox.execute(
+            "UPDATE channel_inbox SET state=?,case_id=COALESCE(?,case_id),outcome_reason=?,lease_id=NULL,updated_at=? "
+            "WHERE channel=? AND message_id=? AND lease_id=? AND state='processing' "
+            "AND (case_id IS NULL OR ? IS NULL OR case_id=?)",
+            (state, case_id, reason, now(), channel, message_id, claim_id, case_id, case_id))
+        return cur.rowcount == 1
+
+
+def reconcile_interrupted_inbound(con, *, older_than: str) -> int:
+    """Conservatively mark abandoned claims uncertain; never resend automatically."""
+    with closing(_inbox_connection(con)) as inbox, _inbox_transaction(inbox):
+        cur = inbox.execute(
+            "UPDATE channel_inbox SET state='uncertain',lease_id=NULL,updated_at=?, "
+            "outcome_reason='interrupted claim; reconciliation required' "
+            "WHERE state='processing' AND updated_at<?", (now(), older_than))
+        return cur.rowcount
+
+
+def purge_inbound(con, *, older_than: str, channel: str | None = None,
+                  message_ids: list[str] | None = None) -> int:
+    """Remove sensitive inbox payloads only for terminal records, preserving pending work."""
+    where = "state IN ('completed','failed','uncertain') AND updated_at<?"
+    args = [older_than]
+    if channel is not None:
+        where += " AND channel=?"
+        args.append(channel)
+    if message_ids is not None:
+        if not message_ids:
+            return 0
+        where += " AND message_id IN (" + ",".join("?" for _ in message_ids) + ")"
+        args.extend(message_ids)
+    with closing(_inbox_connection(con)) as inbox, _inbox_transaction(inbox):
+        cur = inbox.execute("DELETE FROM channel_inbox WHERE " + where, args)
+        return cur.rowcount
 
 
 def first_time_seen(con, channel: str, message_id: str) -> bool:
@@ -406,6 +543,7 @@ def forget_sender(con, channel: str, sender_id: str) -> dict:
                 (OPTED_OUT, channel, sender_id))
     con.execute("DELETE FROM channel_pending WHERE channel=? AND sender_id=?", (channel, sender_id))
     con.execute("DELETE FROM channel_consent WHERE channel=? AND sender_id=?", (channel, sender_id))
+    con.execute("DELETE FROM channel_inbox WHERE channel=? AND sender_id=?", (channel, sender_id))
     con.commit()
     return {"contacts": len(contacts), "held": len(held)}
 
@@ -428,5 +566,7 @@ def purge_old(con, days: int | None = None, now_ts: str | None = None) -> dict:
                 "AND sender_id NOT IN (?,?)", (PURGED, cutoff, *REMOVED))
     con.execute("DELETE FROM channel_pending WHERE created_at <= ?", (cutoff,))
     n_consent = con.execute("DELETE FROM channel_consent WHERE COALESCE(decided_at, asked_at) <= ?", (cutoff,)).rowcount
+    # Expired unprocessed events are discarded, never replayed after consent data expires.
+    n_inbox = con.execute("DELETE FROM channel_inbox WHERE created_at <= ?", (cutoff,)).rowcount
     con.commit()
-    return {"contacts": len(old), "held": len(held), "consent": n_consent, "cutoff": cutoff}
+    return {"contacts": len(old), "held": len(held), "consent": n_consent, "inbox": n_inbox, "cutoff": cutoff}

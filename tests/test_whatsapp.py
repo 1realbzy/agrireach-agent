@@ -58,9 +58,9 @@ def test_parse_keeps_text_and_voice_notes_and_ignores_statuses():
 def test_webhook_routes_verify_and_reject_bad_signatures(monkeypatch):
     seen = []
 
-    async def fake_process(cfg, items):
-        seen.append(items)
-    monkeypatch.setattr(whatsapp, "process", fake_process)
+    async def fake_process(cfg, item):
+        seen.append([item])
+    monkeypatch.setattr(whatsapp, "process_durable", fake_process)
     app = FastAPI()
     app.include_router(whatsapp.router(CFG))
     c = TestClient(app)

@@ -1,6 +1,7 @@
 """Versioned SQLite upgrades. Never discard evidence in a destructive downgrade."""
 from __future__ import annotations
 
+from contextlib import closing
 import hashlib
 import sqlite3
 from datetime import datetime, timezone
@@ -27,8 +28,14 @@ def validate_existing_ledger(con):
     required = {"cases", "advisory_submissions", "safety_assessments"}
     if len(ledger) >= 2:
         required |= {"approvals", "acknowledgement_challenges", "audit_events", "delivery_jobs", "delivery_attempts"}
-    if len(ledger) == 3:
+    if len(ledger) >= 3:
         required.add("farmer_case_access")
+    if len(ledger) >= 4:
+        required.add("channel_inbox")
+    if len(ledger) >= 5:
+        cols = {r[1] for r in con.execute("PRAGMA table_info(channel_inbox)")}
+        if not {"sender_id", "outcome_reason"} <= cols:
+            raise RuntimeError("Incomplete inbox migration; missing privacy or outcome columns")
     if not required <= tables:
         raise RuntimeError("Incomplete migration schema; stop writers and recover from verified evidence")
 
@@ -49,12 +56,14 @@ def ensure_schema(con: sqlite3.Connection, path: str) -> None:
         if len(rows) == 1 and path != ":memory:":
             backup_path = Path(f"{path}.before-v2-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f')}.sqlite")
             backup_path.touch(mode=0o600, exist_ok=False)
-            with sqlite3.connect(backup_path) as backup:
+            with closing(sqlite3.connect(backup_path)) as backup:
                 con.backup(backup)
                 if backup.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                     raise RuntimeError("Version two backup verification failed")
         upgrade_v2(con)
         upgrade_v3(con)
+        upgrade_v4(con)
+        upgrade_v5(con)
         return
     if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
         raise RuntimeError("Database integrity check failed; no migration applied")
@@ -62,7 +71,7 @@ def ensure_schema(con: sqlite3.Connection, path: str) -> None:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
         backup = Path(f"{path}.before-safety-{stamp}.sqlite")
         backup.touch(mode=0o600, exist_ok=False)
-        with sqlite3.connect(backup) as target:
+        with closing(sqlite3.connect(backup)) as target:
             con.backup(target)
             if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise RuntimeError("Backup verification failed; no migration applied")
@@ -81,6 +90,8 @@ def ensure_schema(con: sqlite3.Connection, path: str) -> None:
         con.commit()
         upgrade_v2(con)
         upgrade_v3(con)
+        upgrade_v4(con)
+        upgrade_v5(con)
     except BaseException:
         con.rollback()
         raise
@@ -108,10 +119,27 @@ STATEMENTS_V3 = [
 CHECKSUM_V3 = hashlib.sha256("\n".join(STATEMENTS_V3).encode()).hexdigest()
 
 
+STATEMENTS_V4 = [
+    "CREATE TABLE channel_inbox(id INTEGER PRIMARY KEY AUTOINCREMENT, channel TEXT NOT NULL, message_id TEXT NOT NULL, payload TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN (\'pending\',\'processing\',\'completed\',\'failed\',\'uncertain\')), attempt_count INTEGER NOT NULL DEFAULT 0, lease_id TEXT, case_id INTEGER REFERENCES cases(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(channel,message_id))",
+    "CREATE INDEX channel_inbox_pending_idx ON channel_inbox(state,created_at,id)",
+]
+CHECKSUM_V4 = hashlib.sha256("\n".join(STATEMENTS_V4).encode()).hexdigest()
+
+
+STATEMENTS_V5 = [
+    "ALTER TABLE channel_inbox ADD COLUMN sender_id TEXT",
+    "ALTER TABLE channel_inbox ADD COLUMN outcome_reason TEXT",
+    "CREATE INDEX channel_inbox_sender_idx ON channel_inbox(channel,sender_id)",
+]
+CHECKSUM_V5 = hashlib.sha256("\n".join(STATEMENTS_V5).encode()).hexdigest()
+
+
 def _valid_ledgers():
     first = [(1, CHECKSUM)]
     second = first + [(2, CHECKSUM_V2)]
-    return (first, second, second + [(3, CHECKSUM_V3)])
+    third = second + [(3, CHECKSUM_V3)]
+    fourth = third + [(4, CHECKSUM_V4)]
+    return (first, second, third, fourth, fourth + [(5, CHECKSUM_V5)])
 
 
 def upgrade_v2(con):
@@ -157,6 +185,44 @@ def upgrade_v3(con):
         raise
 
 
+def upgrade_v4(con):
+    """Create the durable inbound ledger; existing message IDs are not silently replayed."""
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        if con.execute("SELECT 1 FROM schema_migrations WHERE version=4").fetchone():
+            con.rollback()
+            return
+        for statement in STATEMENTS_V4:
+            con.execute(statement)
+        con.execute("INSERT INTO schema_migrations VALUES (4,?,?)",
+                    (CHECKSUM_V4, datetime.now(timezone.utc).isoformat()))
+        if con.execute("PRAGMA foreign_key_check").fetchone():
+            raise RuntimeError("Foreign key verification failed")
+        con.commit()
+    except BaseException:
+        con.rollback()
+        raise
+
+
+def upgrade_v5(con):
+    """Add sender-scoped erasure and auditable reconciliation reasons."""
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        if con.execute("SELECT 1 FROM schema_migrations WHERE version=5").fetchone():
+            con.rollback()
+            return
+        for statement in STATEMENTS_V5:
+            con.execute(statement)
+        con.execute("INSERT INTO schema_migrations VALUES (5,?,?)",
+                    (CHECKSUM_V5, datetime.now(timezone.utc).isoformat()))
+        if con.execute("PRAGMA foreign_key_check").fetchone():
+            raise RuntimeError("Foreign key verification failed")
+        con.commit()
+    except BaseException:
+        con.rollback()
+        raise
+
+
 def main():
     """Offline operator migration/verification entry point. Never sends messages."""
     import argparse
@@ -165,13 +231,13 @@ def main():
     parser.add_argument("--verify-only", action="store_true")
     args = parser.parse_args()
     if args.verify_only:
-        with sqlite3.connect(f"file:{args.path.resolve()}?mode=ro", uri=True) as con:
+        with closing(sqlite3.connect(f"file:{args.path.resolve()}?mode=ro", uri=True)) as con:
             if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok" or con.execute("PRAGMA foreign_key_check").fetchone():
                 raise RuntimeError("SQLite integrity verification failed")
             ledger = con.execute("SELECT version,checksum FROM schema_migrations ORDER BY version").fetchall()
-            if ledger != [(1, CHECKSUM), (2, CHECKSUM_V2), (3, CHECKSUM_V3)]:
+            if ledger != [(1, CHECKSUM), (2, CHECKSUM_V2), (3, CHECKSUM_V3), (4, CHECKSUM_V4), (5, CHECKSUM_V5)]:
                 raise RuntimeError("Schema version or checksum mismatch")
-        print("Schema versions 1, 2 and 3 verified; integrity and foreign keys OK")
+        print("Schema versions 1, 2, 3, 4 and 5 verified; integrity and foreign keys OK")
     else:
         from agrireach import db
         con = db.connect(str(args.path))
