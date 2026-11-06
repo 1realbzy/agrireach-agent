@@ -1,6 +1,7 @@
 """Voice-note channel layer with the local simulator (offline: fake transcriber, stub drafts)."""
 import asyncio
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -37,7 +38,9 @@ def test_saved_voice_note_is_private(tmp_path, monkeypatch):
     monkeypatch.setenv("AGRIREACH_MEDIA_DIR", str(tmp_path))
     path = Path(service.save_audio(b"RIFF", ".wav"))
     assert path.read_bytes() == b"RIFF"
-    assert path.stat().st_mode & 0o077 == 0
+    # Windows mode bits do not describe inherited ACLs (see the private-folder pilot setup).
+    if os.name != "nt":
+        assert path.stat().st_mode & 0o077 == 0
 
 
 def test_mask_sender_keeps_only_last_two_characters():

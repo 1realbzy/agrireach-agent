@@ -60,6 +60,7 @@ jobs:
     timeout-minutes: 12
     env:
       PYTHONPATH: 'tests;src'
+      PYTHONUTF8: '0' # Exercise explicit corpus decoding on the Windows locale default.
       AGRIREACH_SOURCE_CHECK: '0'
       AGRIREACH_RAINFALL: off
       AGRIREACH_STT: none
@@ -72,5 +73,5 @@ jobs:
           python-version: '3.13'
           cache: pip
       - run: python -m pip install -r requirements.txt
-      - run: python -m pytest -q tests/test_local_pilot.py tests/test_inbound_atomic_case.py tests/test_inbox_recovery.py tests/test_round2_ui.py
+      - run: python -m pytest -q tests/test_local_pilot.py tests/test_inbound_atomic_case.py tests/test_inbox_recovery.py tests/test_round2_ui.py tests/test_channels.py::test_saved_voice_note_is_private tests/test_knowledge.py tests/test_safety_checkpoint1.py::test_frozen_policy
       - run: python scripts/verify_legacy_migration.py

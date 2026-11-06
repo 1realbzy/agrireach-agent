@@ -1,5 +1,15 @@
 """Corpus scoping: a crop's search never returns another crop's passages, and every passage is well formed."""
+import json
+
 from agrireach import knowledge
+
+
+def test_utf8_corpus_preserves_source_text(tmp_path):
+    # Exercise the same loader on Windows' legacy code page as well as UTF-8 hosts.
+    text = "Seed rate: 40 \u2013 45 kg. Twi letters: \u025b \u0254."
+    path = tmp_path / "unicode-corpus.json"
+    path.write_text(json.dumps({"text": text}, ensure_ascii=False), encoding="utf-8")
+    assert knowledge.load(str(path))["text"] == text
 
 
 def test_every_passage_has_a_known_source_and_required_fields():
