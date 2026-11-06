@@ -18,7 +18,7 @@ from typing import TypedDict
 
 from langgraph.graph import END, StateGraph
 from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from agrireach.mcp_transport import stdio_client
 
 from agrireach import citation_check, claim_check, farmer_reply, knowledge, language, llm, places, rainfall, season, zones
 
