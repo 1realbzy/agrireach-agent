@@ -232,12 +232,17 @@ def main():
         if st.button("Send"):
             status, data = request("POST", "/ask", json={"question": question})
             if status == 200:
-                st.info(f"Case {data['case_id']}: your question is waiting for review.")
+                st.session_state["farmer_case_id"] = data["case_id"]
+                st.session_state["farmer_case_token"] = data["access_token"]
+                st.info(f"Case {data['case_id']}: your question is waiting for review. Keep your access token private.")
             else:
                 show_result(status, data)
-        cid = st.number_input("Check case number", min_value=1, step=1)
+        cid = st.number_input("Check case number", min_value=1, step=1,
+                              value=st.session_state.get("farmer_case_id", 1))
+        access_token = st.text_input("Case access token", type="password",
+                                     value=st.session_state.get("farmer_case_token", ""))
         if st.button("Check answer"):
-            status, data = request("GET", f"/farmer/cases/{cid}")
+            status, data = request("GET", f"/farmer/cases/{cid}", headers={"X-Case-Access-Token": access_token})
             if status == 200:
                 st.info(data.get("answer") or "Your case is waiting for officer review or confirmed delivery.")
             else:

@@ -20,6 +20,10 @@ def test_public_messages_do_not_echo_internal_exceptions(status, outcome):
 
 def test_streamlit_signed_out_renders_all_tabs(monkeypatch):
     from streamlit.testing.v1 import AppTest
+    from streamlit import env_util
+    # AppTest is not a REPL. Avoid Streamlit's inspect.stack()/Windows path walk
+    # for its first-use warning; this test checks the rendered workflow.
+    monkeypatch.setattr(env_util, "is_repl", lambda: False)
     calls = []
     def backend(method, url, **kwargs):
         calls.append((url, kwargs.get("headers")))
@@ -27,7 +31,8 @@ def test_streamlit_signed_out_renders_all_tabs(monkeypatch):
         assert url.endswith("/health")
         return httpx.Response(200, json={"draft_mode": "stub"})
     monkeypatch.setattr(httpx, "request", backend)
-    app = AppTest.from_file(str(Path(__file__).parents[1] / "src/agrireach/ui.py")).run()
+    # Cold Streamlit imports on the pilot PC can exceed AppTest's three-second default.
+    app = AppTest.from_file(str(Path(__file__).parents[1] / "src/agrireach/ui.py"), default_timeout=15).run()
     assert not app.exception
     assert len(app.tabs) == 3
     assert len(calls) == 1

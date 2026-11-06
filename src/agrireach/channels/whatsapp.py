@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from urllib.parse import urlsplit
 import json
 import os
 import re
@@ -30,6 +31,7 @@ from agrireach import db
 from agrireach.channels import service
 from agrireach.channels.base import InboundMessage, OutboundMessage, SendResult, mask_sender
 
+MAX_AUDIO_BYTES = 16_000_000  # Bound downloaded voice notes before storing or transcribing.
 MAX_BODY_BYTES = 3_000_000   # Meta documents webhook payloads up to 3 MB; media arrives as an id, not bytes
 MAX_TEXT_CHARS = 4096        # WhatsApp text message body limit
 AUDIO_SUFFIX = {"audio/ogg": ".ogg", "audio/mpeg": ".mp3", "audio/mp4": ".m4a", "audio/aac": ".aac", "audio/amr": ".amr"}
@@ -138,9 +140,23 @@ class WhatsAppChannel:
         meta = self.client.get(self.cfg.url(media_id), headers=self._auth())
         meta.raise_for_status()
         info = meta.json()
-        data = self.client.get(info["url"], headers=self._auth())
-        data.raise_for_status()
-        return data.content, info.get("mime_type", "")
+        media_url = info["url"]
+        parsed = urlsplit(media_url)
+        host = (parsed.hostname or "").lower()
+        trusted = ("fbsbx.com", "fbcdn.net", "facebook.com", "whatsapp.net")
+        if (parsed.scheme != "https" or parsed.username or parsed.password or parsed.port not in (None, 443)
+                or not any(host == domain or host.endswith("." + domain) for domain in trusted)):
+            raise ValueError("untrusted WhatsApp media URL")
+        data = bytearray()
+        with self.client.stream("GET", media_url, headers=self._auth(), follow_redirects=False) as response:
+            response.raise_for_status()
+            if int(response.headers.get("content-length") or 0) > MAX_AUDIO_BYTES:
+                raise ValueError("WhatsApp audio exceeds the size limit")
+            for chunk in response.iter_bytes():
+                if len(data) + len(chunk) > MAX_AUDIO_BYTES:
+                    raise ValueError("WhatsApp audio exceeds the size limit")
+                data.extend(chunk)
+        return bytes(data), info.get("mime_type", "")
 
 
 async def process(cfg: Config, items: list[dict], channel: WhatsAppChannel | None = None, transcriber=None) -> list:
@@ -166,7 +182,47 @@ async def process(cfg: Config, items: list[dict], channel: WhatsAppChannel | Non
         except Exception as e:
             db.log(con, "channel:whatsapp", "inbound_message", {"from": mask_sender(sender)},
                    f"FAILED: {type(e).__name__}", ok=False)
+            raise
     return results
+
+
+async def process_durable(cfg: Config, item: dict) -> None:
+    """Claim a persisted message before any media download or advisory work."""
+    con = db.connect()
+    try:
+        claimed = db.claim_inbound(con, "whatsapp", item["message_id"])
+        if claimed is None:
+            return
+        claim_id, stored = claimed
+        try:
+            context_token = service.INBOUND_CLAIM.set({"channel": "whatsapp", "message_id": item["message_id"], "lease_id": claim_id})
+            try:
+                result = await process(cfg, [stored])
+            finally:
+                service.INBOUND_CLAIM.reset(context_token)
+            if not result:
+                db.finish_inbound(con, "whatsapp", item["message_id"], claim_id,
+                                  "uncertain", reason="no processing result; operator review required")
+                return
+            outcome = result[0]
+            case_id = outcome.get("case_id")
+            status = outcome.get("status", "")
+            if case_id is not None:
+                db.finish_inbound(con, "whatsapp", item["message_id"], claim_id,
+                                  "completed", case_id=case_id)
+            elif status in ("forgotten", "consented", "awaiting_consent", "awaiting_location"):
+                db.finish_inbound(con, "whatsapp", item["message_id"], claim_id,
+                                  "completed", event_kind="stop" if status == "forgotten" else status,
+                                  reason=status)
+            else:
+                db.finish_inbound(con, "whatsapp", item["message_id"], claim_id,
+                                  "uncertain", reason="unlinked processing result; operator review required")
+        except BaseException:
+            db.finish_inbound(con, "whatsapp", item["message_id"], claim_id,
+                              "uncertain", reason="processing interrupted; outcome not verified")
+            raise
+    finally:
+        con.close()
 
 
 def router(cfg: Config) -> APIRouter:
@@ -191,7 +247,23 @@ def router(cfg: Config) -> APIRouter:
             items = parse(json.loads(raw))
         except ValueError:
             raise HTTPException(400, "invalid JSON")
-        background.add_task(process, cfg, items)
-        return {"ok": True, "messages": len(items)}
+        con = db.connect()
+        accepted = []
+        try:
+            for item in items:
+                if not item.get("message_id") or not item.get("from"):
+                    raise HTTPException(422, "provider message ID and sender required")
+                if db.enqueue_inbound(con, "whatsapp", item["message_id"], item,
+                                      sender_id=item["from"]):
+                    accepted.append(item)
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(503, "inbound persistence unavailable")
+        finally:
+            con.close()
+        for item in accepted:
+            background.add_task(process_durable, cfg, item)
+        return {"ok": True, "messages": len(items), "queued": len(accepted)}
 
     return r

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from agrireach import approval, agent, db, farmer_reply, knowledge, llm
 from agrireach.channels import service, simulator, sms, whatsapp
@@ -22,9 +22,17 @@ if sms.enabled():  # off by default; see docs/sms-setup.md
 
 
 class Ask(BaseModel):
-    question: str
-    crop: str = ""
-    region: str = ""
+    question: str = Field(min_length=1, max_length=2000)
+    crop: str = Field(default="", max_length=100)
+    region: str = Field(default="", max_length=100)
+
+    @field_validator("question")
+    @classmethod
+    def question_is_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("question must contain text")
+        return value
 
 
 def current_officer(authorization: str | None = Header(None)) -> str:
@@ -120,7 +128,8 @@ def health():
 async def ask(a: Ask):
     out = await agent.run(a.question, a.crop, a.region)
     # The farmer gets only an acknowledgement or a clarifying question, never the draft.
-    return {"case_id": out["case_id"], "status": out["status"], "clarification": out["clarification"],
+    access_token = db.issue_farmer_case_token(db.connect(), out["case_id"])
+    return {"case_id": out["case_id"], "access_token": access_token, "status": out["status"], "clarification": out["clarification"],
             "message": out["clarification"] or "Your question was sent to an extension officer for review."}
 
 
@@ -264,10 +273,11 @@ def release(case_id: int, officer: str = Depends(current_officer)):
 
 
 @app.get("/farmer/cases/{case_id}")
-def farmer_view(case_id: int):
+def farmer_view(case_id: int, x_case_access_token: str | None = Header(None)):
+    """Case numbers are sequential; require a separate secret for every farmer view."""
     con = db.connect()
     row = db.get_case(con, case_id)
-    if not row:
+    if not row or not db.farmer_case_token_valid(con, case_id, x_case_access_token):
         raise HTTPException(404, "not found")
     if row["status"] == "undeliverable":  # approved, but the number was removed (STOP or retention purge)
         return {"case_id": case_id, "status": "undeliverable", "answer": None,
@@ -317,7 +327,7 @@ async def simulator_inbound(sender: str = Form(...), text: str = Form(""), audio
         raise HTTPException(400, str(e))
     audio_path = None
     if audio is not None and audio.filename:
-        data = await audio.read()
+        data = await audio.read(16_000_001)
         if len(data) > 16_000_000:
             raise HTTPException(413, "voice note over 16 MB")
         audio_path = service.save_audio(data, Path(audio.filename).suffix or ".wav")

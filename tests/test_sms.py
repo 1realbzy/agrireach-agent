@@ -178,9 +178,9 @@ def test_parse_callback_form():
 def test_inbound_route_requires_the_secret_path_token(monkeypatch):
     seen = []
 
-    async def fake_process(cfg, items, channel=None, transcriber=None):
-        seen.append(items)
-    monkeypatch.setattr(sms, "process", fake_process)
+    async def fake_process(cfg, item):
+        seen.append([item])
+    monkeypatch.setattr(sms, "process_durable", fake_process)
     app = FastAPI()
     app.include_router(sms.router(CFG))
     c = TestClient(app)

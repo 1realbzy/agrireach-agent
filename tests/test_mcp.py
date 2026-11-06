@@ -3,7 +3,7 @@ import json
 import sys
 
 from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from agrireach.mcp_transport import stdio_client
 import os
 
 

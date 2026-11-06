@@ -16,3 +16,7 @@ venv/
 # Inbound voice notes and simulator outbox (farmer audio is personal data; never commit)
 data/media/
 data/outbox/
+# Isolated local pilot configuration and synthetic artifacts
+pilot-env.ps1
+data/pilot-media/
+data/pilot-outbox/

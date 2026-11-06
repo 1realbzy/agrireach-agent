@@ -18,7 +18,7 @@ from typing import TypedDict
 
 from langgraph.graph import END, StateGraph
 from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from agrireach.mcp_transport import stdio_client
 
 from agrireach import citation_check, claim_check, farmer_reply, knowledge, language, llm, places, rainfall, season, zones
 
@@ -181,6 +181,7 @@ def _detect_region(q: str) -> str:
 
 
 class S(TypedDict, total=False):
+    inbound_claim: dict
     question: str
     crop: str
     region: str
@@ -287,7 +288,7 @@ async def intake(s: S, tools: Tools) -> S:
         reasons.append(f"no automatic clarifying question because of the flags above; officer should ask: {clar}")
         clar = ""
     case = await tools.call("create_or_update_case", {"status": "draft", "question": s["question"], "crop": crop,
-                                                      "region": region})
+                                                      "region": region, **({"inbound_claim": s["inbound_claim"]} if s.get("inbound_claim") else {})})
     return {"crop": crop, "region": region, "urgent_reasons": reasons, "clarification": clar, "language": lang,
             "search_query": search_query, "case_id": case["case_id"], "notes": [], "errors": [],
             "received": case.get("created_at", ""), "region_from_text": region_from_text,
@@ -537,7 +538,7 @@ def build_graph(tools: Tools):
 
 
 async def run(question: str, crop: str = "", region: str = "", use_fetch: bool | None = None,
-              extra_urgent_reasons: list[str] | None = None, queue: bool = True) -> dict:
+              extra_urgent_reasons: list[str] | None = None, queue: bool = True, inbound_claim: dict | None = None) -> dict:
     """extra_urgent_reasons: reasons found before the agent ran (e.g. an unreliable voice-note transcript).
     queue=False: the case is filed as 'draft' (not in the officer queue); the caller queues it, e.g. a channel saves
     the farmer's contact and queues the case in one transaction (db.queue_with_contact)."""
@@ -559,7 +560,7 @@ async def run(question: str, crop: str = "", region: str = "", use_fetch: bool |
         graph = build_graph(Tools(own, fetch))
         calls = llm.start_usage()
         out = await graph.ainvoke({"question": question, "crop": crop, "region": region,
-                                   "extra_urgent_reasons": list(extra_urgent_reasons or []), "queue": queue})
+                                   "extra_urgent_reasons": list(extra_urgent_reasons or []), "queue": queue, "inbound_claim": inbound_claim})
     return {k: out.get(k) for k in ("case_id", "status", "crop", "region", "clarification", "draft", "draft_mode",
                                      "urgent_reasons", "source_checks", "errors", "language",
                                      "citation_check", "farmer_draft")} | {

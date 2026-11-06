@@ -88,6 +88,16 @@ The Farmer tab's default question, "When should I plant soybean in Tamale?", sho
 - CLI: `PYTHONPATH=src .venv/bin/python -m agrireach.agent "When should I harvest soybean in Tamale?"`
 - API: `POST /ask`, `GET /farmer/cases/{id}`. Officer routes need `Authorization: Bearer <token>`: `GET /officer/queue`, `GET /officer/cases/{id}` (with its tool log), `POST /officer/cases/{id}/assess` (read-only safety check), `POST /officer/cases/{id}/decision`, and `POST /cases/{id}/release`, which refuses any case without a valid officer approval.
 
+## Farmer case privacy
+
+The public `POST /ask` response includes a randomly generated `access_token` in addition to the case number. Keep it private. To check a web case, call `GET /farmer/cases/{case_id}` with the `X-Case-Access-Token` header. A sequential case number alone cannot read an answer. The Streamlit farmer form retains the token in the current session and allows entering it later. Do not put tokens in URLs or logs.
+
+**Compatibility:** Cases created before the private access migration do not have access tokens. They are not automatically made public or assigned a discoverable token. An operator must establish a verified recovery workflow before exposing those historical answers. SMS and WhatsApp continue to deliver only through the approved channel and do not expose a farmer case lookup token to the sender.
+
+**Migration:** Database schema version 3 creates the separate token digest table without modifying the original case or approval evidence. Keep database backups and do not roll back a production database by dropping the table.
+
+See [codebase audit](docs/codebase-audit-2026-11-05.md) for remaining reliability and deployment risks. This branch is not a production-readiness certification.
+
 ## Technology stack
 
 Verified in this build: Python 3.13, official MCP Python SDK (`mcp` 1.30, FastMCP, stdio), LangGraph 1.2, `mcp-server-fetch` (third-party reference MCP server), SQLite, FastAPI, Streamlit, pytest. The OpenAI-compatible client (`openai` package) has been run against `mistralai/mistral-small-3.2-24b-instruct` (open weights) via OpenRouter.
