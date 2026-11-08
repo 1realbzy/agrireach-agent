@@ -99,6 +99,8 @@ def render_delivery(case_id, headers, key):
     if status != 200:
         show_result(status, jobs)
         return
+    if not jobs and key == 'queue':
+        st.caption("Delivery: no channel send recorded. Web answers become available only after approval and release.")
     for job in jobs:
         st.caption(f"Delivery {job['id']}: {job['state'].replace('_', ' ')}")
         if job["state"] == "unknown":
@@ -114,6 +116,7 @@ def render_case(case, headers):
     cid = case["id"]
     with st.expander(f"Case {cid}: {case['question']}", expanded=True):
         st.caption(f"{case['status'].replace('_', ' ').title()} | Revision {case['revision']} | Human approval required")
+        st.caption(f"Submitted {case.get('created_at', 'time unavailable')} · Crop: {case.get('crop') or 'Not specified'} · Location: {case.get('region') or 'Not specified'}")
         for reason in case.get('urgent_reasons', []):
             st.warning(reason)
         render_delivery(cid, headers, "queue")
@@ -138,10 +141,13 @@ def render_case(case, headers):
         shown = "\n".join(l for l in case["draft"].splitlines() if not l.startswith(llm.STUB_LABEL))
         # Officers see numbered citations; edits are mapped back to the source IDs before saving.
         shown, cites = number_citations(shown)
+        st.subheader("1 · Review or revise advisory")
         edited = st.text_area("Officer draft with citations", shown, key=f"draft{cid}")
         for n, cite in enumerate(cites, 1):
             st.caption(f"[{n}] " + source_name(cite[1:-1]))
         with st.expander("Read source evidence"):
+            if not case['sources']:
+                st.info("No source passages are attached. Review the evidence gap before making a decision.")
             for source_id in case['sources']:
                 ref = knowledge.reference(source_id)
                 st.markdown('**' + source_name(source_id) + '**')
@@ -155,8 +161,10 @@ def render_case(case, headers):
                 st.info("New proposal prepared. Check it against the sources before approving.")
             else:
                 show_result(status, proposal)
+        st.subheader("2 · Verify the farmer response")
         farmer_text = st.text_area("Farmer text: exactly what will be sent", case.get("farmer_text") or (case.get("farmer_draft") or {}).get("text", ""), key=f"farmer{cid}")
         show_holds(cid, farmer_text, headers)
+        st.subheader("3 · Record a decision")
         note = st.text_area("Officer note or clarification request", key=f"note{cid}")
         confirmed = st.checkbox("Required for approval: I checked every advice line against the cited sources", key=f"confirm{cid}")
         status, preview = request("POST", f"/officer/cases/{cid}/voice-preview", headers=headers, json={"officer_text": farmer_text})
@@ -177,7 +185,7 @@ def render_case(case, headers):
                 st.session_state[f"challenge{cid}"] = {"body": candidate, "token": detail["acknowledgement"]}
             st.session_state[f"assessment_retry{cid}"] = status == 503
 
-        if st.button("Approve and release", key=f"approve{cid}", disabled=not confirmed):
+        if st.button("Approve and release", key=f"approve{cid}", type="primary", disabled=not confirmed):
             submit(body)
         # Retry only re-checks the text. Approving is always a separate click.
         if st.session_state.get(f"assessment_retry{cid}") and st.button("Retry assessment", key=f"assessment{cid}"):
@@ -188,6 +196,8 @@ def render_case(case, headers):
                 show_findings(data.get("findings", []), farmer_text)
             else:
                 show_result(status, data)
+        st.divider()
+        st.caption("Reject or request information · A note and explicit confirmation are required. No advice is released.")
         for label, decision in (("Reject", "reject"), ("Request info", "request_info")):
             sure = st.checkbox(f"Confirm: {label.lower()} this case with the note above", key=f"sure{decision}{cid}")
             if st.button(label, key=f"{decision}{cid}", disabled=not (sure and note.strip())):
@@ -228,16 +238,19 @@ def review_queue(headers):
             load_review(case)
             st.rerun()
         st.caption(case['question'])
+        st.caption(f"Submitted {case.get('created_at', 'time unavailable')}")
 
 
 def officer_screen():
-    st.title("Officer workspace")
+    st.caption("AGRIREACH · EXTENSION OFFICER PORTAL")
+    st.title("Officer dashboard" if st.session_state.get('officer_token') else "Officer sign in")
     st.write("Review the question, verify source evidence, and approve the exact response the farmer will receive.")
     if not st.session_state.get('officer_token'):
         with st.form('officer_signin', clear_on_submit=True):
+            st.subheader("Secure access for extension officers")
             token = st.text_input("Officer sign in token", type="password", key="officer_token_input",
                 help="Use the officer credential issued by the operator. A farmer case access token cannot sign in here.")
-            submitted = st.form_submit_button("Sign in", key="officer_signin_submit")
+            submitted = st.form_submit_button("Sign in", key="officer_signin_submit", type="primary")
         st.caption("Paste the officer token issued by your operator. A farmer case access token cannot sign in here. Do not include quotes or a Bearer prefix; the token stays masked.")
         if submitted:
             status, queue = request("GET", "/officer/queue", headers=auth_headers(token))
