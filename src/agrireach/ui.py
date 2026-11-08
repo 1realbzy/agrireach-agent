@@ -329,7 +329,6 @@ STATES = {
 def farmer_screen():
     st.title("Advice for your next step")
     st.write("Ask an agricultural question. An extension officer checks the advice before you receive it.")
-    st.caption("This pilot uses Ghanaian source material and locations. It is not validated Kenyan farming guidance.")
     with st.container(border=True):
         st.subheader("1 · Ask a question")
         with st.form('farmer_submit'):
@@ -346,18 +345,18 @@ def farmer_screen():
                     st.session_state['farmer_case_token'] = data['access_token']
                     st.session_state['farmer_lookup_id'] = data['case_id']
                     st.session_state['farmer_lookup_token'] = data['access_token']
-                    st.success(f"Case {data['case_id']} created. Keep your private access token to check the answer.")
+                    st.success(f"We received your question. Your question number is {data['case_id']}. Keep your private code to check your answer.")
                     if data.get('clarification'):
                         st.info(data['clarification'])
                 else:
                     show_result(status, data)
     with st.container(border=True):
         st.subheader("2 · Check your answer")
-        st.caption("Save your case number and private token before closing this browser. This token opens only your case; it is not an officer sign-in token.")
+        st.caption("Keep your question number and private code. You will need both to see your answer later.")
         st.session_state.setdefault('farmer_lookup_id', st.session_state.get('farmer_case_id', 1))
         st.session_state.setdefault('farmer_lookup_token', st.session_state.get('farmer_case_token', ''))
-        cid = st.number_input("Check case number", min_value=1, step=1, key="farmer_lookup_id")
-        access_token = st.text_input("Case access token", type="password", key="farmer_lookup_token")
+        cid = st.number_input("Question number", min_value=1, step=1, key="farmer_lookup_id")
+        access_token = st.text_input("Private access code", type="password", key="farmer_lookup_token")
         if st.button("Check answer", key="farmer_check"):
             status, data = request("GET", f"/farmer/cases/{cid}", headers={"X-Case-Access-Token": access_token.strip()})
             if status == 200:
@@ -366,48 +365,14 @@ def farmer_screen():
                     st.caption('Delivery: ' + data['delivery_status'].replace('_', ' '))
                 if data.get('answer'):
                     st.success(data['answer'])
-                    st.caption('Human approval verified by the service.')
+                    st.caption('An extension officer has checked this answer.')
             elif status == 404:
-                st.error("Case not found or private access token incorrect. Check both and try again.")
+                st.error("We could not find your question. Check your question number and private code.")
             else:
                 st.error("Unable to check the answer. Please try again shortly.")
 
 
-def voice_screen():
-    st.title("Voice note simulator")
-    st.warning("Local simulator only · Not a live phone service")
-    st.write("Upload a synthetic recording or type a message to exercise channel intake and consent. Audio transcription requires separately configured faster-whisper models; spoken replies require Piper and officer script approval.")
-    st.caption("Unavailable speech processing is flagged for officer listening; a successful upload does not prove transcription. Local language recognition and Kenyan guidance have not been validated.")
-    sender = st.text_input("Simulated sender", "sim:farmer-1", key="voice_sender")
-    clip = st.file_uploader("Voice note", type=["wav", "ogg", "mp3", "m4a"], key="voice_clip")
-    typed = st.text_input("Or type a question", key="voice_text")
-    if st.button("Send to AgriReach", key="voice_send"):
-        if not sender.startswith('sim:'):
-            st.error("Use a synthetic sender beginning with sim:.")
-        elif not clip and not typed.strip():
-            st.warning("Upload a recording or type a message first.")
-        else:
-            with st.spinner("Processing simulator intake…"):
-                status, data = request("POST", "/channels/simulator/inbound", data={"sender": sender, "text": typed},
-                    files={"audio": (clip.name, clip.getvalue())} if clip else None)
-            if status == 200:
-                st.info('Simulator state: ' + data.get('status', 'received').replace('_', ' '))
-                if data.get('case_id'):
-                    st.caption(f"Case {data['case_id']} created for officer review.")
-            else:
-                show_result(status, data)
-    if st.button("Show messages", key="voice_messages"):
-        status, data = request("GET", "/channels/simulator/outbox", params={"sender": sender})
-        if status == 200:
-            if not data:
-                st.info("No simulator messages yet.")
-            for message in data:
-                st.info(message['text'])
-        else:
-            show_result(status, data)
-
-
-def main():
+def main(role="farmer"):
     st.set_page_config(page_title="AgriReach · Reviewed agricultural advice", page_icon="🌱", layout="wide")
     st.markdown("""<style>
     .stApp { background: #f6f8f2; color: #173b2c; }
@@ -416,25 +381,19 @@ def main():
     [data-testid="stCaptionContainer"] { opacity: 1 !important; }
     [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: #4c6255 !important; }
     h1,h2,h3 { color: #173b2c; letter-spacing: -.025em; }
-    .stButton>button, .stFormSubmitButton>button { border-radius: 8px; border-color: #507447; }
+    .stButton>button, .stFormSubmitButton>button { min-height: 48px; border-radius: 8px; border-color: #507447; }
     @media(max-width:640px) { .block-container { padding: 4.5rem 1rem 1rem; } }
     </style>""", unsafe_allow_html=True)
-    with st.sidebar:
-        st.title("🌱 AgriReach")
-        st.caption("SOURCE EVIDENCE · HUMAN REVIEW")
+    st.markdown("### 🌱 AgriReach")
     status, health = request("GET", "/health")
     if status != 200:
         st.warning("The service is unavailable. Try again shortly.")
-    elif health.get('draft_mode') == 'stub':
-        st.caption("OFFLINE DEMONSTRATION · No language model inference · Human approval required")
+    elif role == 'officer' and health.get('draft_mode') == 'stub':
+        st.info("Demonstration advice: prepared from saved sources. No AI model is connected.")
+    if role == 'officer':
+        officer_screen()
     else:
-        st.caption("MODEL DRAFTING · Human approval required before release")
-    page = st.navigation([
-        st.Page(farmer_screen, title="Farmer", url_path="farmer", default=True),
-        st.Page(officer_screen, title="Extension officer", url_path="officer"),
-        st.Page(voice_screen, title="Voice simulator", url_path="voice"),
-    ])
-    page.run()
+        farmer_screen()
 
 
 if __name__ == "__main__":
