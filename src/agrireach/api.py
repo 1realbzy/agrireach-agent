@@ -174,7 +174,8 @@ async def supplement(case_id: int, body: Supplement, x_case_access_token: str | 
         raise HTTPException(409, "stale_revision: reload the case")
     stored = db._open_clarification(row)
     replies = stored["replies"] + [body.text]
-    crop, region, clar = agent.clarification_gap(row["question"], replies)
+    crop, region, clar = agent.clarification_gap(
+        row["question"], replies, crop=row["crop"] or "", region=row["region"] or "")
     if clar:
         try:
             updated = db.continue_clarification(con, case_id, expected_revision=body.expected_revision,
@@ -185,7 +186,7 @@ async def supplement(case_id: int, body: Supplement, x_case_access_token: str | 
                 "revision": updated["revision"], "message": AWAITING_FARMER}
     try:
         out = await agent.run(row["question"], crop=crop, region=region, case_id=case_id,
-                              expected_revision=body.expected_revision)
+                              expected_revision=body.expected_revision, farmer_replies=replies)
     except Exception as exc:
         if _revision_conflict(exc):
             raise HTTPException(409, "stale_revision: reload the case")

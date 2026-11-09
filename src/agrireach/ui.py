@@ -326,6 +326,18 @@ STATES = {
 }
 
 
+def _clear_supplement():
+    """Drop the reply target so a later question cannot post to an older case."""
+    for key in ("farmer_supplement_case", "farmer_supplement_revision", "farmer_supplement_token"):
+        st.session_state.pop(key, None)
+
+
+def _bind_supplement(case_id, revision, token):
+    st.session_state['farmer_supplement_case'] = case_id
+    st.session_state['farmer_supplement_revision'] = revision
+    st.session_state['farmer_supplement_token'] = token
+
+
 def farmer_screen():
     st.title("Advice for your next step")
     st.write("Ask an agricultural question. An extension officer checks the advice before you receive it.")
@@ -347,11 +359,11 @@ def farmer_screen():
                     st.session_state['farmer_lookup_token'] = data['access_token']
                     st.success(f"We received your question. Your question number is {data['case_id']}. Keep your private code to check your answer.")
                     if data.get('clarification'):
-                        st.session_state['farmer_supplement_case'] = data['case_id']
-                        st.session_state['farmer_supplement_revision'] = data.get('revision')
-                        st.session_state['farmer_supplement_token'] = data['access_token']
+                        _bind_supplement(data['case_id'], data.get('revision'), data['access_token'])
                         st.info(data.get('message') or 'Awaiting your information before an officer can review this.')
                         st.write(data['clarification'])
+                    else:
+                        _clear_supplement()
                 else:
                     show_result(status, data)
     with st.container(border=True):
@@ -365,13 +377,11 @@ def farmer_screen():
             status, data = request("GET", f"/farmer/cases/{cid}", headers={"X-Case-Access-Token": access_token.strip()})
             if status == 200:
                 if data.get('clarification'):
-                    st.session_state['farmer_supplement_case'] = int(cid)
-                    st.session_state['farmer_supplement_revision'] = data.get('revision')
-                    st.session_state['farmer_supplement_token'] = access_token.strip()
+                    _bind_supplement(int(cid), data.get('revision'), access_token.strip())
                     st.info(data.get('message') or 'Awaiting your information before an officer can review this.')
                     st.write(data['clarification'])
                 else:
-                    st.session_state.pop('farmer_supplement_revision', None)
+                    _clear_supplement()
                     st.info(STATES.get(data['status'], 'Your case is being reviewed.'))
                     if data.get('delivery_status'):
                         st.caption('Delivery: ' + data['delivery_status'].replace('_', ' '))
@@ -379,22 +389,26 @@ def farmer_screen():
                         st.success(data['answer'])
                         st.caption('An extension officer has checked this answer.')
             elif status == 404:
+                _clear_supplement()
                 st.error("We could not find your question. Check your question number and private code.")
             else:
+                _clear_supplement()
                 st.error("Unable to check the answer. Please try again shortly.")
-        if st.session_state.get('farmer_supplement_revision'):
+        supplement_case = st.session_state.get('farmer_supplement_case')
+        if st.session_state.get('farmer_supplement_revision') and supplement_case:
             with st.form('farmer_supplement'):
+                st.caption(f"This detail is for question {supplement_case}.")
                 reply = st.text_input('Add the missing detail', key='farmer_supplement_text')
                 if st.form_submit_button('Send details', key='farmer_supplement_button'):
-                    status, data = request('POST', f"/farmer/cases/{st.session_state['farmer_supplement_case']}/supplement",
+                    status, data = request('POST', f"/farmer/cases/{supplement_case}/supplement",
                                            headers={'X-Case-Access-Token': st.session_state['farmer_supplement_token']},
                                            json={'text': reply, 'expected_revision': st.session_state['farmer_supplement_revision']})
                     if status == 200 and data.get('clarification'):
-                        st.session_state['farmer_supplement_revision'] = data.get('revision')
+                        _bind_supplement(supplement_case, data.get('revision'), st.session_state['farmer_supplement_token'])
                         st.info(data.get('message') or 'Awaiting your information before an officer can review this.')
                         st.write(data['clarification'])
                     elif status == 200:
-                        st.session_state.pop('farmer_supplement_revision', None)
+                        _clear_supplement()
                         st.success(data.get('message') or 'Your question was sent to an extension officer for review.')
                     else:
                         show_result(status, data)

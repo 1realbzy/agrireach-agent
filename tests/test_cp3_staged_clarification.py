@@ -163,6 +163,193 @@ def test_concurrent_supplements_promote_the_draft_once():
     assert view(case_id, token).json()["answer"] is None
 
 
+MARKER = "the field is flooded [synthetic marker]"
+NEWER = "the field is dry [newer marker]"
+
+
+def test_supplement_keeps_the_farmers_words_for_generation_and_the_officer(monkeypatch):
+    seen = []
+    from agrireach import llm
+    real = llm.draft
+
+    def spy(question, passages, notes, conflicts=None, feedback=None):
+        seen.append(question)
+        return real(question, passages, notes, conflicts=conflicts, feedback=feedback)
+
+    monkeypatch.setattr(llm, "draft", spy)
+    opened = ask("When should I plant soybean?")
+    body = view(opened["case_id"], opened["access_token"]).json()
+    done = supplement(opened["case_id"], opened["access_token"], f"Tamale; {MARKER}", body["revision"])
+    assert done.status_code == 200, done.text
+    stored = db.get_case(db.connect(), opened["case_id"])
+    visible = c.get(f"/officer/cases/{opened['case_id']}", headers=officer()).json()
+    assert stored["question"] == "When should I plant soybean?"
+    assert stored["crop"] == "soybean" and stored["region"] == "tamale"
+    assert seen and MARKER in seen[0] and "When should I plant soybean?" in seen[0]
+    assert MARKER in (stored["draft"] or "")
+    assert MARKER in json.dumps(visible["farmer_draft"]["replies"])
+    assert visible["question"] == "When should I plant soybean?"
+    logs = db.connect().execute("SELECT tool, args, result_summary FROM tool_log WHERE tool='model_usage'").fetchall()
+    assert all(MARKER not in (row["args"] or "") and MARKER not in (row["result_summary"] or "") for row in logs)
+
+
+def test_paused_generation_cannot_overwrite_a_newer_supplement(monkeypatch):
+    """A has claimed the draft, B then claims a newer supplement, and A must not file afterwards."""
+    from agrireach import agent
+    original = agent.Tools.call
+    releases = []
+    ready = threading.Condition()
+
+    async def pause_after_intake(self, name, args):
+        result = await original(self, name, args)
+        if name == "create_or_update_case" and args.get("require_draft") and not args.get("draft"):
+            event = threading.Event()
+            with ready:
+                releases.append(event)
+                ready.notify_all()
+            assert event.wait(15), "paused generation was not released"
+        return result
+
+    monkeypatch.setattr(agent.Tools, "call", pause_after_intake)
+    opened = ask("When should I plant soybean?")
+    case_id, token = opened["case_id"], opened["access_token"]
+    revision = view(case_id, token).json()["revision"]
+    outcome = {}
+
+    def send(name, text, expected):
+        outcome[name] = supplement(case_id, token, text, expected)
+
+    stale = threading.Thread(target=send, args=("stale", f"Tamale; {MARKER}", revision))
+    stale.start()
+    with ready:
+        while len(releases) < 1:
+            assert ready.wait(15), "first intake did not pause"
+    bumped = db.get_case(db.connect(), case_id)
+    newer = threading.Thread(target=send, args=("newer", f"Yendi; {NEWER}", bumped["revision"]))
+    newer.start()
+    with ready:
+        while len(releases) < 2:
+            assert ready.wait(15), "second intake did not pause"
+    releases[0].set()
+    stale.join(20)
+    releases[1].set()
+    newer.join(20)
+    assert outcome["stale"].status_code == 409, outcome["stale"].text
+    assert outcome["newer"].status_code == 200, outcome["newer"].text
+    stored = db.get_case(db.connect(), case_id)
+    visible = c.get(f"/officer/cases/{case_id}", headers=officer()).json()
+    assert stored["status"] == "pending_review" and stored["question"] == "When should I plant soybean?"
+    assert stored["region"] == "yendi"
+    assert NEWER in (stored["draft"] or "") and MARKER not in (stored["draft"] or "")
+    assert NEWER in json.dumps(visible) and MARKER not in json.dumps(visible["draft"])
+    assert view(case_id, token).json()["answer"] is None
+
+
+def test_crash_after_intake_retries_on_the_refreshed_revision_not_the_old_one(monkeypatch):
+    from agrireach import agent
+    original = agent.Tools.call
+
+    async def crash_after_intake(self, name, args):
+        result = await original(self, name, args)
+        if name == "create_or_update_case" and args.get("require_draft") and not args.get("draft"):
+            raise RuntimeError("injected crash after intake")
+        return result
+
+    monkeypatch.setattr(agent.Tools, "call", crash_after_intake)
+    opened = ask("When should I plant soybean?")
+    case_id, token = opened["case_id"], opened["access_token"]
+    original_revision = view(case_id, token).json()["revision"]
+    quiet = TestClient(app, raise_server_exceptions=False)
+    crashed = quiet.post(
+        f"/farmer/cases/{case_id}/supplement",
+        headers={"X-Case-Access-Token": token},
+        json={"text": f"Tamale; {MARKER}", "expected_revision": original_revision},
+    )
+    assert crashed.status_code >= 500, crashed.text
+    mid = db.get_case(db.connect(), case_id)
+    assert mid["status"] == "draft" and mid["question"] == "When should I plant soybean?"
+    assert mid["revision"] != original_revision
+    assert view(case_id, token).json()["answer"] is None
+    monkeypatch.setattr(agent.Tools, "call", original)
+    stale = supplement(case_id, token, f"Tamale; {MARKER}", original_revision)
+    assert stale.status_code == 409
+    assert db.get_case(db.connect(), case_id)["status"] == "draft"
+    refreshed = view(case_id, token).json()["revision"]
+    done = supplement(case_id, token, f"Tamale; {MARKER}", refreshed)
+    assert done.status_code == 200, done.text
+    stored = db.get_case(db.connect(), case_id)
+    assert stored["status"] == "pending_review" and stored["question"] == "When should I plant soybean?"
+    assert stored["region"] == "tamale" and MARKER in (stored["draft"] or "")
+    assert view(case_id, token).json()["answer"] is None
+
+
+def test_stored_explicit_crop_is_not_requested_again():
+    response = c.post("/ask", json={"question": "When should I plant?", "crop": "soybean"})
+    assert response.status_code == 200, response.text
+    opened = response.json()
+    assert "district" in opened["clarification"].lower() or "region" in opened["clarification"].lower()
+    assert "which crop" not in opened["clarification"].lower()
+    body = view(opened["case_id"], opened["access_token"]).json()
+    done = supplement(opened["case_id"], opened["access_token"], "Tamale", body["revision"])
+    assert done.status_code == 200, done.text
+    finished = done.json()
+    assert finished["status"] == "pending_review" and finished.get("clarification") in (None, "")
+    stored = db.get_case(db.connect(), opened["case_id"])
+    assert stored["question"] == "When should I plant?"
+    assert stored["crop"] == "soybean" and stored["region"] == "tamale"
+
+
+def _widget_keys(app, kind):
+    return [widget.key for widget in getattr(app, kind)]
+
+
+def test_farmer_screen_drops_a_stale_supplement_target(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    from streamlit import env_util
+    monkeypatch.setattr(env_util, "is_repl", lambda: False)
+    seen = []
+
+    def backend(method, url, **kwargs):
+        seen.append((method, url, kwargs.get("json")))
+        if url.endswith("/health"):
+            return __import__("httpx").Response(200, json={"draft_mode": "stub"})
+        if url.endswith("/farmer/cases/7") and method == "GET":
+            return __import__("httpx").Response(200, json={
+                "case_id": 7, "status": "draft", "answer": None, "revision": 2,
+                "clarification": "Which district or region is your farm in? Planting guidance differs by region.",
+                "message": "Awaiting your information before an officer can review this."})
+        if url.endswith("/farmer/cases/9") and method == "GET":
+            return __import__("httpx").Response(404, json={"detail": "not found"})
+        if url.endswith("/ask") and method == "POST":
+            return __import__("httpx").Response(200, json={
+                "case_id": 8, "access_token": "new-token", "status": "pending_review",
+                "clarification": None, "message": "Your question was sent to an extension officer for review."})
+        if url.endswith("/supplement"):
+            return __import__("httpx").Response(500, json={"detail": "stale target"})
+        return __import__("httpx").Response(200, json={"draft_mode": "stub"})
+
+    monkeypatch.setattr(__import__("httpx"), "request", backend)
+
+    def open_clarification():
+        screen = AppTest.from_string("from agrireach.ui import farmer_screen\nfarmer_screen()", default_timeout=20).run()
+        screen.number_input(key="farmer_lookup_id").set_value(7)
+        screen.text_input(key="farmer_lookup_token").set_value("farmer-token")
+        screen.button(key="farmer_check").click().run()
+        assert "farmer_supplement_button" in _widget_keys(screen, "button")
+        return screen
+
+    invalid = open_clarification()
+    invalid.number_input(key="farmer_lookup_id").set_value(9)
+    invalid.text_input(key="farmer_lookup_token").set_value("wrong-token")
+    invalid.button(key="farmer_check").click().run()
+    assert "farmer_supplement_button" not in _widget_keys(invalid, "button")
+    submitted = open_clarification()
+    submitted.text_area(key="farmer_question").set_value("When should I harvest soybean in Tamale?")
+    submitted.button(key="farmer_submit_button").click().run()
+    assert "farmer_supplement_button" not in _widget_keys(submitted, "button")
+    assert not any(call[0] == "POST" and str(call[1]).endswith("/supplement") for call in seen)
+
+
 def test_farmer_screen_shows_the_clarification_and_sends_the_reply(monkeypatch):
     from streamlit.testing.v1 import AppTest
     from streamlit import env_util

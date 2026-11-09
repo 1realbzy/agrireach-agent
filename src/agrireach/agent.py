@@ -171,11 +171,16 @@ def _crop_pattern(crop: str) -> str:
     return r"soy(a)?bean" if crop == "soybean" else re.escape(crop)
 
 
-def clarification_gap(question: str, replies: list[str]) -> tuple[str, str, str]:
-    """Crop, region, and the next question still needed. Names come only from the farmer's own words."""
+def clarification_gap(question: str, replies: list[str], *, crop: str = "", region: str = "") -> tuple[str, str, str]:
+    """Crop, region, and the next question still needed.
+
+    Names come from the farmer's words. Crop and region already stored from the farmer's request are kept;
+    nothing is inferred from a model or from a passage.
+    """
     combined = " ".join([question, *replies]).lower()
-    crop = language.detect_crop(combined)
-    region = _detect_region(combined)
+    crop = language.detect_crop(combined) or (crop or "")
+    region = _detect_region(combined) or (region or "")
+    crop, region = crop.lower(), region.lower()
     covered = _crops_covered()
     uncovered = bool(crop and covered and crop not in covered)
     if not crop:
@@ -218,6 +223,8 @@ class S(TypedDict, total=False):
     queue: bool  # False: file_case leaves the case as 'draft' and the caller queues it (channels: with its contact)
     expected_revision: int
     require_draft: bool
+    farmer_replies: list
+    filing_revision: int
     conflicts: dict
     zone: dict
     zone_mismatch: bool
@@ -316,6 +323,7 @@ async def intake(s: S, tools: Tools) -> S:
     return {"crop": crop, "region": region, "urgent_reasons": reasons, "clarification": clar, "language": lang,
             "search_query": search_query, "case_id": case["case_id"], "notes": [], "errors": [],
             "received": case.get("created_at", ""), "region_from_text": region_from_text,
+            "filing_revision": case.get("revision"),
             "skip_retrieval": uncovered or not crop}
 
 async def retrieve(s: S, tools: Tools) -> S:
@@ -454,8 +462,9 @@ async def write(s: S, tools: Tools) -> S:
             try:
                 # Model calls are synchronous: run them off the event loop. On the loop they blocked every other
                 # farmer's run, whose MCP calls then timed out (live run 5: a case queued with no contact or ack).
-                text, used = await asyncio.to_thread(llm.draft, s["question"], s["passages"], notes, conflicts=conflicts,
-                                                     feedback=feedback)
+                # The case question stays unchanged. Farmer replies are context for this draft only.
+                text, used = await asyncio.to_thread(llm.draft, _generation_question(s), s["passages"], notes,
+                                                     conflicts=conflicts, feedback=feedback)
             except Exception as e:
                 text, used = llm.stub_draft(s["question"], s["passages"], notes + [f"LLM call failed: {e}"]), "stub(llm-error)"
             # Only the code-built stub has trusted "Note:" lines (system notes such as an error message). A model
@@ -500,12 +509,32 @@ async def write(s: S, tools: Tools) -> S:
             text = f"{caution}\n\n{text}"
     if s.get("officer_facts"):  # code-built facts (date vs windows, rainfall), after the checks like the caution
         text = text.rstrip() + "\n\n" + "\n".join(s["officer_facts"])
+    supplied = [f"{OFFICER_FACT} Farmer supplied: {item}" for item in _farmer_replies(s)]
+    if supplied:  # kept out of the farmer proposal; the officer still sees the farmer's own words
+        text = text.rstrip() + "\n\n" + "\n".join(supplied)
     return {"draft": text, "draft_mode": used, "citation_check": check,
             "urgent_reasons": sorted(set(reasons), key=reasons.index)}
+
+def _farmer_replies(s: S) -> list[str]:
+    return [item.strip() for item in (s.get("farmer_replies") or []) if isinstance(item, str) and item.strip()]
+
+
+def _generation_question(s: S) -> str:
+    """Draft against the original question plus the farmer's later words. Does not rewrite the stored question."""
+    replies = _farmer_replies(s)
+    if not replies:
+        return s["question"]
+    return s["question"].rstrip() + "\n\nFarmer added:\n" + "\n".join(replies)
+
 
 async def file_case(s: S, tools: Tools) -> S:
     """Adds officer-only notes, proposes the farmer-facing text (checked against the case's passages), sets priority
     and files the case for review with the MCP action tool. Writes status and farmer_draft."""
+    from agrireach import db
+    if s.get("require_draft"):
+        current = db.get_case(db.connect(), s["case_id"])
+        if current is None or current["status"] != "draft" or current["revision"] != s.get("filing_revision"):
+            raise db.GateError("stale_revision: reload the case")
     reasons = s["urgent_reasons"]
     conflicts = any(n.startswith("Sources give different figures") for n in s.get("notes", []))
     # Keyed on the zone_mismatch flag, not on the caution's wording.
@@ -515,9 +544,6 @@ async def file_case(s: S, tools: Tools) -> S:
     fd = await asyncio.to_thread(  # model SMS rewrite and judge calls: off the event loop (see write)
         farmer_reply.propose, officer_text, s["question"], s.get("language", "en"), conflicts=conflicts,
         zone_caveat=caveat, passages=s.get("passages") or [])
-    from agrireach import db
-    db.log(db.connect(), "agent", "farmer_text_proposal",
-           *farmer_reply.audit_entry(fd, draft_mode=s.get("draft_mode") or ""), case_id=s["case_id"])
     if fd.text and (go := rainfall.draft_problems(fd.text)):
         # Never "rains are good, plant now" in the SMS: withhold it and let the officer write it.
         fd.text, fd.needs_officer_text = "", True
@@ -526,13 +552,20 @@ async def file_case(s: S, tools: Tools) -> S:
         fd.problems = list(fd.problems) + [s["season_prompt"]]
     # season_prompt is stored with the proposal so a re-proposed SMS (api.py) keeps the prompt.
     stored = asdict(fd) | ({"season_prompt": s["season_prompt"]} if s.get("season_prompt") else {})
+    replies = _farmer_replies(s)
+    if replies:
+        stored["replies"] = replies
     filing = {
         "status": "pending_review" if s.get("queue", True) else "draft", "case_id": s["case_id"], "draft": s["draft"],
         "source_ids": [p["id"] for p in s["passages"]], "priority": "urgent" if reasons else "routine",
         "urgent_reasons": reasons, "farmer_draft": json.dumps(stored, ensure_ascii=False)}
+    if s.get("filing_revision"):
+        filing["expected_revision"] = s["filing_revision"]
     if s.get("require_draft"):
         filing["require_draft"] = True
     r = await tools.call("create_or_update_case", filing)
+    db.log(db.connect(), "agent", "farmer_text_proposal",
+           *farmer_reply.audit_entry(fd, draft_mode=s.get("draft_mode") or ""), case_id=s["case_id"])
     return {"status": r["status"], "farmer_draft": stored}
 
 async def clarify(s: S, tools: Tools) -> S:
@@ -573,7 +606,8 @@ def build_graph(tools: Tools):
 
 async def run(question: str, crop: str = "", region: str = "", use_fetch: bool | None = None,
               extra_urgent_reasons: list[str] | None = None, queue: bool = True, inbound_claim: dict | None = None,
-              case_id: int | None = None, expected_revision: int | None = None) -> dict:
+              case_id: int | None = None, expected_revision: int | None = None,
+              farmer_replies: list[str] | None = None) -> dict:
     """extra_urgent_reasons: reasons found before the agent ran (e.g. an unreliable voice-note transcript).
     queue=False: the case is filed as 'draft' (not in the officer queue); the caller queues it, e.g. a channel saves
     the farmer's contact and queues the case in one transaction (db.queue_with_contact)."""
@@ -596,6 +630,8 @@ async def run(question: str, crop: str = "", region: str = "", use_fetch: bool |
         calls = llm.start_usage()
         state = {"question": question, "crop": crop, "region": region,
                  "extra_urgent_reasons": list(extra_urgent_reasons or []), "queue": queue, "inbound_claim": inbound_claim}
+        if farmer_replies:
+            state["farmer_replies"] = list(farmer_replies)
         if case_id is not None:
             state |= {"case_id": case_id, "expected_revision": expected_revision or 0, "require_draft": True}
         out = await graph.ainvoke(state)

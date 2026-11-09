@@ -152,28 +152,35 @@ def agent_upsert_case(con, *, status: str, question: str = "", case_id: int | No
              json.dumps(urgent_reasons or []), status, t, t))
         con.commit()
         return cur.lastrowid
-    row = get_case(con, case_id)
-    if row is None:
-        raise ValueError(f"case {case_id} not found")
-    if row["status"] not in AGENT_STATUSES:
-        log(con, "agent", "create_or_update_case", {"case_id": case_id},
-            f"BLOCKED: case already '{row['status']}' (officer-owned)", ok=False, case_id=case_id)
-        raise GateError(f"case {case_id} is '{row['status']}' and can no longer be changed by the agent")
-    if require_draft and row["status"] != "draft":
-        raise GateError("Case is not waiting for farmer information")
-    if expected_revision is not None and expected_revision != row["revision"]:
-        raise GateError("stale_revision: reload the case")
-    cur = con.execute(
-        "UPDATE cases SET crop=?, region=?, draft=COALESCE(?,draft), farmer_draft=COALESCE(?,farmer_draft), sources=?, priority=?,"
-        " urgent_reasons=?, status=?, updated_at=?, revision=revision+1 WHERE id=? AND revision=?"
-        + (" AND status='draft'" if require_draft else ""),
-        (crop or row["crop"], region or row["region"], draft, farmer_draft,
-         json.dumps(sources if sources is not None else json.loads(row["sources"])), priority,
-         json.dumps(urgent_reasons or []), status, t, case_id, row["revision"]))
-    if cur.rowcount != 1:
+    blocked_status = None
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute("SELECT * FROM cases WHERE id=?", (case_id,)).fetchone()
+        if row is None:
+            raise ValueError(f"case {case_id} not found")
+        if row["status"] not in AGENT_STATUSES:
+            blocked_status = row["status"]
+            raise GateError(f"case {case_id} is '{row['status']}' and can no longer be changed by the agent")
+        if require_draft and row["status"] != "draft":
+            raise GateError("Case is not waiting for farmer information")
+        if expected_revision is not None and expected_revision != row["revision"]:
+            raise GateError("stale_revision: reload the case")
+        cur = con.execute(
+            "UPDATE cases SET crop=?, region=?, draft=COALESCE(?,draft), farmer_draft=COALESCE(?,farmer_draft), sources=?, priority=?,"
+            " urgent_reasons=?, status=?, updated_at=?, revision=revision+1 WHERE id=? AND revision=?"
+            + (" AND status='draft'" if require_draft else ""),
+            (crop or row["crop"], region or row["region"], draft, farmer_draft,
+             json.dumps(sources if sources is not None else json.loads(row["sources"])), priority,
+             json.dumps(urgent_reasons or []), status, t, case_id, row["revision"]))
+        if cur.rowcount != 1:
+            raise GateError("stale_revision: case changed during agent update")
+        con.commit()
+    except BaseException:
         con.rollback()
-        raise GateError("stale_revision: case changed during agent update")
-    con.commit()
+        if blocked_status is not None:
+            log(con, "agent", "create_or_update_case", {"case_id": case_id},
+                f"BLOCKED: case already '{blocked_status}' (officer-owned)", ok=False, case_id=case_id)
+        raise
     return case_id
 
 
