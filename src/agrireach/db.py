@@ -97,10 +97,15 @@ def connect(path: str | None = None) -> sqlite3.Connection:
     return con
 
 
-def log(con, actor: str, tool: str, args: dict, summary: str, ok: bool = True, case_id: int | None = None, *, commit: bool = True):
+def log(con, actor: str, tool: str, args: dict, summary: str, ok: bool = True, case_id: int | None = None, *,
+        commit: bool = True, args_limit: int | None = 2000):
+    """args_limit None stores the whole JSON. The default slice stays for ordinary tool rows."""
+    encoded = json.dumps(args, ensure_ascii=False)
+    if args_limit is not None:
+        encoded = encoded[:args_limit]
     con.execute(
         "INSERT INTO tool_log(ts,case_id,actor,tool,args,result_summary,ok) VALUES (?,?,?,?,?,?,?)",
-        (now(), case_id, actor, tool, json.dumps(args, ensure_ascii=False)[:2000], summary[:2000], int(ok)),
+        (now(), case_id, actor, tool, encoded, summary[:2000], int(ok)),
     )
     if commit:
         con.commit()

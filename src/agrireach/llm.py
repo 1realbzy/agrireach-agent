@@ -14,6 +14,10 @@ _usage: contextvars.ContextVar[list | None] = contextvars.ContextVar("agrireach_
 # The OpenAI client defaults to two hidden HTTP retries inside one create(); those are not separate records.
 _attempt: contextvars.ContextVar[int | None] = contextvars.ContextVar("agrireach_model_attempt", default=None)
 _ENTRY_KEYS = ("role", "model", "ok", "error", "prompt_tokens", "completion_tokens", "cost_usd", "attempt")
+# Longer than the longest catalog model id (56) and the longest chat-client error class (30).
+# model_usage rows are not passed through the shared 2000-character tool-log slice.
+_MODEL_CHARS = 256
+_ERROR_CHARS = 64
 
 
 def max_tokens(role: str) -> int:
@@ -81,10 +85,31 @@ def log_usage(case_id, calls: list, actor: str = "agent", path: str | None = Non
     if calls and case_id:
         from agrireach import db
         cost = "unknown" if summary["cost_usd"] is None else f"${summary['cost_usd']}"
-        db.log(db.connect(), actor, "model_usage", summary | ({"path": path} if path else {}),
+        payload = summary | ({"path": path} if path else {})
+        db.log(db.connect(), actor, "model_usage", _bounded_usage(payload),
                f"{summary['calls']} of {summary['attempted']} model calls succeeded, cost {cost}",
-               ok=not summary["failed"], case_id=case_id)
+               ok=not summary["failed"], case_id=case_id, args_limit=None)
     return summary
+
+
+def _clip(value: str | None, limit: int) -> str | None:
+    if value is None or len(value) <= limit:
+        return value
+    return value[:limit]
+
+
+def _bounded_usage(payload: dict) -> dict:
+    """Keep a model-usage row complete for real model ids and error classes, and bounded past that."""
+    entries = []
+    shortened = False
+    for entry in payload.get("entries") or []:
+        model, error = entry.get("model"), entry.get("error")
+        clipped_model, clipped_error = _clip(model, _MODEL_CHARS), _clip(error, _ERROR_CHARS)
+        shortened = shortened or clipped_model != model or clipped_error != error
+        entries.append(entry | {"model": clipped_model, "error": clipped_error})
+    errors = [_clip(error, _ERROR_CHARS) for error in payload.get("errors") or []]
+    shortened = shortened or errors != list(payload.get("errors") or [])
+    return payload | {"entries": entries, "errors": errors, "identifiers_complete": not shortened}
 
 
 @contextlib.contextmanager
@@ -106,21 +131,37 @@ def usage_summary(calls: list) -> dict:
     Failed requests stay in entries with cost_usd None. They are not added to the total as 0, and a known success
     price is kept (the total is then only the reported successes)."""
     recorded = list(calls)
-    by_role: dict = {}
     failed = [c for c in recorded if c.get("ok") is False]
-    calls = [c for c in recorded if c.get("ok") is not False]
-    for c in calls:
-        r = by_role.setdefault(c["role"], {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0})
-        r["calls"] += 1
-        r["prompt_tokens"] += c["prompt_tokens"] or 0
-        r["completion_tokens"] += c["completion_tokens"] or 0
-    costs = [c["cost_usd"] for c in calls]
-    # `calls` here are successes only. A failed request keeps cost_usd None in entries and is not added as 0.
-    # cost_usd remains the sum of reported success costs so an unknown failure does not erase a known price.
-    return {"attempted": len(calls) + len(failed), "calls": len(calls), "failed": len(failed),
+    succeeded = [c for c in recorded if c.get("ok") is not False]
+    grouped: dict = {}
+    for entry in succeeded:
+        grouped.setdefault(entry["role"], []).append(entry)
+    by_role = {}
+    for role, group in grouped.items():
+        by_role[role] = {"calls": len(group),
+                         "prompt_tokens": _total(entry.get("prompt_tokens") for entry in group),
+                         "completion_tokens": _total(entry.get("completion_tokens") for entry in group)}
+    costs = [entry.get("cost_usd") for entry in succeeded]
+    # Success prices only. Unknown failure usage stays null in entries and is not added as 0.
+    # cost_usd remains that known sum so one unknown failure does not erase a reported price.
+    return {"attempted": len(succeeded) + len(failed), "calls": len(succeeded), "failed": len(failed),
             "errors": sorted({c["error"] for c in failed}), "by_role": by_role,
             "entries": [{key: entry.get(key) for key in _ENTRY_KEYS} for entry in recorded],
-            "cost_usd": round(sum(costs), 6) if costs and all(isinstance(x, (int, float)) for x in costs) else None}
+            "tokens_complete": all(_known_number(entry.get("prompt_tokens")) and _known_number(entry.get("completion_tokens"))
+                                   for entry in recorded),
+            "cost_complete": all(_known_number(entry.get("cost_usd")) for entry in recorded),
+            "cost_usd": round(sum(costs), 6) if costs and all(_known_number(cost) for cost in costs) else None}
+
+
+def _known_number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _total(values) -> int | float | None:
+    values = list(values)
+    if not values or any(not _known_number(value) for value in values):
+        return None
+    return sum(values)
 
 STUB_LABEL = "[OFFLINE STUB DRAFT - no language model was used; text is assembled from retrieved passages]"
 

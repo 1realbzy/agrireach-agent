@@ -62,6 +62,7 @@ def test_assess_records_the_judge_call_with_reported_usage(monkeypatch):
     assert entry == {"role": "judge", "model": "fake-judge", "ok": True, "error": None,
                      "prompt_tokens": 11, "completion_tokens": 4, "cost_usd": 0.0002, "attempt": None}
     assert recorded["cost_usd"] == 0.0002
+    assert recorded["tokens_complete"] is True and recorded["cost_complete"] is True
     blob = rows[0]["args"] + rows[0]["result_summary"]
     assert SECRET_TEXT not in blob and "Tamale" not in blob
 
@@ -94,6 +95,7 @@ def test_assess_timeout_records_the_error_class_and_unknown_usage(monkeypatch):
     assert recorded["path"] == "assess"
     assert recorded["failed"] == 1 and recorded["errors"] == ["TimeoutError"]
     assert recorded["cost_usd"] is None
+    assert recorded["tokens_complete"] is False and recorded["cost_complete"] is False
     entry = recorded["entries"][0]
     assert entry["ok"] is False and entry["error"] == "TimeoutError"
     assert entry["prompt_tokens"] is None and entry["completion_tokens"] is None and entry["cost_usd"] is None
@@ -135,5 +137,66 @@ def test_citation_retry_records_each_application_attempt(monkeypatch):
         (2, "draft", True, 0.0003), (2, "judge", True, 0.0005),
     ]
     assert recorded["cost_usd"] == 0.0016
+    assert recorded["tokens_complete"] is True and recorded["cost_complete"] is True
     assert SECRET_QUESTION not in rows[0]["args"]
     assert drafted["n"] == 2
+
+
+def test_missing_success_metadata_is_not_counted_as_zero():
+    case_id = db.agent_upsert_case(db.connect(), status="draft", question="metadata", crop="soybean", region="tamale")
+    calls = llm.start_usage()
+    llm.record_usage("draft", "known-model", SimpleNamespace(usage=SimpleNamespace()))
+    recorded = args_of_logged(case_id, calls)
+    entry = recorded["entries"][0]
+    assert entry["prompt_tokens"] is None and entry["completion_tokens"] is None and entry["cost_usd"] is None
+    assert recorded["by_role"]["draft"]["prompt_tokens"] is None
+    assert recorded["by_role"]["draft"]["completion_tokens"] is None
+    assert recorded["by_role"]["draft"]["calls"] == 1
+    assert recorded["tokens_complete"] is False and recorded["cost_complete"] is False
+    assert recorded["cost_usd"] is None
+
+
+def test_mixed_known_success_and_unknown_failure_stays_explicit():
+    case_id = db.agent_upsert_case(db.connect(), status="draft", question="mixed", crop="soybean", region="tamale")
+    calls = llm.start_usage()
+    llm.record_usage("judge", "known-model", response(0.0004, 120, 30))
+    calls.append({"role": "judge", "model": "known-model", "ok": False, "error": "TimeoutError",
+                  "prompt_tokens": None, "completion_tokens": None, "cost_usd": None, "attempt": None})
+    recorded = args_of_logged(case_id, calls)
+    assert recorded["cost_usd"] == 0.0004
+    assert recorded["by_role"]["judge"] == {"calls": 1, "prompt_tokens": 120, "completion_tokens": 30}
+    assert recorded["tokens_complete"] is False and recorded["cost_complete"] is False
+    assert recorded["entries"][1]["cost_usd"] is None and recorded["entries"][1]["prompt_tokens"] is None
+
+
+def test_longest_generation_record_and_overlong_row_stay_parseable():
+    """Six calls is the generation maximum: two draft attempts, each with a judge, then farmer text and its judge."""
+    catalog_model = "M" * 56  # longest id on the provider catalog checked for this checkpoint
+    client_error = "ContentFilterFinishReasonError"  # longest chat-client error class name, 30 characters
+    case_id = db.agent_upsert_case(db.connect(), status="draft", question="bounds", crop="soybean", region="tamale")
+    recorded = args_of_logged(case_id, _generation_calls(catalog_model, client_error))
+    assert len(json.dumps(recorded)) <= 2000
+    assert [item["model"] for item in recorded["entries"]] == [catalog_model] * 6
+    assert recorded["entries"][0]["error"] == client_error
+    assert [item["role"] for item in recorded["entries"]] == ["draft", "judge", "draft", "judge", "farmer_text", "judge"]
+    assert [item["attempt"] for item in recorded["entries"]] == [1, 1, 2, 2, None, None]
+
+    long_model = "M" * 160  # still a single model id, long enough that the old 2000-character slice cuts the JSON
+    case_id = db.agent_upsert_case(db.connect(), status="draft", question="bounds-long", crop="soybean", region="tamale")
+    recorded = args_of_logged(case_id, _generation_calls(long_model, client_error))
+    assert [item["model"] for item in recorded["entries"]] == [long_model] * 6
+    assert recorded["entries"][0]["error"] == client_error
+    assert "SECRET-QUESTION" not in json.dumps(recorded)
+
+
+def _generation_calls(model, error):
+    roles = ("draft", "judge", "draft", "judge", "farmer_text", "judge")
+    attempts = (1, 1, 2, 2, None, None)
+    return [{"role": role, "model": model, "ok": False, "error": error, "prompt_tokens": None,
+             "completion_tokens": None, "cost_usd": None, "attempt": attempt}
+            for role, attempt in zip(roles, attempts)]
+
+
+def args_of_logged(case_id, calls):
+    llm.log_usage(case_id, calls, actor="agent", path="generation")
+    return args_of(usage_rows(case_id)[-1])
