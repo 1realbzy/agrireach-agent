@@ -423,29 +423,34 @@ async def write(s: S, tools: Tools) -> S:
     attempts = []
     feedback = None
     text, used = "", ""
-    for _ in range(MAX_DRAFT_ATTEMPTS):
+    for attempt_number in range(1, MAX_DRAFT_ATTEMPTS + 1):
+        # attempt_number is the application retry (citation feedback), not an HTTP retry inside the client.
+        attempt_token = llm.begin_attempt(attempt_number)
         try:
-            # Model calls are synchronous: run them off the event loop. On the loop they blocked every other
-            # farmer's run, whose MCP calls then timed out (live run 5: a case queued with no contact or ack).
-            text, used = await asyncio.to_thread(llm.draft, s["question"], s["passages"], notes, conflicts=conflicts,
-                                                 feedback=feedback)
-        except Exception as e:
-            text, used = llm.stub_draft(s["question"], s["passages"], notes + [f"LLM call failed: {e}"]), "stub(llm-error)"
-        # Only the code-built stub has trusted "Note:" lines (system notes such as an error message). A model
-        # draft is checked in full, so it cannot slip an unchecked figure past the check behind "Note:".
-        skip = ("Note:", llm.STUB_LABEL) if used.startswith("stub") else ()
-        res = citation_check.check_draft(text, s["passages"], conflicts, ignore_prefixes=skip)
-        # Sentences without figures: named sources, agreement claims, lexical support, model judge (always on, fails closed).
-        # The code-built stub quotes passages verbatim, so it is not sent to the judge.
-        claims = await asyncio.to_thread(claim_check.check_claims, text, s["passages"], conflicts,  # judge call
-                                         ignore_prefixes=skip, judge=False if used.startswith("stub") else None)
-        problems = res.problems + claims.problems + rainfall.draft_problems(text)
-        attempts.append({"draft_mode": used, "ok": not problems, "problems": problems,
-                         "figures_checked": res.checked, "sentences_checked": claims.checked,
-                         **({"judge": {k: v for k, v in claims.judge.items() if k != "raw"}} if claims.judge else {})})
-        if not problems or used.startswith("stub") or claims.judge_failed:
-            break  # regenerating can't help when the source check itself couldn't run
-        feedback = problems
+            try:
+                # Model calls are synchronous: run them off the event loop. On the loop they blocked every other
+                # farmer's run, whose MCP calls then timed out (live run 5: a case queued with no contact or ack).
+                text, used = await asyncio.to_thread(llm.draft, s["question"], s["passages"], notes, conflicts=conflicts,
+                                                     feedback=feedback)
+            except Exception as e:
+                text, used = llm.stub_draft(s["question"], s["passages"], notes + [f"LLM call failed: {e}"]), "stub(llm-error)"
+            # Only the code-built stub has trusted "Note:" lines (system notes such as an error message). A model
+            # draft is checked in full, so it cannot slip an unchecked figure past the check behind "Note:".
+            skip = ("Note:", llm.STUB_LABEL) if used.startswith("stub") else ()
+            res = citation_check.check_draft(text, s["passages"], conflicts, ignore_prefixes=skip)
+            # Sentences without figures: named sources, agreement claims, lexical support, model judge (always on, fails closed).
+            # The code-built stub quotes passages verbatim, so it is not sent to the judge.
+            claims = await asyncio.to_thread(claim_check.check_claims, text, s["passages"], conflicts,  # judge call
+                                             ignore_prefixes=skip, judge=False if used.startswith("stub") else None)
+            problems = res.problems + claims.problems + rainfall.draft_problems(text)
+            attempts.append({"draft_mode": used, "ok": not problems, "problems": problems,
+                             "figures_checked": res.checked, "sentences_checked": claims.checked,
+                             **({"judge": {k: v for k, v in claims.judge.items() if k != "raw"}} if claims.judge else {})})
+            if not problems or used.startswith("stub") or claims.judge_failed:
+                break  # regenerating can't help when the source check itself couldn't run
+            feedback = problems
+        finally:
+            llm.end_attempt(attempt_token)
     check = {"ok": attempts[-1]["ok"], "attempts": attempts}
     if not check["ok"]:
         rejected = text

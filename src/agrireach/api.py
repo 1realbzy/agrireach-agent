@@ -254,7 +254,8 @@ def assess(case_id: int, body: FarmerText, officer: str = Depends(current_office
     row = db.get_case(con, case_id)
     if not row:
         raise HTTPException(404, "not found")
-    return approval.assess_candidate(body.farmer_text, approval.context(con, row))
+    with llm.usage_logged(case_id, f"officer:{officer}", "assess"):
+        return approval.assess_candidate(body.farmer_text, approval.context(con, row))
 
 
 @app.post("/cases/{case_id}/release")

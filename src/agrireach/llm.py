@@ -10,6 +10,10 @@ import os
 # Without max_tokens OpenRouter reserves the model's whole output window and can answer 402 on a small balance.
 MAX_TOKENS = {"draft": 800, "farmer_text": 400, "judge": 1500}
 _usage: contextvars.ContextVar[list | None] = contextvars.ContextVar("agrireach_usage", default=None)
+# App draft attempt (1, then 2). None for assess, approval, and the farmer-text rewrite.
+# The OpenAI client defaults to two hidden HTTP retries inside one create(); those are not separate records.
+_attempt: contextvars.ContextVar[int | None] = contextvars.ContextVar("agrireach_model_attempt", default=None)
+_ENTRY_KEYS = ("role", "model", "ok", "error", "prompt_tokens", "completion_tokens", "cost_usd", "attempt")
 
 
 def max_tokens(role: str) -> int:
@@ -28,11 +32,27 @@ def start_usage() -> list:
     return calls
 
 
+def begin_attempt(number: int):
+    """Mark the application draft attempt. Does not change the model request."""
+    return _attempt.set(number)
+
+
+def end_attempt(token) -> None:
+    _attempt.reset(token)
+
+
+def _call_record(role: str, model: str, *, ok: bool, error: str | None, prompt_tokens, completion_tokens, cost_usd) -> dict:
+    """One application invocation. Unknown tokens and cost stay None; a failed request is never priced at 0."""
+    return {"role": role, "model": model, "ok": ok, "error": error, "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens, "cost_usd": cost_usd, "attempt": _attempt.get()}
+
+
 def record_usage(role: str, model: str, response) -> dict:
     u = getattr(response, "usage", None)
-    entry = {"role": role, "model": model, "ok": True,
-             "prompt_tokens": getattr(u, "prompt_tokens", None), "completion_tokens": getattr(u, "completion_tokens", None),
-             "cost_usd": getattr(u, "cost", None) if u is not None else None}
+    entry = _call_record(
+        role, model, ok=True, error=None,
+        prompt_tokens=getattr(u, "prompt_tokens", None), completion_tokens=getattr(u, "completion_tokens", None),
+        cost_usd=getattr(u, "cost", None) if u is not None else None)
     calls = _usage.get()
     if calls is not None:
         calls.append(entry)
@@ -41,14 +61,15 @@ def record_usage(role: str, model: str, response) -> dict:
 
 def create(role: str, model: str, client, **kw):
     """client.chat.completions.create with the role's max_tokens, recording the attempt whether or not it succeeds
-    (a 402 or timeout is recorded as a failed call, then re-raised)."""
+    (a 402 or timeout is recorded as a failed call, then re-raised). One record is one application call. HTTP retries
+    made inside the client stay inside that call and are not listed separately."""
     try:
         r = client.chat.completions.create(model=model, max_tokens=max_tokens(role), **kw)
     except Exception as e:
         calls = _usage.get()
         if calls is not None:
-            calls.append({"role": role, "model": model, "ok": False, "error": type(e).__name__,
-                          "prompt_tokens": None, "completion_tokens": None, "cost_usd": None})
+            calls.append(_call_record(role, model, ok=False, error=type(e).__name__,
+                                      prompt_tokens=None, completion_tokens=None, cost_usd=None))
         raise
     record_usage(role, model, r)
     return r
@@ -80,18 +101,25 @@ def usage_logged(case_id, actor: str, path: str):
 
 
 def usage_summary(calls: list) -> dict:
-    """Totals for one run. cost_usd is the provider's own figure; None if it didn't report one for every call."""
+    """Totals for one run. cost_usd is the provider's own figure; None if a successful call did not report one.
+
+    Failed requests stay in entries with cost_usd None. They are not added to the total as 0, and a known success
+    price is kept (the total is then only the reported successes)."""
+    recorded = list(calls)
     by_role: dict = {}
-    failed = [c for c in calls if c.get("ok") is False]
-    calls = [c for c in calls if c.get("ok") is not False]
+    failed = [c for c in recorded if c.get("ok") is False]
+    calls = [c for c in recorded if c.get("ok") is not False]
     for c in calls:
         r = by_role.setdefault(c["role"], {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0})
         r["calls"] += 1
         r["prompt_tokens"] += c["prompt_tokens"] or 0
         r["completion_tokens"] += c["completion_tokens"] or 0
     costs = [c["cost_usd"] for c in calls]
+    # `calls` here are successes only. A failed request keeps cost_usd None in entries and is not added as 0.
+    # cost_usd remains the sum of reported success costs so an unknown failure does not erase a known price.
     return {"attempted": len(calls) + len(failed), "calls": len(calls), "failed": len(failed),
             "errors": sorted({c["error"] for c in failed}), "by_role": by_role,
+            "entries": [{key: entry.get(key) for key in _ENTRY_KEYS} for entry in recorded],
             "cost_usd": round(sum(costs), 6) if costs and all(isinstance(x, (int, float)) for x in costs) else None}
 
 STUB_LABEL = "[OFFLINE STUB DRAFT - no language model was used; text is assembled from retrieved passages]"
