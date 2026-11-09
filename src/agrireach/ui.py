@@ -347,7 +347,11 @@ def farmer_screen():
                     st.session_state['farmer_lookup_token'] = data['access_token']
                     st.success(f"We received your question. Your question number is {data['case_id']}. Keep your private code to check your answer.")
                     if data.get('clarification'):
-                        st.info(data['clarification'])
+                        st.session_state['farmer_supplement_case'] = data['case_id']
+                        st.session_state['farmer_supplement_revision'] = data.get('revision')
+                        st.session_state['farmer_supplement_token'] = data['access_token']
+                        st.info(data.get('message') or 'Awaiting your information before an officer can review this.')
+                        st.write(data['clarification'])
                 else:
                     show_result(status, data)
     with st.container(border=True):
@@ -360,16 +364,40 @@ def farmer_screen():
         if st.button("Check answer", key="farmer_check"):
             status, data = request("GET", f"/farmer/cases/{cid}", headers={"X-Case-Access-Token": access_token.strip()})
             if status == 200:
-                st.info(STATES.get(data['status'], 'Your case is being reviewed.'))
-                if data.get('delivery_status'):
-                    st.caption('Delivery: ' + data['delivery_status'].replace('_', ' '))
-                if data.get('answer'):
-                    st.success(data['answer'])
-                    st.caption('An extension officer has checked this answer.')
+                if data.get('clarification'):
+                    st.session_state['farmer_supplement_case'] = int(cid)
+                    st.session_state['farmer_supplement_revision'] = data.get('revision')
+                    st.session_state['farmer_supplement_token'] = access_token.strip()
+                    st.info(data.get('message') or 'Awaiting your information before an officer can review this.')
+                    st.write(data['clarification'])
+                else:
+                    st.session_state.pop('farmer_supplement_revision', None)
+                    st.info(STATES.get(data['status'], 'Your case is being reviewed.'))
+                    if data.get('delivery_status'):
+                        st.caption('Delivery: ' + data['delivery_status'].replace('_', ' '))
+                    if data.get('answer'):
+                        st.success(data['answer'])
+                        st.caption('An extension officer has checked this answer.')
             elif status == 404:
                 st.error("We could not find your question. Check your question number and private code.")
             else:
                 st.error("Unable to check the answer. Please try again shortly.")
+        if st.session_state.get('farmer_supplement_revision'):
+            with st.form('farmer_supplement'):
+                reply = st.text_input('Add the missing detail', key='farmer_supplement_text')
+                if st.form_submit_button('Send details', key='farmer_supplement_button'):
+                    status, data = request('POST', f"/farmer/cases/{st.session_state['farmer_supplement_case']}/supplement",
+                                           headers={'X-Case-Access-Token': st.session_state['farmer_supplement_token']},
+                                           json={'text': reply, 'expected_revision': st.session_state['farmer_supplement_revision']})
+                    if status == 200 and data.get('clarification'):
+                        st.session_state['farmer_supplement_revision'] = data.get('revision')
+                        st.info(data.get('message') or 'Awaiting your information before an officer can review this.')
+                        st.write(data['clarification'])
+                    elif status == 200:
+                        st.session_state.pop('farmer_supplement_revision', None)
+                        st.success(data.get('message') or 'Your question was sent to an extension officer for review.')
+                    else:
+                        show_result(status, data)
 
 
 def main(role="farmer"):

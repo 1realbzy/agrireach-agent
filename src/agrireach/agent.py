@@ -171,6 +171,23 @@ def _crop_pattern(crop: str) -> str:
     return r"soy(a)?bean" if crop == "soybean" else re.escape(crop)
 
 
+def clarification_gap(question: str, replies: list[str]) -> tuple[str, str, str]:
+    """Crop, region, and the next question still needed. Names come only from the farmer's own words."""
+    combined = " ".join([question, *replies]).lower()
+    crop = language.detect_crop(combined)
+    region = _detect_region(combined)
+    covered = _crops_covered()
+    uncovered = bool(crop and covered and crop not in covered)
+    if not crop:
+        clar = (f"Which crop is this about? AgriReach currently covers {_join(covered)} only."
+                if covered else "Which crop is this about? No crops currently have curated sources.")
+    elif uncovered or region:
+        clar = ""
+    else:
+        clar = "Which district or region is your farm in? Planting guidance differs by region."
+    return crop, region, clar
+
+
 def _detect_region(q: str) -> str:
     # Longer names first so "upper west" wins over "west" if both ever listed.
     for r in sorted(NORTHERN + OTHER_REGIONS, key=lambda s: (-len(s), s)):
@@ -199,6 +216,8 @@ class S(TypedDict, total=False):
     skip_retrieval: bool
     extra_urgent_reasons: list
     queue: bool  # False: file_case leaves the case as 'draft' and the caller queues it (channels: with its contact)
+    expected_revision: int
+    require_draft: bool
     conflicts: dict
     zone: dict
     zone_mismatch: bool
@@ -287,8 +306,13 @@ async def intake(s: S, tools: Tools) -> S:
         # automatic question about it; the officer checks first.
         reasons.append(f"no automatic clarifying question because of the flags above; officer should ask: {clar}")
         clar = ""
-    case = await tools.call("create_or_update_case", {"status": "draft", "question": s["question"], "crop": crop,
-                                                      "region": region, **({"inbound_claim": s["inbound_claim"]} if s.get("inbound_claim") else {})})
+    if s.get("require_draft") and s.get("case_id"):
+        case = await tools.call("create_or_update_case", {
+            "status": "draft", "case_id": s["case_id"], "crop": crop, "region": region,
+            "expected_revision": s.get("expected_revision") or 0, "require_draft": True})
+    else:
+        case = await tools.call("create_or_update_case", {"status": "draft", "question": s["question"], "crop": crop,
+                                                          "region": region, **({"inbound_claim": s["inbound_claim"]} if s.get("inbound_claim") else {})})
     return {"crop": crop, "region": region, "urgent_reasons": reasons, "clarification": clar, "language": lang,
             "search_query": search_query, "case_id": case["case_id"], "notes": [], "errors": [],
             "received": case.get("created_at", ""), "region_from_text": region_from_text,
@@ -502,16 +526,21 @@ async def file_case(s: S, tools: Tools) -> S:
         fd.problems = list(fd.problems) + [s["season_prompt"]]
     # season_prompt is stored with the proposal so a re-proposed SMS (api.py) keeps the prompt.
     stored = asdict(fd) | ({"season_prompt": s["season_prompt"]} if s.get("season_prompt") else {})
-    r = await tools.call("create_or_update_case", {
+    filing = {
         "status": "pending_review" if s.get("queue", True) else "draft", "case_id": s["case_id"], "draft": s["draft"],
         "source_ids": [p["id"] for p in s["passages"]], "priority": "urgent" if reasons else "routine",
-        "urgent_reasons": reasons, "farmer_draft": json.dumps(stored, ensure_ascii=False)})
+        "urgent_reasons": reasons, "farmer_draft": json.dumps(stored, ensure_ascii=False)}
+    if s.get("require_draft"):
+        filing["require_draft"] = True
+    r = await tools.call("create_or_update_case", filing)
     return {"status": r["status"], "farmer_draft": stored}
 
 async def clarify(s: S, tools: Tools) -> S:
-    """Missing context: the clarifying question becomes the draft and the run stops. Writes status, draft,
-    draft_mode."""
-    return {"status": "draft", "draft": s["clarification"], "draft_mode": "rule"}
+    """Missing context: remember the question for the farmer and stop. The officer draft stays empty."""
+    await tools.call("create_or_update_case", {
+        "status": "draft", "case_id": s["case_id"],
+        "farmer_draft": json.dumps({"clarification": s["clarification"], "text": "", "replies": []}, ensure_ascii=False)})
+    return {"status": "draft", "draft_mode": "rule"}
 
 
 
@@ -543,7 +572,8 @@ def build_graph(tools: Tools):
 
 
 async def run(question: str, crop: str = "", region: str = "", use_fetch: bool | None = None,
-              extra_urgent_reasons: list[str] | None = None, queue: bool = True, inbound_claim: dict | None = None) -> dict:
+              extra_urgent_reasons: list[str] | None = None, queue: bool = True, inbound_claim: dict | None = None,
+              case_id: int | None = None, expected_revision: int | None = None) -> dict:
     """extra_urgent_reasons: reasons found before the agent ran (e.g. an unreliable voice-note transcript).
     queue=False: the case is filed as 'draft' (not in the officer queue); the caller queues it, e.g. a channel saves
     the farmer's contact and queues the case in one transaction (db.queue_with_contact)."""
@@ -564,8 +594,11 @@ async def run(question: str, crop: str = "", region: str = "", use_fetch: bool |
                 fetch = None
         graph = build_graph(Tools(own, fetch))
         calls = llm.start_usage()
-        out = await graph.ainvoke({"question": question, "crop": crop, "region": region,
-                                   "extra_urgent_reasons": list(extra_urgent_reasons or []), "queue": queue, "inbound_claim": inbound_claim})
+        state = {"question": question, "crop": crop, "region": region,
+                 "extra_urgent_reasons": list(extra_urgent_reasons or []), "queue": queue, "inbound_claim": inbound_claim}
+        if case_id is not None:
+            state |= {"case_id": case_id, "expected_revision": expected_revision or 0, "require_draft": True}
+        out = await graph.ainvoke(state)
     return {k: out.get(k) for k in ("case_id", "status", "crop", "region", "clarification", "draft", "draft_mode",
                                      "urgent_reasons", "source_checks", "errors", "language",
                                      "citation_check", "farmer_draft")} | {

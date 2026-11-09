@@ -35,6 +35,30 @@ class Ask(BaseModel):
         return value
 
 
+class Supplement(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
+    expected_revision: int = Field(ge=1)
+
+    @field_validator("text")
+    @classmethod
+    def text_is_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("text must contain text")
+        return value
+
+
+AWAITING_FARMER = "Awaiting your information before an officer can review this."
+
+
+def _revision_conflict(exc: BaseException) -> bool:
+    """True when a supplement lost the race or the draft was no longer open. Walks ExceptionGroups from the MCP client."""
+    if isinstance(exc, BaseExceptionGroup):
+        return any(_revision_conflict(item) for item in exc.exceptions)
+    text = str(exc)
+    return "stale_revision" in text or "not waiting for farmer information" in text
+
+
 def current_officer(authorization: str | None = Header(None)) -> str:
     """The signed-in officer's name, from their sign-in token (Authorization: Bearer <token>; tokens are issued by
     scripts/add_officer.py). Every officer route and release depends on this; the name on the record comes from here."""
@@ -129,8 +153,45 @@ async def ask(a: Ask):
     out = await agent.run(a.question, a.crop, a.region)
     # The farmer gets only an acknowledgement or a clarifying question, never the draft.
     access_token = db.issue_farmer_case_token(db.connect(), out["case_id"])
-    return {"case_id": out["case_id"], "access_token": access_token, "status": out["status"], "clarification": out["clarification"],
+    body = {"case_id": out["case_id"], "access_token": access_token, "status": out["status"], "clarification": out["clarification"],
             "message": out["clarification"] or "Your question was sent to an extension officer for review."}
+    if out.get("clarification"):
+        body["revision"] = db.get_case(db.connect(), out["case_id"])["revision"]
+        body["message"] = AWAITING_FARMER
+    return body
+
+
+@app.post("/farmer/cases/{case_id}/supplement")
+async def supplement(case_id: int, body: Supplement, x_case_access_token: str | None = Header(None)):
+    """Add the farmer's own missing crop or place to the same draft. Nothing is approved here."""
+    con = db.connect()
+    row = db.get_case(con, case_id)
+    if not row or not db.farmer_case_token_valid(con, case_id, x_case_access_token):
+        raise HTTPException(404, "not found")
+    if row["status"] != "draft" or not db._open_clarification(row):
+        raise HTTPException(409, "Case is not waiting for farmer information")
+    if body.expected_revision != row["revision"]:
+        raise HTTPException(409, "stale_revision: reload the case")
+    stored = db._open_clarification(row)
+    replies = stored["replies"] + [body.text]
+    crop, region, clar = agent.clarification_gap(row["question"], replies)
+    if clar:
+        try:
+            updated = db.continue_clarification(con, case_id, expected_revision=body.expected_revision,
+                                                clarification=clar, replies=replies, crop=crop, region=region)
+        except db.GateError as exc:
+            raise HTTPException(409, str(exc))
+        return {"case_id": case_id, "status": "draft", "answer": None, "clarification": clar,
+                "revision": updated["revision"], "message": AWAITING_FARMER}
+    try:
+        out = await agent.run(row["question"], crop=crop, region=region, case_id=case_id,
+                              expected_revision=body.expected_revision)
+    except Exception as exc:
+        if _revision_conflict(exc):
+            raise HTTPException(409, "stale_revision: reload the case")
+        raise
+    return {"case_id": out["case_id"], "status": out["status"], "answer": None, "clarification": None,
+            "message": "Your question was sent to an extension officer for review."}
 
 
 @app.get("/officer/queue")
@@ -280,6 +341,9 @@ def farmer_view(case_id: int, x_case_access_token: str | None = Header(None)):
     row = db.get_case(con, case_id)
     if not row or not db.farmer_case_token_valid(con, case_id, x_case_access_token):
         raise HTTPException(404, "not found")
+    if row["status"] == "draft" and db._open_clarification(row):
+        return {"case_id": case_id, "status": "draft", "answer": None, "revision": row["revision"],
+                "clarification": db._open_clarification(row)["clarification"], "message": AWAITING_FARMER}
     if row["status"] == "undeliverable":  # approved, but the number was removed (STOP or retention purge)
         return {"case_id": case_id, "status": "undeliverable", "answer": None,
                 "message": "No answer was sent: this number was removed from AgriReach."}

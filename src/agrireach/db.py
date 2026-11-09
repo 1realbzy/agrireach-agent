@@ -112,7 +112,8 @@ def log(con, actor: str, tool: str, args: dict, summary: str, ok: bool = True, c
 
 
 def agent_upsert_case(con, *, status: str, question: str = "", case_id: int | None = None, crop=None, region=None,
-                      draft=None, sources=None, priority="routine", urgent_reasons=None, farmer_draft=None, inbound_claim: dict | None = None) -> int:
+                      draft=None, sources=None, priority="routine", urgent_reasons=None, farmer_draft=None,
+                      inbound_claim: dict | None = None, expected_revision: int | None = None, require_draft: bool = False) -> int:
     """farmer_draft: AgriReach's PROPOSED farmer-facing text (JSON, see farmer_reply). Only the officer's approved
     farmer_text is ever delivered."""
     if status not in AGENT_STATUSES:
@@ -158,16 +159,63 @@ def agent_upsert_case(con, *, status: str, question: str = "", case_id: int | No
         log(con, "agent", "create_or_update_case", {"case_id": case_id},
             f"BLOCKED: case already '{row['status']}' (officer-owned)", ok=False, case_id=case_id)
         raise GateError(f"case {case_id} is '{row['status']}' and can no longer be changed by the agent")
+    if require_draft and row["status"] != "draft":
+        raise GateError("Case is not waiting for farmer information")
+    if expected_revision is not None and expected_revision != row["revision"]:
+        raise GateError("stale_revision: reload the case")
     cur = con.execute(
-        "UPDATE cases SET draft=COALESCE(?,draft), farmer_draft=COALESCE(?,farmer_draft), sources=?, priority=?,"
-        " urgent_reasons=?, status=?, updated_at=?, revision=revision+1 WHERE id=? AND revision=?",
-        (draft, farmer_draft, json.dumps(sources if sources is not None else json.loads(row["sources"])), priority,
+        "UPDATE cases SET crop=?, region=?, draft=COALESCE(?,draft), farmer_draft=COALESCE(?,farmer_draft), sources=?, priority=?,"
+        " urgent_reasons=?, status=?, updated_at=?, revision=revision+1 WHERE id=? AND revision=?"
+        + (" AND status='draft'" if require_draft else ""),
+        (crop or row["crop"], region or row["region"], draft, farmer_draft,
+         json.dumps(sources if sources is not None else json.loads(row["sources"])), priority,
          json.dumps(urgent_reasons or []), status, t, case_id, row["revision"]))
     if cur.rowcount != 1:
         con.rollback()
         raise GateError("stale_revision: case changed during agent update")
     con.commit()
     return case_id
+
+
+def continue_clarification(con, case_id: int, *, expected_revision: int, clarification: str, replies: list[str],
+                           crop: str = "", region: str = "") -> dict:
+    """Replace the stored clarification on a draft. One revision wins; the question text stays the farmer's."""
+    payload = json.dumps({"clarification": clarification, "text": "", "replies": replies}, ensure_ascii=False)
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute("SELECT * FROM cases WHERE id=?", (case_id,)).fetchone()
+        if row is None or row["status"] != "draft" or not _open_clarification(row):
+            raise GateError("Case is not waiting for farmer information")
+        if row["revision"] != expected_revision:
+            raise GateError("stale_revision: reload the case")
+        cur = con.execute(
+            "UPDATE cases SET crop=?, region=?, farmer_draft=?, updated_at=?, revision=revision+1 "
+            "WHERE id=? AND revision=? AND status='draft'",
+            (crop or row["crop"], region or row["region"], payload, now(), case_id, expected_revision))
+        if cur.rowcount != 1:
+            raise GateError("stale_revision: reload the case")
+        con.commit()
+    except BaseException:
+        con.rollback()
+        raise
+    return dict(get_case(con, case_id))
+
+
+def _open_clarification(row) -> dict | None:
+    """A draft waiting on the farmer. Empty text means this is not an advisory proposal."""
+    try:
+        data = json.loads(row["farmer_draft"] or "null")
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or data.get("text"):
+        return None
+    clar = data.get("clarification")
+    replies = data.get("replies")
+    if not isinstance(clar, str) or not clar.strip() or not isinstance(replies, list):
+        return None
+    if not all(isinstance(item, str) for item in replies):
+        return None
+    return data
 
 
 def officer_decide(con, case_id: int, *, officer: str, decision: str, edited_text=None,
