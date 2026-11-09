@@ -85,6 +85,21 @@ def connect(path: str | None = None) -> sqlite3.Connection:
         CREATE TABLE IF NOT EXISTS channel_pending (
           id INTEGER PRIMARY KEY AUTOINCREMENT, channel TEXT NOT NULL, sender_id TEXT NOT NULL,
           kind TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS farmer_sms_contacts (
+          case_id INTEGER PRIMARY KEY REFERENCES cases(id),
+          phone_e164 TEXT NOT NULL, consent TEXT NOT NULL CHECK (consent = 'granted'),
+          created_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS acknowledgement_jobs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          case_id INTEGER NOT NULL UNIQUE REFERENCES cases(id),
+          state TEXT NOT NULL CHECK (state IN ('pending','sending','accepted','definitely_failed','unknown','undeliverable')),
+          claim_id TEXT, mode TEXT NOT NULL CHECK (mode IN ('simulated','live')),
+          updated_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS acknowledgement_attempts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          job_id INTEGER NOT NULL REFERENCES acknowledgement_jobs(id),
+          claim_id TEXT NOT NULL UNIQUE, outcome TEXT NOT NULL,
+          started_at TEXT NOT NULL, completed_at TEXT, detail TEXT);
         """
     )
     cols = {r[1] for r in con.execute("PRAGMA table_info(cases)")}
@@ -628,5 +643,8 @@ def purge_old(con, days: int | None = None, now_ts: str | None = None) -> dict:
     n_consent = con.execute("DELETE FROM channel_consent WHERE COALESCE(decided_at, asked_at) <= ?", (cutoff,)).rowcount
     # Expired unprocessed events are discarded, never replayed after consent data expires.
     n_inbox = con.execute("DELETE FROM channel_inbox WHERE created_at <= ?", (cutoff,)).rowcount
+    # Web SMS numbers follow the same retention window. Cases and acknowledgement jobs stay.
+    n_farmer_sms = con.execute("DELETE FROM farmer_sms_contacts WHERE created_at <= ?", (cutoff,)).rowcount
     con.commit()
-    return {"contacts": len(old), "held": len(held), "consent": n_consent, "inbox": n_inbox, "cutoff": cutoff}
+    return {"contacts": len(old), "held": len(held), "consent": n_consent, "inbox": n_inbox,
+            "farmer_sms": n_farmer_sms, "cutoff": cutoff}

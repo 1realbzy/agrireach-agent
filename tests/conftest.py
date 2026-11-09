@@ -30,7 +30,8 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("AGRIREACH_RAINFALL_CACHE", str(tmp_path / "rain-cache"))
     monkeypatch.setenv("AGRIREACH_STT", "none")  # tests pass a fake transcriber; test_stt_real.py opts in
     for k in ("WHATSAPP_ENABLED", "AGRIREACH_TTS", "SMS_ENABLED", "AT_USERNAME", "AT_API_KEY", "AT_SENDER_ID",
-              "AT_SANDBOX", "SMS_WEBHOOK_TOKEN", "SMS_MAX_SEGMENTS"):
+              "AT_SANDBOX", "SMS_WEBHOOK_TOKEN", "SMS_MAX_SEGMENTS", "MNOTIFY_SMS_MODE", "MNOTIFY_API_KEY",
+              "MNOTIFY_SENDER_ID", "MNOTIFY_API_BASE"):
         monkeypatch.delenv(k, raising=False)
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(root / "tests"), str(root / "src"))))

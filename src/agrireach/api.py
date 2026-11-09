@@ -10,7 +10,8 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadF
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 
-from agrireach import approval, agent, db, farmer_reply, knowledge, llm
+from agrireach import acknowledgement, approval, agent, db, farmer_reply, knowledge, llm
+from agrireach.phone import PhoneError, normalize as normalize_phone
 from agrireach.channels import service, simulator, sms, whatsapp
 from agrireach.channels.base import mask_sender
 
@@ -25,6 +26,8 @@ class Ask(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     crop: str = Field(default="", max_length=100)
     region: str = Field(default="", max_length=100)
+    phone: str = ""
+    sms_consent: bool = False
 
     @field_validator("question")
     @classmethod
@@ -121,6 +124,31 @@ def reconcile_delivery(job_id: int, body: ReconcileRequest, officer: str = Depen
     return {"job_id": job_id, "state": "accepted" if body.accepted else "definitely_failed"}
 
 
+@app.get("/officer/cases/{case_id}/acknowledgement")
+def acknowledgement_status(case_id: int, officer: str = Depends(current_officer)):
+    """Acknowledgement disposition for an officer. The phone is masked."""
+    con = db.connect()
+    if not db.get_case(con, case_id):
+        raise HTTPException(404, "not found")
+    view = acknowledgement.operator_status(con, case_id)
+    if view is None:
+        raise HTTPException(404, "no acknowledgement")
+    return view
+
+
+@app.post("/officer/acknowledgement-jobs/{job_id}/reconcile")
+def reconcile_acknowledgement(job_id: int, body: ReconcileRequest, officer: str = Depends(current_officer)):
+    """Record provider evidence for an unknown acknowledgement. Nothing is sent."""
+    try:
+        acknowledgement.reconcile(db.connect(), job_id, officer=officer, accepted=body.accepted,
+                                   provider_evidence=body.provider_evidence)
+    except db.GateError as exc:
+        raise HTTPException(409, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return {"job_id": job_id, "state": "accepted" if body.accepted else "definitely_failed", "handset_delivered": False}
+
+
 @app.post("/officer/cases/{case_id}/reopen")
 def reopen(case_id: int, body: ReopenRequest, officer: str = Depends(current_officer)):
     """Return a clarified needs_info case to review without approving any advice."""
@@ -148,16 +176,52 @@ def health():
     return {"ok": True, "draft_mode": llm.mode()}
 
 
+def _consented_phone(raw: str, consent: bool) -> str:
+    """Validate before a case exists. The error text does not repeat the submitted number."""
+    text = (raw or "").strip()
+    if text:
+        try:
+            normalized = normalize_phone(text)
+        except PhoneError as exc:
+            raise HTTPException(422, str(exc))
+    else:
+        normalized = ""
+    if consent and not normalized:
+        raise HTTPException(422, "Enter a Ghana mobile number, or leave SMS updates unchecked.")
+    return normalized if consent else ""
+
+
+def _with_acknowledgement(con, case_id: int, body: dict) -> dict:
+    """Add SMS state when one exists. Legacy cases keep their previous response shape."""
+    sms = acknowledgement.public_status(con, case_id)
+    if sms["status"] != "not_requested":
+        body["acknowledgement"] = sms
+    return body
+
+
+def _submission_message(status: str, clarification: str | None) -> str:
+    """Describe the state that was actually saved. Draft is not officer review."""
+    if clarification:
+        return AWAITING_FARMER
+    if status == "pending_review":
+        return ("Your question has been received. It is waiting for an extension officer to review. "
+                "Advice is not available yet.")
+    return "Your question has been received."
+
+
 @app.post("/ask")
 async def ask(a: Ask):
+    phone = _consented_phone(a.phone, a.sms_consent)
     out = await agent.run(a.question, a.crop, a.region)
     # The farmer gets only an acknowledgement or a clarifying question, never the draft.
+    # The phone is applied after the case commit and is not passed to the model.
     access_token = db.issue_farmer_case_token(db.connect(), out["case_id"])
-    body = {"case_id": out["case_id"], "access_token": access_token, "status": out["status"], "clarification": out["clarification"],
-            "message": out["clarification"] or "Your question was sent to an extension officer for review."}
+    sms = acknowledgement.schedule(out["case_id"], phone, bool(phone))
+    body = {"case_id": out["case_id"], "access_token": access_token, "status": out["status"],
+            "clarification": out["clarification"], "message": _submission_message(out["status"], out.get("clarification")),
+            "acknowledgement": sms}
     if out.get("clarification"):
         body["revision"] = db.get_case(db.connect(), out["case_id"])["revision"]
-        body["message"] = AWAITING_FARMER
     return body
 
 
@@ -192,7 +256,7 @@ async def supplement(case_id: int, body: Supplement, x_case_access_token: str | 
             raise HTTPException(409, "stale_revision: reload the case")
         raise
     return {"case_id": out["case_id"], "status": out["status"], "answer": None, "clarification": None,
-            "message": "Your question was sent to an extension officer for review."}
+            "message": _submission_message(out["status"], None)}
 
 
 @app.get("/officer/queue")
@@ -343,8 +407,9 @@ def farmer_view(case_id: int, x_case_access_token: str | None = Header(None)):
     if not row or not db.farmer_case_token_valid(con, case_id, x_case_access_token):
         raise HTTPException(404, "not found")
     if row["status"] == "draft" and db._open_clarification(row):
-        return {"case_id": case_id, "status": "draft", "answer": None, "revision": row["revision"],
+        body = {"case_id": case_id, "status": "draft", "answer": None, "revision": row["revision"],
                 "clarification": db._open_clarification(row)["clarification"], "message": AWAITING_FARMER}
+        return _with_acknowledgement(con, case_id, body)
     if row["status"] == "undeliverable":  # approved, but the number was removed (STOP or retention purge)
         return {"case_id": case_id, "status": "undeliverable", "answer": None,
                 "message": "No answer was sent: this number was removed from AgriReach."}

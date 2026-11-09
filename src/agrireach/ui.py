@@ -7,6 +7,7 @@ import httpx
 import streamlit as st
 
 from agrireach import knowledge, llm
+from agrireach.phone import PhoneError, normalize as normalize_phone
 from agrireach.ui_feedback import auth_headers, feedback
 
 API = os.getenv("AGRIREACH_API", "http://127.0.0.1:8000")
@@ -123,6 +124,10 @@ def render_case(case, headers):
         if case["status"] == "not_delivered" and st.button("Retry release and delivery", key=f"retry{cid}"):
             show_result(*request("POST", f"/cases/{cid}/release", headers=headers))
         st.caption("Sources: " + "; ".join(source_name(s) for s in case["sources"]))
+        ack_status, ack = request("GET", f"/officer/cases/{cid}/acknowledgement", headers=headers)
+        if ack_status == 200:
+            label = "simulated, no message was sent to a phone" if ack.get("simulated") else str(ack.get("state", "")).replace("_", " ")
+            st.caption(f"Question acknowledgement: {label}. Phone {ack.get('phone_masked') or 'not stored'}.")
         voice_status, inbound = request("GET", f"/officer/cases/{cid}/voice", headers=headers)
         if voice_status == 200 and inbound.get("has_audio"):
             # Keep the officer's ability to verify the machine transcript.
@@ -326,6 +331,19 @@ STATES = {
 }
 
 
+def _phone_problem(phone: str, consent: bool) -> str | None:
+    """Farmer-facing phone feedback. The message does not repeat the typed number."""
+    raw = (phone or "").strip()
+    if raw:
+        try:
+            normalize_phone(raw)
+        except PhoneError as exc:
+            return str(exc)
+    elif consent:
+        return "Enter a Ghana mobile number, or leave SMS updates unchecked."
+    return None
+
+
 def _clear_supplement():
     """Drop the reply target so a later question cannot post to an older case."""
     for key in ("farmer_supplement_case", "farmer_supplement_revision", "farmer_supplement_token"):
@@ -345,25 +363,45 @@ def farmer_screen():
         st.subheader("1 · Ask a question")
         with st.form('farmer_submit'):
             question = st.text_area("Your question", key="farmer_question", placeholder="What crop are you growing, where, and what do you need help with?")
+            phone_input = st.text_input("Phone number", key="farmer_phone", placeholder="Ghana mobile number")
+            consent = st.checkbox(
+                "I agree that AgriReach may text this number about this question, and may send approved advice when that is available.",
+                key="farmer_sms_consent", value=False)
+            st.caption("The box starts unchecked. The number is used only for those messages. Leave it blank if you do not want SMS.")
             submitted = st.form_submit_button("Send question", key="farmer_submit_button")
         if submitted:
+            phone = phone_input
             if not question.strip():
                 st.warning("Enter a question before sending.")
+            elif _phone_problem(phone, consent):
+                st.warning(_phone_problem(phone, consent))
             else:
-                with st.spinner("Preparing your question for officer review…"):
-                    status, data = request("POST", "/ask", json={"question": question})
+                payload = {"question": question}
+                if consent:
+                    payload["phone"] = phone.strip()
+                    payload["sms_consent"] = True
+                with st.spinner("Saving your question…"):
+                    status, data = request("POST", "/ask", json=payload)
                 if status == 200:
                     st.session_state['farmer_case_id'] = data['case_id']
                     st.session_state['farmer_case_token'] = data['access_token']
                     st.session_state['farmer_lookup_id'] = data['case_id']
                     st.session_state['farmer_lookup_token'] = data['access_token']
-                    st.success(f"We received your question. Your question number is {data['case_id']}. Keep your private code to check your answer.")
+                    st.success("Your question has been received.")
+                    st.write(f"We received your question. Your question number is {data['case_id']}. Keep your private code to check your answer.")
+                    notice = (data.get("acknowledgement") or {}).get("message")
+                    if notice:
+                        st.info(notice)
                     if data.get('clarification'):
                         _bind_supplement(data['case_id'], data.get('revision'), data['access_token'])
                         st.info(data.get('message') or 'Awaiting your information before an officer can review this.')
                         st.write(data['clarification'])
                     else:
                         _clear_supplement()
+                        if data.get("status") == "pending_review":
+                            st.caption("It is waiting for an extension officer to review. Advice is not available yet.")
+                elif status == 422:
+                    st.warning("Check the phone number. Use a Ghana mobile number, or leave the phone field blank.")
                 else:
                     show_result(status, data)
     with st.container(border=True):
@@ -409,7 +447,10 @@ def farmer_screen():
                         st.write(data['clarification'])
                     elif status == 200:
                         _clear_supplement()
-                        st.success(data.get('message') or 'Your question was sent to an extension officer for review.')
+                        if data.get("status") == "pending_review":
+                            st.success(data.get('message') or 'Your question has been received. It is waiting for an extension officer to review.')
+                        else:
+                            st.success(data.get('message') or 'Your question has been received.')
                     else:
                         show_result(status, data)
 
