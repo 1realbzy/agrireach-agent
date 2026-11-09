@@ -298,12 +298,8 @@ def farmer_view(case_id: int, x_case_access_token: str | None = Header(None)):
     try:
         _approval, payload = validated_approval(con, case_id)
     except db.GateError:
-        # Grandfather only already published historical text; never enqueue it.
-        legacy = con.execute("SELECT payload FROM approvals WHERE case_id=? AND provenance='legacy_unvalidated' ORDER BY id DESC LIMIT 1", (case_id,)).fetchone()
-        historic = json.loads(legacy[0]) if legacy else {}
-        if historic.get("status") == "released":
-            return {"case_id": case_id, "status": "released", "answer": historic.get("farmer_text") or historic.get("final_text"),
-                    "assessment_status": "legacy_unvalidated", "approved_by": historic.get("officer")}
+        # SafetyError is a GateError. Either failed check withholds the answer. A legacy_unvalidated
+        # row stays stored for history and is not returned as the authorized text.
         return {"case_id": case_id, "status": "review_required", "answer": None}
     return {"case_id": case_id, "status": "released", "answer": payload["farmer_text"],
             "approved_by": row["officer"],
