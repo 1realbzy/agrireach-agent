@@ -125,6 +125,8 @@ def test_upgrade_from_historical_schema_versions(tmp_path, version):
     con = sqlite3.connect(path)
     # Construct an actual historical schema by dropping only later additive
     # migrations in reverse order on a disposable database.
+    for table in ("acknowledgement_attempts", "acknowledgement_jobs", "farmer_sms_contacts"):
+        con.execute(f"DROP TABLE {table}")
     con.execute("DROP INDEX channel_inbox_sender_idx")
     con.execute("DROP TABLE channel_inbox")
     con.execute("DELETE FROM schema_migrations WHERE version>=4")
@@ -153,6 +155,6 @@ def test_upgrade_from_historical_schema_versions(tmp_path, version):
         raw.commit()
         raw.close()
     upgraded = db.connect(path)
-    assert [r[0] for r in upgraded.execute("SELECT version FROM schema_migrations ORDER BY version")] == [1,2,3,4,5]
+    assert [r[0] for r in upgraded.execute("SELECT version FROM schema_migrations ORDER BY version")] == [1, 2, 3, 4, 5, 6]
     assert upgraded.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     assert upgraded.execute("PRAGMA foreign_key_check").fetchall() == []
