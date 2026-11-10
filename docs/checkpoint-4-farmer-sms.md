@@ -51,11 +51,35 @@ If the provider fails or the outcome is unknown, the case stays saved.
 ## Phone numbers
 
 Numbers are stored as E.164 on `farmer_sms_contacts`, only after explicit consent.
-Legacy cases have no row. The tables are created with `CREATE TABLE IF NOT EXISTS`
-when the application opens a database, including a database already at schema
-versions 1 through 5. The migration ledger is not given a new version, because
-existing ledger checks require versions 1–5. Retention purge deletes stored web
-numbers on the same cutoff as other contact data. Cases remain.
+Legacy cases have no row. Migration 6 creates the three SMS tables and records
+its checksum in the same explicit SQLite transaction. An existing complete set
+of tables from the previous release is adopted if its schema matches the known
+definitions. Partial, altered, or augmented SMS schemas are rejected. A file
+database gets an integrity- and foreign-key-verified SQLite backup before the
+version 6 transaction changes schema or ledger. Quiesce writers for the offline
+migration and protect the backup as carefully as the database. Run
+`python -m agrireach.migrations PATH --verify-only` for read-only verification.
+
+Retention purge deletes stored web numbers on the same cutoff as other contact
+data. Cases remain.
+
+## Migration 2 checksum investigation
+
+The reviewed checkpoint and every available revision containing migration 2,
+starting at `bb82ed9`, hash to
+`7b197e86411612805f89cc83e24011853cb7c046d21193ab10dfe7489274c5c2`.
+That matches the pilot ledger recorded by the audit. Hashing only the seven
+literal statements gives the audit's other value,
+`5283534006cb19119acefc776300c7e83691758ff67507f173b5fc2c801996f7`.
+It omits the eight immutable-evidence triggers appended when the module loads.
+This reproduces the discrepancy without changing any migration definition.
+
+Proposed follow-up, subject to separate authorization: correct the audit method
+to hash the complete runtime statement list from the pinned source. On a
+verified backup or copy, confirm the original ledger and eight trigger
+definitions before rehearsing migration 6. No ledger repair is indicated by
+these hashes. If a verified copy fails strict validation, stop and investigate
+the evidence before making any changes.
 
 Logs, audit details, model prompts and public responses use a masked number or
 omit it. The officer acknowledgement route returns the mask only.
@@ -63,8 +87,11 @@ omit it. The officer acknowledgement route returns the mask only.
 ## Known limitations
 
 * No mNotify account is configured. Live mode was exercised with mocked HTTP only.
-* mNotify does not publish a numeric rate limit. Code 405 is documented as Too Many Requests.
-* The quick-SMS curl sample includes schedule fields. They are omitted because this message is not scheduled.
+* The [quick-SMS contract](https://readthedocs.mnotify.com/) shows the
+  local-number recipient list and explicit unscheduled fields. Only its HTTP
+  200 success with body code 2000 and a campaign ID confirms acceptance.
+  HTTP 422 indicates a definite validation refusal and HTTP 429 indicates rate
+  limiting. Unrecognized body codes and server errors do not confirm acceptance.
 * Provider acceptance is not handset delivery. The delivery-report endpoint was not called.
 * The original Windows pilot database was not opened. It remains REQUIRES LOCAL PC.
 * Inbound SMS is unchanged. In `channels/service.py`, `_location_reply` files a second case when a reply is not a location confirmation and contains more than three words. A later SMS, including a clarification answer, is also filed by `_file` as a new case because that path does not pass the existing case id. The web supplement path still updates the same draft. Two-way SMS is out of scope.

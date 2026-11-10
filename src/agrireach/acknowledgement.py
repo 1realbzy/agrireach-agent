@@ -17,7 +17,9 @@ Recovery:
 """
 from __future__ import annotations
 
+from contextlib import closing
 import json
+import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -29,6 +31,8 @@ TEMPLATE = (
     "AgriReach: We have received your farming question. Reference: {case_reference}. "
     "We will notify you when an extension officer has reviewed the advice."
 )
+logger = logging.getLogger(__name__)
+
 OUTCOMES = ("accepted", "definitely_failed", "unknown", "undeliverable")
 
 
@@ -197,17 +201,26 @@ def schedule(case_id: int, phone_e164: str, consent: bool, *, client=None) -> di
     if not consent or not str(phone_e164 or "").strip():
         return _not_sent("not_requested", "No confirmation SMS was sent.")
     chosen = mnotify.mode()
-    con = db.connect()
-    if chosen == "disabled":
-        remember_consent(con, case_id, phone_e164)
-        return _not_sent("disabled", "SMS confirmation is turned off. No message was sent.")
     try:
-        job_id = enqueue(con, case_id, phone_e164, chosen)
+        with closing(db.connect()) as con:
+            if chosen == "disabled":
+                remember_consent(con, case_id, phone_e164)
+                return _not_sent("disabled", "SMS confirmation is turned off. No message was sent.")
+            job_id = enqueue(con, case_id, phone_e164, chosen)
+            try:
+                return dispatch(con, job_id, client=client)
+            except Exception:
+                logger.warning("Could not complete acknowledgement dispatch for case %d", case_id)
+                try:
+                    return public_status(con, case_id)
+                except Exception:
+                    return _not_sent("unknown", "Your question was saved. The confirmation SMS outcome "
+                                     "could not be verified. Do not send the question again.")
     except Exception:
+        logger.warning("Could not schedule acknowledgement for case %d", case_id)
         return _not_sent(
             "not_scheduled",
             "Your question was saved. The confirmation SMS could not be scheduled. Do not send the question again.")
-    return dispatch(con, job_id, client=client)
 
 
 def public_status(con, case_id: int) -> dict:
@@ -231,6 +244,8 @@ def public_status(con, case_id: int) -> dict:
                 "so it will not be sent again automatically.")
     elif state == "undeliverable":
         text = "Your question was saved. The confirmation SMS cannot be sent."
+    elif simulated and state in ("pending", "sending"):
+        text = "Your question was saved. The simulated confirmation is still pending. No message was sent to a phone."
     elif state == "sending":
         text = "Your question was saved. The confirmation SMS has not been confirmed."
     else:

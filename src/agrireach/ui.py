@@ -333,14 +333,15 @@ STATES = {
 
 def _phone_problem(phone: str, consent: bool) -> str | None:
     """Farmer-facing phone feedback. The message does not repeat the typed number."""
+    if not consent:
+        return None
     raw = (phone or "").strip()
-    if raw:
-        try:
-            normalize_phone(raw)
-        except PhoneError as exc:
-            return str(exc)
-    elif consent:
+    if not raw:
         return "Enter a Ghana mobile number, or leave SMS updates unchecked."
+    try:
+        normalize_phone(raw)
+    except PhoneError as exc:
+        return str(exc)
     return None
 
 
@@ -373,8 +374,8 @@ def farmer_screen():
             phone = phone_input
             if not question.strip():
                 st.warning("Enter a question before sending.")
-            elif _phone_problem(phone, consent):
-                st.warning(_phone_problem(phone, consent))
+            elif problem := _phone_problem(phone, consent):
+                st.warning(problem)
             else:
                 payload = {"question": question}
                 if consent:
@@ -414,6 +415,9 @@ def farmer_screen():
         if st.button("Check answer", key="farmer_check"):
             status, data = request("GET", f"/farmer/cases/{cid}", headers={"X-Case-Access-Token": access_token.strip()})
             if status == 200:
+                notice = (data.get("acknowledgement") or {}).get("message")
+                if notice:
+                    st.info(notice)
                 if data.get('clarification'):
                     _bind_supplement(int(cid), data.get('revision'), access_token.strip())
                     st.info(data.get('message') or 'Awaiting your information before an officer can review this.')

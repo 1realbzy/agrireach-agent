@@ -66,11 +66,12 @@ def test_invalid_phone_is_rejected_before_a_case_exists():
     assert db.connect().execute("SELECT COUNT(*) FROM cases").fetchone()[0] == 0
 
 
-def test_declined_consent_stores_nothing_and_sends_nothing(monkeypatch):
+@pytest.mark.parametrize("phone", [PHONE, "invalid phone"])
+def test_declined_consent_stores_nothing_and_sends_nothing(monkeypatch, phone):
     monkeypatch.setenv("MNOTIFY_SMS_MODE", "simulated")
     called = []
     monkeypatch.setattr(mnotify, "simulate", lambda case_id: called.append(case_id))
-    body = _ask(phone=PHONE, sms_consent=False).json()
+    body = _ask(phone=phone, sms_consent=False).json()
     assert body["acknowledgement"]["status"] == "not_requested"
     assert _stored_phone(body["case_id"]) is None and _job(body["case_id"]) is None and called == []
     assert PHONE not in json.dumps(body) and E164 not in json.dumps(body)
@@ -96,6 +97,9 @@ def test_explicit_consent_simulated_success_is_labelled(monkeypatch):
     assert PHONE not in private and E164 not in private and KEY not in private
     farmer = c.get(f"/farmer/cases/{case_id}", headers={"X-Case-Access-Token": token}).json()
     assert farmer["answer"] is None
+    assert farmer["acknowledgement"] == ack
+    assert c.get(f"/farmer/cases/{case_id}").status_code == 404
+    assert c.get(f"/farmer/cases/{case_id}", headers={"X-Case-Access-Token": "wrong"}).status_code == 404
     assert c.post(f"/cases/{case_id}/release").status_code == 401
 
 
@@ -151,6 +155,46 @@ def test_enqueue_failure_keeps_the_saved_case(monkeypatch):
     assert db.connect().execute("SELECT COUNT(*) FROM cases").fetchone()[0] == 1
     assert _job(body["case_id"]) is None
     assert _stored_phone(body["case_id"]) is None
+
+
+@pytest.mark.parametrize("failure, mode, expected", [
+    ("remember_consent", "disabled", "not_scheduled"),
+    ("complete", "simulated", "sending"),
+    ("public_status", "simulated", "unknown"),
+])
+def test_post_save_sms_failure_returns_saved_case_and_token(monkeypatch, failure, mode, expected):
+    monkeypatch.setenv("MNOTIFY_SMS_MODE", mode)
+
+    def fail(*args, **kwargs):
+        raise sqlite3.OperationalError("injected post-save failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(acknowledgement, failure, fail)
+        response = _ask(phone=PHONE, sms_consent=True)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["acknowledgement"]["status"] == expected
+    assert "saved" in body["acknowledgement"]["message"]
+    assert "injected" not in response.text
+    assert db.connect().execute("SELECT count(*) FROM cases").fetchone()[0] == 1
+    assert c.get(f"/farmer/cases/{body['case_id']}",
+                 headers={"X-Case-Access-Token": body["access_token"]}).status_code == 200
+
+
+def test_acknowledgement_is_available_for_clarification_and_regular_lookup(monkeypatch):
+    monkeypatch.setenv("MNOTIFY_SMS_MODE", "simulated")
+    body = c.post("/ask", json={"question": "When should I plant?", "phone": PHONE, "sms_consent": True}).json()
+    headers = {"X-Case-Access-Token": body["access_token"]}
+    url = f"/farmer/cases/{body['case_id']}"
+    view = c.get(url, headers=headers).json()
+    assert view["clarification"] == body["clarification"]
+    assert view["acknowledgement"] == body["acknowledgement"]
+    con = db.connect()
+    con.execute("UPDATE acknowledgement_jobs SET state='unknown'")
+    con.commit()
+    view = c.get(url, headers=headers).json()
+    assert view["acknowledgement"]["status"] == "unknown"
+    assert view["answer"] is None and PHONE not in json.dumps(view)
 
 
 def test_provider_rejection_timeout_and_no_retry_of_unknown(monkeypatch):
@@ -304,6 +348,9 @@ def test_farmer_form_consent_is_optional_and_status_is_accurate(monkeypatch):
                 "message": "Awaiting your information before an officer can review this.",
                 "acknowledgement": {"status": "not_requested", "simulated": False, "handset_delivered": False,
                                     "message": "No confirmation SMS was sent."}})
+        if str(url).endswith("/farmer/cases/3"):
+            return httpx.Response(200, json={"status": "pending_review", "answer": None,
+                                            "acknowledgement": {"message": "Current SMS status from lookup"}})
         return httpx.Response(200, json={"draft_mode": "stub"})
 
     monkeypatch.setattr(httpx, "request", backend)
@@ -318,6 +365,7 @@ def test_farmer_form_consent_is_optional_and_status_is_accurate(monkeypatch):
 
     plain = AppTest.from_string("from agrireach.ui import farmer_screen\nfarmer_screen()", default_timeout=20).run()
     plain.text_area(key="farmer_question").set_value("When should I plant?")
+    plain.text_input(key="farmer_phone").set_value("12345")
     plain.button(key="farmer_submit_button").click().run()
     assert seen[-1][2] == {"question": "When should I plant?"}
     assert any("Awaiting your information" in item.value for item in plain.info)
@@ -332,3 +380,5 @@ def test_farmer_form_consent_is_optional_and_status_is_accurate(monkeypatch):
     assert any(item.value == "Your question has been received." for item in agreed.success)
     assert any("simulated" in item.value.lower() and "no message was sent to a phone" in item.value.lower() for item in agreed.info)
     assert any("waiting for an extension officer" in item.value.lower() for item in agreed.caption)
+    agreed.button(key="farmer_check").click().run()
+    assert any(item.value == "Current SMS status from lookup" for item in agreed.info)

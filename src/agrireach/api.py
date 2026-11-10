@@ -178,17 +178,15 @@ def health():
 
 def _consented_phone(raw: str, consent: bool) -> str:
     """Validate before a case exists. The error text does not repeat the submitted number."""
+    if not consent:
+        return ""
     text = (raw or "").strip()
-    if text:
-        try:
-            normalized = normalize_phone(text)
-        except PhoneError as exc:
-            raise HTTPException(422, str(exc))
-    else:
-        normalized = ""
-    if consent and not normalized:
+    if not text:
         raise HTTPException(422, "Enter a Ghana mobile number, or leave SMS updates unchecked.")
-    return normalized if consent else ""
+    try:
+        return normalize_phone(text)
+    except PhoneError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 def _with_acknowledgement(con, case_id: int, body: dict) -> dict:
@@ -406,10 +404,13 @@ def farmer_view(case_id: int, x_case_access_token: str | None = Header(None)):
     row = db.get_case(con, case_id)
     if not row or not db.farmer_case_token_valid(con, case_id, x_case_access_token):
         raise HTTPException(404, "not found")
-    if row["status"] == "draft" and db._open_clarification(row):
-        body = {"case_id": case_id, "status": "draft", "answer": None, "revision": row["revision"],
-                "clarification": db._open_clarification(row)["clarification"], "message": AWAITING_FARMER}
-        return _with_acknowledgement(con, case_id, body)
+    return _with_acknowledgement(con, case_id, _farmer_case_body(con, case_id, row))
+
+
+def _farmer_case_body(con, case_id: int, row) -> dict:
+    if row["status"] == "draft" and (clarification := db._open_clarification(row)):
+        return {"case_id": case_id, "status": "draft", "answer": None, "revision": row["revision"],
+                "clarification": clarification["clarification"], "message": AWAITING_FARMER}
     if row["status"] == "undeliverable":  # approved, but the number was removed (STOP or retention purge)
         return {"case_id": case_id, "status": "undeliverable", "answer": None,
                 "message": "No answer was sent: this number was removed from AgriReach."}
