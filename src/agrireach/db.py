@@ -85,21 +85,6 @@ def connect(path: str | None = None) -> sqlite3.Connection:
         CREATE TABLE IF NOT EXISTS channel_pending (
           id INTEGER PRIMARY KEY AUTOINCREMENT, channel TEXT NOT NULL, sender_id TEXT NOT NULL,
           kind TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS farmer_sms_contacts (
-          case_id INTEGER PRIMARY KEY REFERENCES cases(id),
-          phone_e164 TEXT NOT NULL, consent TEXT NOT NULL CHECK (consent = 'granted'),
-          created_at TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS acknowledgement_jobs (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          case_id INTEGER NOT NULL UNIQUE REFERENCES cases(id),
-          state TEXT NOT NULL CHECK (state IN ('pending','sending','accepted','definitely_failed','unknown','undeliverable')),
-          claim_id TEXT, mode TEXT NOT NULL CHECK (mode IN ('simulated','live')),
-          updated_at TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS acknowledgement_attempts (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          job_id INTEGER NOT NULL REFERENCES acknowledgement_jobs(id),
-          claim_id TEXT NOT NULL UNIQUE, outcome TEXT NOT NULL,
-          started_at TEXT NOT NULL, completed_at TEXT, detail TEXT);
         """
     )
     cols = {r[1] for r in con.execute("PRAGMA table_info(cases)")}
@@ -108,7 +93,11 @@ def connect(path: str | None = None) -> sqlite3.Connection:
             con.execute(f"ALTER TABLE cases ADD COLUMN {col} TEXT")
     con.commit()
     from agrireach.migrations import ensure_schema
-    ensure_schema(con, p)
+    try:
+        ensure_schema(con, p)
+    except BaseException:
+        con.close()
+        raise
     return con
 
 

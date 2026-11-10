@@ -268,23 +268,6 @@ def test_abandoned_claim_becomes_unknown_and_is_not_resent(monkeypatch):
     assert again["status"] == "unknown" and calls == []
 
 
-def test_v5_database_gains_tables_without_a_new_ledger_version(tmp_path):
-    path = tmp_path / "legacy.sqlite"
-    con = db.connect(str(path))
-    case_id = db.agent_upsert_case(con, status="pending_review", question="legacy maize question")
-    con.execute("DROP TABLE acknowledgement_attempts")
-    con.execute("DROP TABLE acknowledgement_jobs")
-    con.execute("DROP TABLE farmer_sms_contacts")
-    con.commit()
-    con.close()
-    reopened = db.connect(str(path))
-    assert [row[0] for row in reopened.execute("SELECT version FROM schema_migrations ORDER BY version")] == [1, 2, 3, 4, 5]
-    assert reopened.execute("SELECT question FROM cases WHERE id=?", (case_id,)).fetchone()[0] == "legacy maize question"
-    assert reopened.execute("SELECT 1 FROM farmer_sms_contacts WHERE case_id=?", (case_id,)).fetchone() is None
-    assert reopened.execute("SELECT 1 FROM sqlite_master WHERE name='acknowledgement_jobs'").fetchone()
-    assert reopened.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
-
-
 def test_retention_removes_the_web_number_and_blocks_a_later_send(monkeypatch):
     monkeypatch.setenv("MNOTIFY_SMS_MODE", "simulated")
     body = _ask(phone=PHONE, sms_consent=True).json()

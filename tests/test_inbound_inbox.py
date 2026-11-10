@@ -16,7 +16,7 @@ def test_inbox_persists_and_deduplicates(tmp_path):
     row = reopened.execute("SELECT state,attempt_count,payload FROM channel_inbox").fetchone()
     assert row["state"] == "pending" and row["attempt_count"] == 0
     assert '"maize"' in row["payload"] and "overwritten" not in row["payload"]
-    assert [r[0] for r in reopened.execute("SELECT version FROM schema_migrations ORDER BY version")] == [1, 2, 3, 4, 5]
+    assert [r[0] for r in reopened.execute("SELECT version FROM schema_migrations ORDER BY version")] == [1, 2, 3, 4, 5, 6]
 
 
 def test_only_one_worker_can_claim_and_finish(tmp_path):
