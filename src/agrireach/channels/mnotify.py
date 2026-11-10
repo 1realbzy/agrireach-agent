@@ -4,15 +4,13 @@ Official contract inspected from https://readthedocs.mnotify.com/ (BMS API):
 
 * POST https://api.mnotify.com/api/sms/quick?key=<API key>
 * JSON fields used: recipient (array of numbers), sender (at most 11 characters),
-  message. Samples address recipients as 0XXXXXXXXX.
-* is_schedule and schedule_date are documented for scheduling. This message is
-  not scheduled, so those fields are not sent.
+  message. The immediate-send sample uses local numbers, is_schedule=false,
+  and an empty schedule_date.
 * Success sample: {"status":"success","code":"2000",...,"summary":{"_id": ...}}.
   Code 2000 means the provider accepted the campaign. It is not handset delivery.
   The delivery-report GET is a separate call and is not used here.
 * Documented refusal codes include 4000-4015. HTTP 401 is unauthorized.
-* Generic codes 400-407 are documented with non-standard meanings, including
-  405 as Too Many Requests. No numeric rate quota is published.
+* HTTP and provider body codes are interpreted separately.
 
 Missing or invalid configuration never calls another provider. Africa's Talking
 is not used. A simulated result is labelled simulated and is not handset delivery.
@@ -113,7 +111,8 @@ def transmit(phone_e164: str, message: str, *, client: httpx.Client | None = Non
     if cfg is None:
         return ProviderResult("definitely_failed", "mNotify is not configured; no message was sent")
     local = to_local(phone_e164)
-    payload = {"recipient": [local], "sender": cfg.sender_id, "message": message}
+    payload = {"recipient": [local], "sender": cfg.sender_id, "message": message,
+               "is_schedule": False, "schedule_date": ""}
     own = client is None
     http = client or httpx.Client(timeout=30, trust_env=False)
     try:
@@ -145,21 +144,21 @@ def transmit(phone_e164: str, message: str, *, client: httpx.Client | None = Non
 
 def interpret(status_code: int, payload: dict | None, *, local_recipient: str | None = None) -> ProviderResult:
     """Map a documented mNotify response. Unreadable or contradictory replies stay unknown."""
-    if payload is None:
-        if status_code == 401:
-            return ProviderResult("definitely_failed", "mNotify rejected the API key; no message was accepted")
-        if status_code in (400, 405, 429):
-            return ProviderResult("definitely_failed", "mNotify refused the request; no message was accepted")
-        return ProviderResult("unknown", "outcome unknown: mNotify response was not readable")
-    code = str(payload.get("code", "")).strip()
-    status = str(payload.get("status", "")).strip().lower()
-    if code in REJECTIONS:
-        return ProviderResult("definitely_failed", f"mNotify refused the message ({code}: {REJECTIONS[code]})")
-    if status_code == 401 or code == "401":
+    if status_code >= 500:
+        return ProviderResult("unknown", "outcome unknown: mNotify returned a server error")
+    if status_code == 401:
         return ProviderResult("definitely_failed", "mNotify rejected the API key; no message was accepted")
-    if code in ("405", "429") or status_code in (405, 429):
+    if status_code == 429:
         return ProviderResult("definitely_failed", "mNotify rate limit refused the request; no message was accepted")
-    if status == "success" and code in ("2000", "2001"):
+    if status_code == 422:
+        return ProviderResult("definitely_failed", "mNotify rejected the request during validation")
+    code = str((payload or {}).get("code", "")).strip()
+    status = str((payload or {}).get("status", "")).strip().lower()
+    if code in REJECTIONS and status != "success":
+        return ProviderResult("definitely_failed", f"mNotify refused the message ({code}: {REJECTIONS[code]})")
+    if status_code in (400, 405):
+        return ProviderResult("definitely_failed", "mNotify refused the request; no message was accepted")
+    if status_code == 200 and status == "success" and code == "2000":
         summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
         total = summary.get("total_sent")
         try:
@@ -175,11 +174,9 @@ def interpret(status_code: int, payload: dict | None, *, local_recipient: str | 
         provider_id = campaign if isinstance(campaign, str) and campaign else None
         if provider_id is None:
             return ProviderResult("unknown", "outcome unknown: mNotify success response had no campaign id")
-        if code == "2001":
-            return ProviderResult("accepted", "accepted by mNotify as scheduled; handset delivery is not confirmed", provider_id)
         return ProviderResult("accepted", "accepted by mNotify; handset delivery is not confirmed", provider_id)
-    if status_code >= 500 or status_code in (406, 407):
-        return ProviderResult("unknown", "outcome unknown: mNotify returned a server error")
+    if payload is None:
+        return ProviderResult("unknown", "outcome unknown: mNotify response was not readable")
     return ProviderResult("unknown", "outcome unknown: mNotify response did not establish acceptance or rejection")
 
 

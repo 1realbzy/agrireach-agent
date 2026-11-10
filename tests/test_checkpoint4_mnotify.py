@@ -1,4 +1,6 @@
 """mNotify quick-SMS contract, mocked. No network and no real credentials."""
+import json
+
 import httpx
 import pytest
 
@@ -63,9 +65,8 @@ def test_live_request_uses_documented_quick_sms_fields(monkeypatch):
     assert request.url.params["key"] == KEY
     body = request.read().decode()
     assert KEY not in body and PHONE not in body
-    assert '"recipient":["0240000001"]' in body.replace(" ", "")
-    assert '"sender":"AgriReach"' in body.replace(" ", "")
-    assert "is_schedule" not in body and "schedule_date" not in body
+    assert json.loads(body) == {"recipient": [LOCAL], "sender": "AgriReach", "message": TEXT,
+                                "is_schedule": False, "schedule_date": ""}
     assert "africastalking" not in str(request.url)
 
 
@@ -128,3 +129,19 @@ def test_connect_failure_is_not_an_unknown_send(monkeypatch):
 def test_config_repr_hides_the_key(monkeypatch):
     _live(monkeypatch)
     assert KEY not in repr(mnotify.live_config())
+
+
+@pytest.mark.parametrize("body", [None, {"message": "validation error"}, {"code": "4001", "status": "error"}])
+def test_http_422_is_a_definite_validation_refusal(body):
+    result = mnotify.interpret(422, body)
+    assert result.outcome == "definitely_failed" and "validation" in result.detail
+
+
+def test_only_documented_immediate_success_can_confirm_acceptance():
+    assert mnotify.interpret(200, _success() | {"code": "2001"}).outcome == "unknown"
+    assert mnotify.interpret(503, _success()).outcome == "unknown"
+    assert mnotify.interpret(503, {"code": "4014", "status": "error"}).outcome == "unknown"
+    assert mnotify.interpret(200, {"code": "405", "status": "error"}).outcome == "unknown"
+    refusal = mnotify.interpret(405, None)
+    assert refusal.outcome == "definitely_failed" and "rate limit" not in refusal.detail
+    assert "rate limit" in mnotify.interpret(429, None).detail
