@@ -43,58 +43,14 @@ def db_path() -> str:
 
 def connect(path: str | None = None) -> sqlite3.Connection:
     p = path or db_path()
+    existing_file = p != ":memory:" and Path(p).exists()
     if p != ":memory:":
         Path(p).parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(p, timeout=10)
     con.row_factory = sqlite3.Row
-    from agrireach.migrations import validate_existing_ledger
-    try:
-        validate_existing_ledger(con)
-    except BaseException:
-        con.close()
-        raise
-    con.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS cases (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          question TEXT NOT NULL, crop TEXT, region TEXT,
-          draft TEXT, final_text TEXT,
-          sources TEXT DEFAULT '[]',
-          priority TEXT DEFAULT 'routine', urgent_reasons TEXT DEFAULT '[]',
-          status TEXT NOT NULL DEFAULT 'draft',
-          officer TEXT, decided_at TEXT, officer_note TEXT,
-          created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS officers (
-          name TEXT PRIMARY KEY, token_sha256 TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS tool_log (
-          id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL,
-          case_id INTEGER, actor TEXT NOT NULL, tool TEXT NOT NULL,
-          args TEXT, result_summary TEXT, ok INTEGER NOT NULL);
-        CREATE TABLE IF NOT EXISTS channel_contacts (
-          case_id INTEGER PRIMARY KEY REFERENCES cases(id),
-          channel TEXT NOT NULL, sender_id TEXT NOT NULL,
-          audio_path TEXT, transcript TEXT, stt TEXT, created_at TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS channel_deliveries (
-          id INTEGER PRIMARY KEY AUTOINCREMENT, case_id INTEGER NOT NULL REFERENCES cases(id),
-          channel TEXT NOT NULL, kind TEXT NOT NULL, ok INTEGER NOT NULL, detail TEXT, ts TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS channel_inbound_seen (
-          channel TEXT NOT NULL, message_id TEXT NOT NULL, ts TEXT NOT NULL, PRIMARY KEY (channel, message_id));
-        CREATE TABLE IF NOT EXISTS channel_consent (
-          channel TEXT NOT NULL, sender_id TEXT NOT NULL, status TEXT NOT NULL, asked_at TEXT NOT NULL,
-          decided_at TEXT, PRIMARY KEY (channel, sender_id));
-        CREATE TABLE IF NOT EXISTS channel_pending (
-          id INTEGER PRIMARY KEY AUTOINCREMENT, channel TEXT NOT NULL, sender_id TEXT NOT NULL,
-          kind TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL);
-        """
-    )
-    cols = {r[1] for r in con.execute("PRAGMA table_info(cases)")}
-    for col in ("farmer_draft", "farmer_text"):  # added for the farmer-facing reply; older DBs gain them here
-        if col not in cols:
-            con.execute(f"ALTER TABLE cases ADD COLUMN {col} TEXT")
-    con.commit()
     from agrireach.migrations import ensure_schema
     try:
-        ensure_schema(con, p)
+        ensure_schema(con, p, existing_file=existing_file)
     except BaseException:
         con.close()
         raise

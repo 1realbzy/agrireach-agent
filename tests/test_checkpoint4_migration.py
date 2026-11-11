@@ -13,6 +13,77 @@ AUDIT_EXPECTED = "5283534006cb19119acefc776300c7e83691758ff67507f173b5fc2c801996
 SMS_TABLES = ("farmer_sms_contacts", "acknowledgement_jobs", "acknowledgement_attempts")
 
 
+@pytest.mark.parametrize("failure", ["open", "verification"])
+def test_bootstrap_does_not_change_legacy_schema_when_backup_fails(tmp_path, monkeypatch, failure):
+    path = tmp_path / "legacy.sqlite"
+    with closing(sqlite3.connect(path)) as con, con:
+        con.execute("CREATE TABLE cases(id INTEGER PRIMARY KEY, question TEXT, crop TEXT, region TEXT, "
+                    "draft TEXT, sources TEXT, status TEXT, officer TEXT, updated_at TEXT)")
+        con.execute("INSERT INTO cases(id, question) VALUES (1, 'legacy')")
+    before = path.read_bytes()
+    connect = sqlite3.connect
+
+    class InvalidBackup(sqlite3.Connection):
+        def execute(self, sql, *args):
+            if sql == "PRAGMA integrity_check":
+                return super().execute("SELECT 'injected integrity failure'")
+            return super().execute(sql, *args)
+
+    def fail_backup(destination, *args, **kwargs):
+        if ".before-" in str(destination):
+            if failure == "open":
+                raise sqlite3.OperationalError("injected backup failure")
+            kwargs["factory"] = InvalidBackup
+        return connect(destination, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", fail_backup)
+    expected = sqlite3.OperationalError if failure == "open" else RuntimeError
+    with pytest.raises(expected, match="backup failure|Backup verification failed"):
+        db.connect(str(path))
+    assert path.read_bytes() == before
+    assert list(tmp_path.iterdir()) == [path]
+
+
+@pytest.mark.parametrize("version", [1, 2, 3, 4])
+def test_historical_upgrade_stops_before_ddl_if_backup_fails(tmp_path, monkeypatch, version):
+    path = tmp_path / "historical.sqlite"
+    with monkeypatch.context() as patch:
+        patch.setattr(migrations, f"upgrade_v{version + 1}", lambda con: None)
+        for later in range(version + 2, 7):
+            patch.setattr(migrations, f"upgrade_v{later}", lambda *args: None)
+        with closing(db.connect(str(path))) as con:
+            db.agent_upsert_case(con, status="pending_review", question="legacy")
+            assert con.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] == version
+    before = path.read_bytes()
+    connect = sqlite3.connect
+
+    def fail_backup(destination, *args, **kwargs):
+        if f".before-v{version + 1}-" in str(destination):
+            raise sqlite3.OperationalError("injected backup failure")
+        return connect(destination, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", fail_backup)
+    with pytest.raises(sqlite3.OperationalError, match="injected backup failure"):
+        db.connect(str(path))
+    assert path.read_bytes() == before
+
+
+def test_bootstrap_failure_rolls_back_and_retains_original_backup(tmp_path, monkeypatch):
+    path = tmp_path / "current.sqlite"
+    with closing(db.connect(str(path))) as con, con:
+        con.execute("DROP TABLE channel_pending")
+        con.execute("DROP TABLE channel_consent")
+    before = path.read_bytes()
+    monkeypatch.setitem(migrations.BOOTSTRAP_STATEMENTS, "channel_pending", "INVALID SQL")
+    with pytest.raises(sqlite3.OperationalError, match="syntax error"):
+        db.connect(str(path))
+    assert path.read_bytes() == before
+    (backup,) = tmp_path.glob("*.before-bootstrap-*.sqlite")
+    with closing(sqlite3.connect(backup)) as con:
+        assert con.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+        assert not con.execute("SELECT 1 FROM sqlite_master WHERE name='channel_consent'").fetchone()
+
+
 @pytest.fixture
 def v5(tmp_path, monkeypatch):
     path = tmp_path / "synthetic # v5.sqlite"
@@ -42,6 +113,27 @@ def test_v5_upgrade_and_verified_backup(v5):
         pass
     assert v5.read_bytes() == saved
     assert list(v5.parent.glob("*.before-v6-*.sqlite")) == [backup]
+
+
+def test_upgrade_preserves_approval_assessment_and_audit_evidence(v5):
+    with closing(sqlite3.connect(v5)) as con, con:
+        con.execute("INSERT INTO safety_assessments VALUES (1, 1, 'snapshot', 'assessment', 'fixture')")
+        con.execute("INSERT INTO approvals VALUES (1, 1, 1, NULL, 1, 'payload', 'fingerprint', 'fixture', 'fixture')")
+        con.execute("INSERT INTO audit_events VALUES (1, 1, 'approval', 'officer', 'details', 'fixture')")
+    tables = ("cases", "approvals", "safety_assessments", "audit_events")
+    with closing(sqlite3.connect(v5)) as con:
+        before = {table: con.execute(f"SELECT * FROM {table}").fetchall() for table in tables}
+    with closing(db.connect(str(v5))) as con:
+        assert {table: [tuple(row) for row in con.execute(f"SELECT * FROM {table}")]
+                for table in tables} == before
+        for table in tables[1:]:
+            with pytest.raises(sqlite3.IntegrityError, match="immutable evidence"):
+                con.execute(f"UPDATE {table} SET id=id WHERE id=1")
+            with pytest.raises(sqlite3.IntegrityError, match="immutable evidence"):
+                con.execute(f"DELETE FROM {table} WHERE id=1")
+    (backup,) = v5.parent.glob("*.before-v6-*.sqlite")
+    with closing(sqlite3.connect(backup)) as con:
+        assert {table: con.execute(f"SELECT * FROM {table}").fetchall() for table in tables} == before
 
 
 def test_adopts_compatible_legacy_sms_data(v5):
