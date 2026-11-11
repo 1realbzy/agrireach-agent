@@ -41,7 +41,7 @@ def db_path() -> str:
     return url.removeprefix("sqlite:///")
 
 
-def connect(path: str | None = None) -> sqlite3.Connection:
+def connect(path: str | None = None, *, adopt_legacy_sms=False) -> sqlite3.Connection:
     p = path or db_path()
     existing_file = p != ":memory:" and Path(p).exists()
     if p != ":memory:":
@@ -50,7 +50,7 @@ def connect(path: str | None = None) -> sqlite3.Connection:
     con.row_factory = sqlite3.Row
     from agrireach.migrations import ensure_schema
     try:
-        ensure_schema(con, p, existing_file=existing_file)
+        ensure_schema(con, p, existing_file=existing_file, adopt_legacy_sms=adopt_legacy_sms)
     except BaseException:
         con.close()
         raise

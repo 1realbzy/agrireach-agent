@@ -54,7 +54,7 @@ Terminal 1, from the repository root:
 
 ```powershell
 . .\pilot-env.ps1
-.\.venv\Scripts\python.exe -m uvicorn agrireach.api:app --host 127.0.0.1 --port 8000 --no-access-log
+.\.venv\Scripts\python.exe -m uvicorn agrireach.api:app --host 127.0.0.1 --port 8000 --ws none --no-access-log
 ```
 
 Terminal 2, from the same repository root:

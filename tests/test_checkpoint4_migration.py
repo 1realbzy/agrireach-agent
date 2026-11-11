@@ -13,6 +13,23 @@ AUDIT_EXPECTED = "5283534006cb19119acefc776300c7e83691758ff67507f173b5fc2c801996
 SMS_TABLES = ("farmer_sms_contacts", "acknowledgement_jobs", "acknowledgement_attempts")
 
 
+def _historical_database(path, version):
+    """Build an actual historical database without bypassing startup validation."""
+    with closing(sqlite3.connect(path)) as con:
+        con.row_factory = sqlite3.Row
+        con.execute("PRAGMA foreign_keys=ON")
+        with con:
+            con.execute("BEGIN")
+            for statement in migrations._pending_bootstrap(con, set()) + migrations.STATEMENTS:
+                con.execute(statement)
+            con.execute("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, checksum TEXT NOT NULL, applied_at TEXT NOT NULL)")
+            con.execute("INSERT INTO schema_migrations VALUES (1, ?, ?)", (migrations.CHECKSUM, db.now()))
+        upgrades = (migrations.upgrade_v2, migrations.upgrade_v3, migrations.upgrade_v4, migrations.upgrade_v5)
+        for upgrade in upgrades[:version - 1]:
+            upgrade(con)
+        db.agent_upsert_case(con, status="pending_review", question="legacy maize question")
+
+
 @pytest.mark.parametrize("failure", ["open", "verification"])
 def test_bootstrap_does_not_change_legacy_schema_when_backup_fails(tmp_path, monkeypatch, failure):
     path = tmp_path / "legacy.sqlite"
@@ -47,13 +64,7 @@ def test_bootstrap_does_not_change_legacy_schema_when_backup_fails(tmp_path, mon
 @pytest.mark.parametrize("version", [1, 2, 3, 4])
 def test_historical_upgrade_stops_before_ddl_if_backup_fails(tmp_path, monkeypatch, version):
     path = tmp_path / "historical.sqlite"
-    with monkeypatch.context() as patch:
-        patch.setattr(migrations, f"upgrade_v{version + 1}", lambda con: None)
-        for later in range(version + 2, 7):
-            patch.setattr(migrations, f"upgrade_v{later}", lambda *args: None)
-        with closing(db.connect(str(path))) as con:
-            db.agent_upsert_case(con, status="pending_review", question="legacy")
-            assert con.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] == version
+    _historical_database(path, version)
     before = path.read_bytes()
     connect = sqlite3.connect
 
@@ -68,31 +79,37 @@ def test_historical_upgrade_stops_before_ddl_if_backup_fails(tmp_path, monkeypat
     assert path.read_bytes() == before
 
 
-def test_bootstrap_failure_rolls_back_and_retains_original_backup(tmp_path, monkeypatch):
+def test_existing_database_with_missing_bootstrap_tables_is_not_repaired(tmp_path):
     path = tmp_path / "current.sqlite"
     with closing(db.connect(str(path))) as con, con:
         con.execute("DROP TABLE channel_pending")
         con.execute("DROP TABLE channel_consent")
     before = path.read_bytes()
+    with pytest.raises(RuntimeError, match="Incomplete bootstrap schema"):
+        db.connect(str(path))
+    assert path.read_bytes() == before
+    assert list(tmp_path.iterdir()) == [path]
+
+
+def test_legacy_bootstrap_failure_rolls_back_and_retains_original_backup(tmp_path, monkeypatch):
+    path = tmp_path / "legacy.sqlite"
+    with closing(sqlite3.connect(path)) as con, con:
+        con.execute(migrations.BOOTSTRAP_STATEMENTS["cases"])
+    before = path.read_bytes()
     monkeypatch.setitem(migrations.BOOTSTRAP_STATEMENTS, "channel_pending", "INVALID SQL")
     with pytest.raises(sqlite3.OperationalError, match="syntax error"):
         db.connect(str(path))
     assert path.read_bytes() == before
-    (backup,) = tmp_path.glob("*.before-bootstrap-*.sqlite")
+    (backup,) = tmp_path.glob("*.before-safety-*.sqlite")
     with closing(sqlite3.connect(backup)) as con:
         assert con.execute("PRAGMA integrity_check").fetchone() == ("ok",)
         assert not con.execute("SELECT 1 FROM sqlite_master WHERE name='channel_consent'").fetchone()
 
 
 @pytest.fixture
-def v5(tmp_path, monkeypatch):
+def v5(tmp_path):
     path = tmp_path / "synthetic # v5.sqlite"
-    with monkeypatch.context() as patch:
-        patch.setattr(migrations, "upgrade_v6", lambda con, path: None)
-        with closing(db.connect(str(path))) as con:
-            db.agent_upsert_case(con, status="pending_review", question="legacy maize question")
-            assert [tuple(r) for r in con.execute(
-                "SELECT version, checksum FROM schema_migrations ORDER BY version")] == migrations._valid_ledgers()[-2]
+    _historical_database(path, 5)
     return path
 
 
@@ -136,13 +153,19 @@ def test_upgrade_preserves_approval_assessment_and_audit_evidence(v5):
         assert {table: con.execute(f"SELECT * FROM {table}").fetchall() for table in tables} == before
 
 
-def test_adopts_compatible_legacy_sms_data(v5):
+def test_adopts_compatible_legacy_sms_data(v5, monkeypatch):
     with closing(sqlite3.connect(v5)) as con, con:
         for statement in migrations.STATEMENTS_V6:
             con.execute(statement.replace("CREATE TABLE", "create table if not exists").replace(" (", "  ("))
         con.execute("INSERT INTO farmer_sms_contacts VALUES (1, '+233240000001', 'granted', 'fixture')")
         con.execute("INSERT INTO acknowledgement_jobs VALUES (1, 1, 'accepted', 'claim', 'simulated', 'fixture')")
         con.execute("INSERT INTO acknowledgement_attempts VALUES (1, 1, 'claim', 'accepted', 'fixture', NULL, NULL)")
+    before = v5.read_bytes()
+    with pytest.raises(RuntimeError, match="explicit legacy adoption required"):
+        db.connect(str(v5))
+    assert v5.read_bytes() == before
+    monkeypatch.setattr("sys.argv", ["migrations", str(v5), "--adopt-legacy-sms"])
+    migrations.main()
     with closing(db.connect(str(v5))) as con:
         for name in SMS_TABLES:
             assert con.execute(f"SELECT count(*) FROM {name}").fetchone()[0] == 1

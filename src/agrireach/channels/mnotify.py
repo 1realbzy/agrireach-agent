@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
-from contextvars import ContextVar
+from http import HTTPStatus
 from dataclasses import dataclass
 from urllib.parse import quote, quote_plus, urlparse
 
@@ -32,24 +32,36 @@ QUICK_PATH = "/api/sms/quick"
 MODES = ("disabled", "simulated", "live")
 logger = logging.getLogger(__name__)
 
-_private_request_values: ContextVar[tuple[str, ...]] = ContextVar("mnotify_private_values", default=())
+# Uvicorn configures logging before importing the app. Sanitize the emitting
+# transport loggers before any handler sees a record, regardless of request
+# context or thread. Keep only fixed operation names and standard HTTP status.
+_HTTPX_REQUEST = 'HTTP Request: %s %s "%s %d %s"'
+_HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+_HEADER_TRACE_EVENTS = {
+    "receive_response_headers.started",
+    "receive_response_headers.complete",
+    "receive_response_headers.failed",
+}
 
 
 class _ProviderLogFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
-        values = _private_request_values.get()
-        if not values:
-            return True
-
-        def redact(text: str) -> str:
-            for value in values:
-                text = text.replace(value, "[redacted]")
-            return text
-
-        record.msg, record.args = redact(record.getMessage()), ()
-        if record.exc_info:
-            record.exc_text = redact(logging.Formatter().formatException(record.exc_info))
-            record.exc_info = None
+        message = "HTTP transport activity"
+        if record.name == "httpx" and record.msg == _HTTPX_REQUEST:
+            method, _, _, code, _ = record.args
+            method = method if method in _HTTP_METHODS else "OTHER"
+            try:
+                status = HTTPStatus(code)
+            except ValueError:
+                message = f"HTTP request: {method}"
+            else:
+                message = f"HTTP request: {method} {status.value} {status.phrase}"
+        elif record.name.startswith("httpcore.") and isinstance(record.msg, str):
+            event = record.msg.partition(" ")[0]
+            if event in _HEADER_TRACE_EVENTS:
+                message = event
+        record.msg, record.args = message, ()
+        record.exc_info = record.exc_text = record.stack_info = None
         return True
 
 
@@ -146,11 +158,9 @@ def transmit(phone_e164: str, message: str, *, client: httpx.Client | None = Non
                "is_schedule": False, "schedule_date": ""}
     own = client is None
     http = client or httpx.Client(timeout=30, trust_env=False)
-    # The provider requires the key in the query. Redact it at log emission
-    # while retaining the real query for the transport, including mocked ones.
+    # The provider requires the key in the query. Its response may echo it.
     values = {cfg.api_key, quote(cfg.api_key, safe=""), quote_plus(cfg.api_key),
-              repr(cfg.api_key)[1:-1], phone_e164, local}
-    token = _private_request_values.set(tuple(sorted(values, key=len, reverse=True)))
+              repr(cfg.api_key)[1:-1], repr(cfg.api_key.encode())[2:-1], phone_e164, local}
     try:
         try:
             response = http.post(
@@ -183,11 +193,11 @@ def transmit(phone_e164: str, message: str, *, client: httpx.Client | None = Non
             return ProviderResult(result.outcome, result.detail)
         return result
     finally:
-        try:
-            if own:
+        if own:
+            try:
                 http.close()
-        finally:
-            _private_request_values.reset(token)
+            except Exception:
+                logger.warning("Unexpected client error while closing the mNotify connection")
 
 
 def interpret(status_code: int, payload: dict | None, *, local_recipient: str | None = None) -> ProviderResult:

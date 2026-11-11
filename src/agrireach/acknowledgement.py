@@ -160,7 +160,7 @@ def complete(con, job_id: int, claim_id: str, outcome: str, *, provider_id: str 
 
 
 def reconcile(con, job_id: int, *, officer: str, accepted: bool, provider_evidence: str) -> None:
-    """Record verified provider evidence. This never sends or retries."""
+    """Record the officer's verified disposition without storing provider text."""
     if not provider_evidence.strip() or not officer.strip():
         raise ValueError("Named officer and verified provider evidence reference required")
     with con:
@@ -170,8 +170,9 @@ def reconcile(con, job_id: int, *, officer: str, accepted: bool, provider_eviden
             raise db.GateError("Only an unknown acknowledgement can be reconciled")
         state = "accepted" if accepted else "definitely_failed"
         con.execute("UPDATE acknowledgement_jobs SET state=?, updated_at=? WHERE id=?", (state, db.now(), job_id))
+        revision = db.get_case(con, job["case_id"])["revision"]
         approval.audit(con, job["case_id"], officer, "acknowledgement_reconciled", job_id=job_id,
-                       provider_evidence=provider_evidence, accepted=accepted, handset_delivered=False)
+                       revision=revision, accepted=accepted, handset_delivered=False)
 
 
 def dispatch(con, job_id: int, *, client=None) -> dict:

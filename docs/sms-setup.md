@@ -120,7 +120,7 @@ adapter therefore:
 - puts a secret token in the path and compares it in constant time, answering 404 to anything else;
 - refuses bodies over 16 KB and anything without `from` and `text`;
 - ignores senders that aren't an international number;
-- removes the token from uvicorn's access log. **Other logs are not covered.** A reverse proxy, load balancer or
+- omits request targets, including the webhook token, from Uvicorn's access log. A reverse proxy, load balancer or
   hosting platform in front of the app will log the full URL unless it's configured not to.
 
 A forged callback can at worst create a case for the officer and send the fixed acknowledgement or consent prompt

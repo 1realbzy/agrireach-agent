@@ -30,7 +30,7 @@ def main():
         page.locator('[data-testid="stMain"]').evaluate('(e)=>e.scrollTop=0')
         page.screenshot(path=str(output/name),full_page=True,mask=page.get_by_label('Private access code',exact=True).all(),mask_color='#dce5d6')
     try:
-        commands=[['uvicorn','agrireach.api:app','--host','127.0.0.1','--port','18000','--no-access-log']]
+        commands=[['uvicorn','agrireach.api:app','--host','127.0.0.1','--port','18000','--ws','none','--no-access-log']]
         for role,port in [('farmer',8501),('officer',8502)]:
             commands.append(['streamlit','run',f'src/agrireach/{role}_ui.py','--server.address','127.0.0.1','--server.port',str(port),'--server.headless','true','--browser.gatherUsageStats','false'])
         for args in commands:

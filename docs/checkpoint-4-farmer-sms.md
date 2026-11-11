@@ -52,13 +52,24 @@ If the provider fails or the outcome is unknown, the case stays saved.
 
 Numbers are stored as E.164 on `farmer_sms_contacts`, only after explicit consent.
 Legacy cases have no row. Migration 6 creates the three SMS tables and records
-its checksum in the same explicit SQLite transaction. An existing complete set
-of tables from the previous release is adopted if its schema matches the known
-definitions. Partial, altered, or augmented SMS schemas are rejected. A file
-database gets an integrity- and foreign-key-verified SQLite backup before the
-version 6 transaction changes schema or ledger. Quiesce writers for the offline
-migration and protect the backup as carefully as the database. Run
-`python -m agrireach.migrations PATH --verify-only` for read-only verification.
+its checksum in the same explicit SQLite transaction. The migration checks
+the ledger and schema before commit and checks the committed state before
+reporting success. Missing bootstrap objects in a versioned database require
+investigation. Partial, altered, or augmented SMS schemas are rejected.
+
+If you can establish that a v5 copy contains the complete SMS schema from the
+pre-ledger release, run `python -m agrireach.migrations PATH --adopt-legacy-sms`
+to explicitly adopt that schema. Startup refuses unrecorded SMS tables.
+Quiesce writers for offline migration and protect the backup as carefully as
+the database. The migrator verifies SQLite integrity and foreign keys before
+publishing a backup alongside the source. An interruption can leave a dedicated
+`.agrireach-backup-*` staging directory. The CLI rejects those paths and old
+`.partial` artifacts. A retry creates its own staging directory and preserves
+the earlier artifact for inspection.
+
+Run `python -m agrireach.migrations PATH --verify-only` to verify one read-only
+snapshot, including all nine revision and evidence triggers, required tables,
+migration records, integrity and foreign keys.
 
 Retention purge deletes stored web numbers on the same cutoff as other contact
 data. Cases remain.
@@ -76,13 +87,33 @@ This reproduces the discrepancy without changing any migration definition.
 
 Proposed follow-up, subject to separate authorization: correct the audit method
 to hash the complete runtime statement list from the pinned source. On a
-verified backup or copy, confirm the original ledger and eight trigger
+verified backup or copy, confirm the original ledger and nine trigger
 definitions before rehearsing migration 6. No ledger repair is indicated by
 these hashes. If a verified copy fails strict validation, stop and investigate
 the evidence before making any changes.
 
 Logs, audit details, model prompts and public responses use a masked number or
 omit it. The officer acknowledgement route returns the mask only.
+
+## Reconciliation and logging
+
+Authenticated reconciliation records the case, job, officer, revision,
+disposition and timestamp. The legacy evidence field remains required as an
+attestation that the officer checked a provider record. Its content is discarded.
+Keep provider records in the authorised provider system.
+
+If historical audit rows contain private data, restrict access to the database,
+its exports and backups. Inventory the affected event IDs and copies in a
+restricted environment. Obtain explicit approval for any evidence-preserving
+redaction, retention or access-control changes. Document the approved method,
+audit trail, and verification before applying it to any original record.
+
+Uvicorn access logging retains the HTTP method, version and status. It omits
+request targets and peer addresses. The supported API launchers disable
+WebSocket upgrades. HTTPX and HTTP Core logging in the API process keeps only
+fixed HTTP diagnostics. These controls apply to the application's loggers.
+Configure reverse proxies, load balancers, external tracing and other
+infrastructure to avoid recording private URLs, headers and request bodies.
 
 ## Known limitations
 

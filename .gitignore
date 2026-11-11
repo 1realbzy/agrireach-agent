@@ -20,3 +20,10 @@ data/outbox/
 pilot-env.ps1
 data/pilot-media/
 data/pilot-outbox/
+
+# SQLite migration staging files and SQLite sidecars.
+*.sqlite.partial
+*.db.partial
+*.sqlite-*
+*.db-*
+.agrireach-backup-*/

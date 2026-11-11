@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import logging
+from contextlib import closing
 import os
 from dataclasses import asdict
 from pathlib import Path
@@ -12,11 +14,13 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from pydantic_core import PydanticCustomError
 
-from agrireach import acknowledgement, approval, agent, db, farmer_reply, knowledge, llm
+from agrireach import acknowledgement, approval, agent, db, farmer_reply, knowledge, llm, safe_logging
 from agrireach.phone import PhoneError, normalize as normalize_phone
 from agrireach.channels import service, simulator, sms, whatsapp
 from agrireach.channels.base import mask_sender
 
+logger = logging.getLogger(__name__)
+safe_logging.protect_uvicorn_access()
 app = FastAPI(title="AgriReach", version="0.1.0")
 if whatsapp.enabled():  # off by default; see docs/whatsapp-setup.md
     app.include_router(whatsapp.router(whatsapp.Config.from_env()))
@@ -153,12 +157,16 @@ def reconcile_delivery(job_id: int, body: ReconcileRequest, officer: str = Depen
     """Record an officer's verified provider disposition without sending again."""
     from agrireach import delivery
     try:
-        delivery.reconcile(db.connect(), job_id, officer=officer,
-                           accepted=body.accepted, provider_evidence=body.provider_evidence)
-    except db.GateError as exc:
-        raise HTTPException(409, str(exc))
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
+        with closing(db.connect()) as con:
+            delivery.reconcile(con, job_id, officer=officer, accepted=body.accepted,
+                               provider_evidence=body.provider_evidence)
+    except db.GateError:
+        raise HTTPException(409, "Only an unknown delivery job can be reconciled") from None
+    except ValueError:
+        raise HTTPException(400, "Named officer and verified provider evidence reference required") from None
+    except Exception:
+        logger.error("Could not record delivery reconciliation")
+        raise HTTPException(500, "Could not record reconciliation") from None
     return {"job_id": job_id, "state": "accepted" if body.accepted else "definitely_failed"}
 
 
@@ -178,12 +186,16 @@ def acknowledgement_status(case_id: int, officer: str = Depends(current_officer)
 def reconcile_acknowledgement(job_id: int, body: ReconcileRequest, officer: str = Depends(current_officer)):
     """Record provider evidence for an unknown acknowledgement. Nothing is sent."""
     try:
-        acknowledgement.reconcile(db.connect(), job_id, officer=officer, accepted=body.accepted,
-                                   provider_evidence=body.provider_evidence)
-    except db.GateError as exc:
-        raise HTTPException(409, str(exc))
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
+        with closing(db.connect()) as con:
+            acknowledgement.reconcile(con, job_id, officer=officer, accepted=body.accepted,
+                               provider_evidence=body.provider_evidence)
+    except db.GateError:
+        raise HTTPException(409, "Only an unknown acknowledgement job can be reconciled") from None
+    except ValueError:
+        raise HTTPException(400, "Named officer and verified provider evidence reference required") from None
+    except Exception:
+        logger.error("Could not record acknowledgement reconciliation")
+        raise HTTPException(500, "Could not record reconciliation") from None
     return {"job_id": job_id, "state": "accepted" if body.accepted else "definitely_failed", "handset_delivered": False}
 
 

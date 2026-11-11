@@ -59,7 +59,7 @@ def claim(con, case_id: int) -> tuple[int, str] | None:
         con.execute("UPDATE delivery_jobs SET state='sending',claim_id=?,updated_at=? WHERE id=?", (claim_id, db.now(), job["id"]))
         con.execute("INSERT INTO delivery_attempts(job_id,claim_id,outcome,started_at) VALUES (?,?,'sending',?)",
                     (job["id"], claim_id, db.now()))
-        approval.audit(con, case_id, "channel", "delivery_claimed", approval_id=record["id"], job_id=job["id"], claim_id=claim_id)
+        approval.audit(con, case_id, "channel", "delivery_claimed", approval_id=record["id"], job_id=job["id"])
         con.commit()
         return job["id"], claim_id
     except BaseException:
@@ -94,9 +94,8 @@ def interrupted(con, job_id: int, *, officer: str):
 def reconcile(con, job_id: int, *, officer: str, accepted: bool, provider_evidence: str):
     """Record an authenticated operator's verified provider evidence.
 
-    The caller must verify the provider record outside this function. The evidence
-    reference is retained for review; an ambiguous note is not proof of failure.
-    This action records provider evidence; it never sends or retries a message.
+    The caller must verify the provider record outside this function. The audit
+    retains the officer's disposition and approval revision without provider text.
     """
     if not provider_evidence.strip() or not officer.strip():
         raise ValueError("Named officer and verified provider evidence reference required")
@@ -108,6 +107,7 @@ def reconcile(con, job_id: int, *, officer: str, accepted: bool, provider_eviden
             raise db.GateError("Only an unknown job can be reconciled")
         con.execute("UPDATE delivery_jobs SET state=?,updated_at=? WHERE id=?",
                     ("accepted" if accepted else "definitely_failed", db.now(), job_id))
-        case_id = con.execute("SELECT case_id FROM approvals WHERE id=?", (job["approval_id"],)).fetchone()[0]
-        approval.audit(con, case_id, officer, "delivery_reconciled", job_id=job_id,
-                       provider_evidence=provider_evidence, accepted=accepted)
+        record = con.execute("SELECT case_id, revision FROM approvals WHERE id=?",
+                             (job["approval_id"],)).fetchone()
+        approval.audit(con, record["case_id"], officer, "delivery_reconciled", job_id=job_id,
+                       revision=record["revision"], approval_id=job["approval_id"], accepted=accepted)
