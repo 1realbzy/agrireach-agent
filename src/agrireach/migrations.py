@@ -41,6 +41,8 @@ def validate_existing_ledger(con):
             raise RuntimeError("Incomplete inbox migration; missing privacy or outcome columns")
     if not required <= tables:
         raise RuntimeError("Incomplete migration schema; stop writers and recover from verified evidence")
+    if len(ledger) >= 2:
+        _verify_immutable_triggers(con)
     return len(ledger), tables
 
 
@@ -172,9 +174,15 @@ STATEMENTS_V2 = [
 ]
 # Immutable content is distinct from mutable delivery state. An administrator who
 # controls SQLite can still drop these guards; that is outside the trust boundary.
-for _table in ("approvals", "advisory_submissions", "safety_assessments", "audit_events"):
-    for _action in ("UPDATE", "DELETE"):
-        STATEMENTS_V2.append(f"CREATE TRIGGER {_table}_{_action.lower()} BEFORE {_action} ON {_table} BEGIN SELECT RAISE(ABORT, 'immutable evidence'); END")
+IMMUTABLE_TRIGGERS = {
+    f"{table}_{action.lower()}": (
+        f"CREATE TRIGGER {table}_{action.lower()} BEFORE {action} ON {table} "
+        "BEGIN SELECT RAISE(ABORT, 'immutable evidence'); END"
+    )
+    for table in ("approvals", "advisory_submissions", "safety_assessments", "audit_events")
+    for action in ("UPDATE", "DELETE")
+}
+STATEMENTS_V2.extend(IMMUTABLE_TRIGGERS.values())
 CHECKSUM_V2 = hashlib.sha256("\n".join(STATEMENTS_V2).encode()).hexdigest()
 
 STATEMENTS_V3 = [
@@ -323,6 +331,13 @@ def _sql_tokens(sql):
                  for token in re.findall(r"'(?:''|[^'])*'|\w+|[^\s]", sql))
 
 
+def _verify_immutable_triggers(con):
+    actual = dict(con.execute("SELECT lower(name), sql FROM sqlite_master WHERE type='trigger'"))
+    for name, expected in IMMUTABLE_TRIGGERS.items():
+        if _sql_tokens(actual.get(name) or "") != _sql_tokens(expected):
+            raise RuntimeError(f"Missing or incompatible immutable evidence trigger: {name}")
+
+
 def _sms_tables_exist(con, *, required=False):
     expected = {statement.split()[2]: _sql_tokens(statement) for statement in STATEMENTS_V6}
     names = tuple(expected)
@@ -381,13 +396,18 @@ def main():
     args = parser.parse_args()
     if args.verify_only:
         with closing(sqlite3.connect(args.path.resolve().as_uri() + "?mode=ro", uri=True)) as con:
+            con.execute("BEGIN")  # Verify one consistent read-only snapshot.
             if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok" or con.execute("PRAGMA foreign_key_check").fetchone():
                 raise RuntimeError("SQLite integrity verification failed")
+            if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'").fetchone():
+                raise RuntimeError("Missing schema_migrations table")
             ledger = con.execute("SELECT version,checksum FROM schema_migrations ORDER BY version").fetchall()
             if ledger != _valid_ledgers()[-1]:
                 raise RuntimeError("Schema version or checksum mismatch")
-            validate_existing_ledger(con)
-        print("Schema versions 1 through 6 verified; integrity and foreign keys OK")
+            _, tables = validate_existing_ledger(con)
+            if _pending_bootstrap(con, tables):
+                raise RuntimeError("Incomplete bootstrap schema; missing required tables or columns")
+        print("Schema versions 1 through 6 verified; integrity, foreign keys and immutable evidence triggers OK")
     else:
         from agrireach import db
         con = db.connect(str(args.path))
