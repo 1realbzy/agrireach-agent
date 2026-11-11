@@ -6,9 +6,11 @@ import os
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, field_validator
+from pydantic_core import PydanticCustomError
 
 from agrireach import acknowledgement, approval, agent, db, farmer_reply, knowledge, llm
 from agrireach.phone import PhoneError, normalize as normalize_phone
@@ -20,6 +22,42 @@ if whatsapp.enabled():  # off by default; see docs/whatsapp-setup.md
     app.include_router(whatsapp.router(whatsapp.Config.from_env()))
 if sms.enabled():  # off by default; see docs/sms-setup.md
     app.include_router(sms.router(sms.Config.from_env()))
+
+
+VALIDATION_MESSAGES = {
+    "json_invalid": "Invalid JSON body",
+    "model_attributes_type": "Expected a JSON object",
+    "model_type": "Expected a JSON object",
+    "missing": "Field required",
+    "string_type": "Expected text",
+    "string_too_short": "Text is too short",
+    "string_too_long": "Text is too long",
+    "bool_type": "Expected a boolean",
+    "bool_parsing": "Expected a boolean",
+    "int_type": "Expected an integer",
+    "int_parsing": "Expected an integer",
+    "int_from_float": "Expected an integer",
+    "greater_than_equal": "Value is below the minimum",
+    "blank_question": "Question must contain text",
+    "blank_supplement": "Text must contain text",
+}
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error(_request: Request, exc: RequestValidationError):
+    # FastAPI's default response includes input and validator context. Messages
+    # from validators can also interpolate private data, so use fixed messages.
+    errors = []
+    for error in exc.errors():
+        kind = error["type"]
+        # The first two components identify the request source and declared field
+        # in these models. Deeper locations can contain user-supplied map keys.
+        location = error["loc"][:2]
+        if kind not in VALIDATION_MESSAGES:
+            kind = "invalid_request"
+            location = location[:1]
+        errors.append({"loc": location, "type": kind, "msg": VALIDATION_MESSAGES.get(kind, "Invalid input")})
+    return JSONResponse(status_code=422, content={"detail": errors})
 
 
 class Ask(BaseModel):
@@ -34,7 +72,7 @@ class Ask(BaseModel):
     def question_is_not_blank(cls, value: str) -> str:
         value = value.strip()
         if not value:
-            raise ValueError("question must contain text")
+            raise PydanticCustomError("blank_question", "Question must contain text")
         return value
 
 
@@ -47,7 +85,7 @@ class Supplement(BaseModel):
     def text_is_not_blank(cls, value: str) -> str:
         value = value.strip()
         if not value:
-            raise ValueError("text must contain text")
+            raise PydanticCustomError("blank_supplement", "Text must contain text")
         return value
 
 

@@ -66,6 +66,32 @@ def test_invalid_phone_is_rejected_before_a_case_exists():
     assert db.connect().execute("SELECT COUNT(*) FROM cases").fetchone()[0] == 0
 
 
+@pytest.mark.parametrize("payload", [
+    {"phone": PHONE, "access_token": KEY},
+    {"question": QUESTION, "phone": int(PHONE), "sms_consent": KEY},
+    {"question": {"nested": [PHONE, {"token": KEY}]}},
+    [{"phone": PHONE, "access_token": KEY}],
+])
+def test_ask_validation_excludes_private_input(payload, caplog):
+    response = c.post("/ask", json=payload, headers={"X-Case-Access-Token": KEY})
+    assert response.status_code == 422
+    for private in (PHONE, str(int(PHONE)), KEY):
+        assert private not in response.text
+        assert private not in caplog.text
+    assert all({"loc", "type", "msg"} == set(error) for error in response.json()["detail"])
+
+
+def test_ask_malformed_json_keeps_diagnostics_without_body(caplog):
+    response = c.post("/ask", content=f'{{"phone":"{PHONE}","access_token":"{KEY}",',
+                      headers={"Content-Type": "application/json"})
+    assert response.status_code == 422
+    error, = response.json()["detail"]
+    assert error["loc"][0] == "body" and error["type"] == "json_invalid"
+    assert error["msg"] == "Invalid JSON body"
+    for private in (PHONE, KEY):
+        assert private not in response.text and private not in caplog.text
+
+
 @pytest.mark.parametrize("phone", [PHONE, "invalid phone"])
 def test_declined_consent_stores_nothing_and_sends_nothing(monkeypatch, phone):
     monkeypatch.setenv("MNOTIFY_SMS_MODE", "simulated")
