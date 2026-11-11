@@ -109,8 +109,8 @@ redaction, retention or access-control changes. Document the approved method,
 audit trail, and verification before applying it to any original record.
 
 Uvicorn access logging retains the HTTP method, version and status. It omits
-request targets and peer addresses. The supported API launchers disable
-WebSocket upgrades. HTTPX and HTTP Core logging in the API process keeps only
+raw request targets and peer addresses. The inbound SMS webhook keeps a fixed
+route label. The supported API launchers disable WebSocket upgrades. HTTPX and HTTP Core logging in the API process keeps only
 fixed HTTP diagnostics. These controls apply to the application's loggers.
 Configure reverse proxies, load balancers, external tracing and other
 infrastructure to avoid recording private URLs, headers and request bodies.

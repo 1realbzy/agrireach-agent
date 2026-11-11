@@ -121,17 +121,22 @@ def test_uvicorn_rejected_request_does_not_log_query(tmp_path):
                         time.sleep(0.1)
                 else:
                     pytest.fail("Uvicorn did not start")
+                webhook = client.post(f"http://127.0.0.1:{port}/channels/sms/inbound/synthetic-path-token",
+                                      params={"phone": "0240000001"})
             assert response.status_code == 401
+            assert webhook.status_code == 404
             for _ in range(100):
-                if "401" in log_path.read_text(encoding="utf-8"):
+                logged = log_path.read_text(encoding="utf-8")
+                if "401" in logged and "404" in logged:
                     break
                 time.sleep(0.02)
         finally:
             process.terminate()
             process.wait()
     logs = log_path.read_text(encoding="utf-8")
-    assert "0240000001" not in logs and "synthetic-query-secret" not in logs
-    assert "401" in logs
+    assert "0240000001" not in logs and "synthetic-query-secret" not in logs and "synthetic-path-token" not in logs
+    assert "401" in logs and "404" in logs
+    assert "/channels/sms/inbound/***" in logs
 
 
 @pytest.mark.parametrize("options", [[], ["--verify-only"]])
