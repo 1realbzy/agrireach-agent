@@ -1,5 +1,7 @@
 """mNotify quick-SMS contract, mocked. No network and no real credentials."""
 import json
+import logging
+from urllib.parse import quote_plus
 
 import httpx
 import pytest
@@ -129,6 +131,68 @@ def test_connect_failure_is_not_an_unknown_send(monkeypatch):
 def test_config_repr_hides_the_key(monkeypatch):
     _live(monkeypatch)
     assert KEY not in repr(mnotify.live_config())
+
+
+def test_httpx_request_log_keeps_diagnostics_without_api_key(monkeypatch, caplog):
+    key = KEY + "/+= synthetic"
+    _live(monkeypatch, key=key)
+    caplog.set_level("DEBUG")
+
+    def provider(request):
+        assert request.url.params["key"] == key
+        return httpx.Response(200, json=_success())
+
+    with _client(provider) as client:
+        result = mnotify.transmit(PHONE, TEXT, client=client)
+    assert result.outcome == "accepted"
+    assert key not in caplog.text and quote_plus(key) not in caplog.text
+    assert "POST" in caplog.text and "200 OK" in caplog.text
+
+
+def test_httpx_transport_error_details_are_redacted(monkeypatch, caplog):
+    _live(monkeypatch)
+    caplog.set_level("DEBUG")
+
+    def provider(request):
+        try:
+            raise httpx.ReadError(f"broken response for {request.url} and {LOCAL}", request=request)
+        except httpx.ReadError:
+            logging.getLogger("httpcore.http11").debug("receive_response_headers.failed", exc_info=True)
+            raise
+
+    with _client(provider) as client:
+        result = mnotify.transmit(PHONE, TEXT, client=client)
+    assert result.outcome == "unknown"
+    assert "receive_response_headers.failed" in caplog.text
+    assert KEY not in caplog.text + result.detail
+    assert LOCAL not in caplog.text + result.detail
+
+
+def test_mnotify_does_not_follow_provider_redirects(monkeypatch):
+    _live(monkeypatch)
+    hosts = []
+
+    def provider(request):
+        hosts.append(request.url.host)
+        return httpx.Response(307, headers={"Location": f"https://example.invalid/?key={KEY}"})
+
+    with httpx.Client(transport=httpx.MockTransport(provider), follow_redirects=True) as client:
+        result = mnotify.transmit(PHONE, TEXT, client=client)
+    assert result.outcome == "unknown"
+    assert hosts == ["api.mnotify.com"]
+
+
+def test_unexpected_client_error_does_not_expose_authenticated_url(monkeypatch, caplog):
+    _live(monkeypatch)
+
+    def provider(request):
+        raise RuntimeError(f"synthetic client error for {request.url}")
+
+    with _client(provider) as client:
+        result = mnotify.transmit(PHONE, TEXT, client=client)
+    assert result.outcome == "unknown"
+    assert "Unexpected client error" in caplog.text
+    assert KEY not in caplog.text + result.detail
 
 
 @pytest.mark.parametrize("body", [None, {"message": "validation error"}, {"code": "4001", "status": "error"}])

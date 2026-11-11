@@ -17,9 +17,11 @@ is not used. A simulated result is labelled simulated and is not handset deliver
 """
 from __future__ import annotations
 
+import logging
 import os
+from contextvars import ContextVar
 from dataclasses import dataclass
-from urllib.parse import urlparse
+from urllib.parse import quote, quote_plus, urlparse
 
 import httpx
 
@@ -28,6 +30,35 @@ from agrireach.phone import to_local
 DEFAULT_BASE = "https://api.mnotify.com"
 QUICK_PATH = "/api/sms/quick"
 MODES = ("disabled", "simulated", "live")
+logger = logging.getLogger(__name__)
+
+_private_request_values: ContextVar[tuple[str, ...]] = ContextVar("mnotify_private_values", default=())
+
+
+class _ProviderLogFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        values = _private_request_values.get()
+        if not values:
+            return True
+
+        def redact(text: str) -> str:
+            for value in values:
+                text = text.replace(value, "[redacted]")
+            return text
+
+        record.msg, record.args = redact(record.getMessage()), ()
+        if record.exc_info:
+            record.exc_text = redact(logging.Formatter().formatException(record.exc_info))
+            record.exc_info = None
+        return True
+
+
+# Filters must be on the emitting loggers: parent logger filters are skipped
+# during propagation. HTTPX logs the full URL before calling response hooks.
+_provider_log_filter = _ProviderLogFilter()
+for _name in ("httpx", "httpcore.connection", "httpcore.http11", "httpcore.http2",
+              "httpcore.proxy", "httpcore.socks"):
+    logging.getLogger(_name).addFilter(_provider_log_filter)
 
 REJECTIONS = {
     "4000": "numeric sender IDs are not allowed",
@@ -115,6 +146,11 @@ def transmit(phone_e164: str, message: str, *, client: httpx.Client | None = Non
                "is_schedule": False, "schedule_date": ""}
     own = client is None
     http = client or httpx.Client(timeout=30, trust_env=False)
+    # The provider requires the key in the query. Redact it at log emission
+    # while retaining the real query for the transport, including mocked ones.
+    values = {cfg.api_key, quote(cfg.api_key, safe=""), quote_plus(cfg.api_key),
+              repr(cfg.api_key)[1:-1], phone_e164, local}
+    token = _private_request_values.set(tuple(sorted(values, key=len, reverse=True)))
     try:
         try:
             response = http.post(
@@ -122,6 +158,7 @@ def transmit(phone_e164: str, message: str, *, client: httpx.Client | None = Non
                 params={"key": cfg.api_key},
                 json=payload,
                 headers={"Accept": "application/json"},
+                follow_redirects=False,
             )
         except (httpx.ConnectTimeout, httpx.ConnectError):
             return ProviderResult("definitely_failed", "not sent: could not connect to mNotify")
@@ -130,16 +167,27 @@ def transmit(phone_e164: str, message: str, *, client: httpx.Client | None = Non
             return ProviderResult("unknown", "outcome unknown: the mNotify request timed out or was interrupted")
         except httpx.HTTPError:
             return ProviderResult("unknown", "outcome unknown: the mNotify request failed without a readable response")
+        except Exception:
+            # A client hook or transport can raise an exception containing the
+            # authenticated URL. Keep the failure visible without its raw details.
+            logger.warning("Unexpected client error during the mNotify request")
+            return ProviderResult("unknown", "outcome unknown: the mNotify client failed")
         try:
             body = response.json()
         except ValueError:
             body = None
         if not isinstance(body, dict):
             body = None
-        return interpret(response.status_code, body, local_recipient=local)
+        result = interpret(response.status_code, body, local_recipient=local)
+        if result.provider_id and any(value in result.provider_id for value in values):
+            return ProviderResult(result.outcome, result.detail)
+        return result
     finally:
-        if own:
-            http.close()
+        try:
+            if own:
+                http.close()
+        finally:
+            _private_request_values.reset(token)
 
 
 def interpret(status_code: int, payload: dict | None, *, local_recipient: str | None = None) -> ProviderResult:
