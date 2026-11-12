@@ -12,7 +12,9 @@ import json
 import re
 from dataclasses import asdict, dataclass, field
 
-POLICY_VERSION = "chemical-4"
+from agrireach import relevance
+
+POLICY_VERSION = "chemical-5"
 SOURCE_FINGERPRINTS = {'APNI-SARI-2023:weeds-herbicide': '7c089f0dc5fbace588368f1dbef72fea4c00445a0e6c6c4d58d37c68360da91c', 'APNI-SARI-2023-MAIZE:p20-faw-control': 'a54a9501e8bd86701d3823aaea38dd9fbbae8e6eff66985fdcee94ff8077415e', 'APNI-SARI-2023-MAIZE:p22-sacks': '5d7dd431a6b34d46b89760c8ae3709db7b1afdc2937ee845308a5361dd094594'}
 CHEMICAL = re.compile(r"\b(?:pesticides?|insecticides?|herbicides?|fungicides?|chemicals?|spray\w*|glyphosate|paraquat)\b", re.I)
 PROTECTIVE_RULE = re.compile(r"^(?:wear (?:protective )?gloves\b|(?:never|do not|don't) (?:use|buy) (?:any )?"
@@ -60,6 +62,11 @@ def sentences(text: str) -> list[str]:
     return _sentences(text)
 
 
+def _referral_relevance(question: str, reply_sentences: list[str]) -> dict:
+    return relevance.classify(
+        question, [normalized(s) for s in reply_sentences], referral_norms={normalized(s) for s in REFERRALS})
+
+
 def normalized(text: str) -> str:
     """Comparison only: discard a source attribution, never a safety qualifier."""
     text = re.sub(r"\s*\((?:APNI|MoFA|IITA|FAO|WHO)\)\s*[.!]?$", "", text, flags=re.I)
@@ -88,6 +95,10 @@ class Assessment:
     outcome: str = "pass"
     findings: list[Finding] = field(default_factory=list)
     judge_status: str = "not_required"
+    relevance: dict = field(default_factory=lambda: {
+        "status": "not_applicable",
+        "reason": "Relevance was not assessed.",
+    })
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -159,4 +170,9 @@ def assess(text: str, passages: list[dict], *, language: str = "en", question: s
                 uncertain=not CHEMICAL.search(s))  # unsourced spraying/pesticide advice is blocked outright
         else:
             result.judge_status = "required"
+    # A registered referral can be safe and still fail to answer the question.
+    # This does not approve the text and does not replace the model judge for other sentences.
+    result.relevance = _referral_relevance(question, ss)
+    if result.relevance["status"] == "unrelated":
+        add("RELEVANCE", text.strip(), result.relevance["reason"], (question.strip(),), uncertain=True)
     return result

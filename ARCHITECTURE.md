@@ -53,7 +53,7 @@ These run in the `write` node, before the officer sees the draft:
 
 ## Approval safety gate
 
-When an officer approves, the exact farmer text goes through `approval.assess_candidate()`. It runs the deterministic gate in `safety_gate.assess()` first, then the source checks. `POLICY_VERSION` in `safety_gate.py` is `chemical-4`.
+When an officer approves, the exact farmer text goes through `approval.assess_candidate()`. It runs the deterministic gate in `safety_gate.assess()` first, then the source checks. `POLICY_VERSION` in `safety_gate.py` is `chemical-5`. A registered chemical referral that does not answer a harvest, planting or storage question is held with `RELEVANCE` and is not an unrestricted pass.
 
 ### Deterministic gate (`safety_gate.py`, `instruction_policy.py`)
 

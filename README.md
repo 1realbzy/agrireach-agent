@@ -237,7 +237,7 @@ src/agrireach/
   claim_check.py      sentences without figures: named sources, agreement claims, word overlap, judge
   judge.py            second-model judge; always on, fails closed
   farmer_reply.py     the plain farmer-facing text the officer approves
-  safety_gate.py      deterministic approval gate (S1 chemical safeguard, S2, S3, S4, LANGUAGE); POLICY_VERSION
+  safety_gate.py      deterministic approval gate (S1 chemical safeguard, S2, S3, S4, LANGUAGE, RELEVANCE); POLICY_VERSION chemical-5
   instruction_policy.py  the hard-stop word lists: unsourced input, REPEAT, skips officer, burning
   approval.py         approval assessment, binding, immutable approvals and release
   delivery.py         atomic delivery claims; unknown outcomes are never retried automatically

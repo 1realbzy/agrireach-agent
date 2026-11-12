@@ -54,6 +54,8 @@ def assess_candidate(text: str, ctx: dict) -> dict:
     result["informational"] = []
     if not farmer_reply.caveat_kept(text or "", caveat):
         result["informational"].append("The approved text omits the case zone caveat; review source applicability")
+    if result.get("relevance", {}).get("status") == "uncertain":
+        result["informational"].append(result["relevance"]["reason"])
     if ctx["contact"] and ctx["contact"]["channel"] == "sms" and text and sms.length_prompt(text):
         reason = sms.length_prompt(text)
         return result | {"outcome": "safety_blocked", "reason": reason,
