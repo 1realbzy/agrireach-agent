@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 import hashlib
+from pathlib import Path
 import sqlite3
 
 import pytest
@@ -28,6 +29,62 @@ def _historical_database(path, version):
         for upgrade in upgrades[:version - 1]:
             upgrade(con)
         db.agent_upsert_case(con, status="pending_review", question="legacy maize question")
+
+
+@pytest.mark.parametrize("relative_path", [
+    "backup.sqlite.partial",
+    "backup.sqlite.PARTIAL",
+    ".agrireach-backup-interrupted/nested/database.sqlite",
+])
+@pytest.mark.parametrize("path_form", ["pathlike", "configured"])
+def test_connect_rejects_incomplete_backups_before_writes(tmp_path, monkeypatch, relative_path, path_form):
+    path = tmp_path / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _historical_database(path, 5)
+    before = path.read_bytes()
+    siblings = set(path.parent.iterdir())
+    monkeypatch.chdir(tmp_path)
+    if path_form == "configured":
+        monkeypatch.setenv("DATABASE_URL", f"sqlite:///{relative_path}")
+        selected_path = None
+    else:
+        selected_path = path
+
+    with pytest.raises(ValueError, match="Incomplete backup artifacts"):
+        with closing(db.connect(selected_path)):
+            pass
+
+    assert path.read_bytes() == before
+    assert set(path.parent.iterdir()) == siblings
+
+
+def test_connect_rejects_an_alias_to_a_partial_backup(tmp_path):
+    path = tmp_path / "database.sqlite.partial"
+    _historical_database(path, 5)
+    before = path.read_bytes()
+    alias = tmp_path / "database.sqlite"
+    try:
+        alias.symlink_to(path)
+    except OSError as exc:
+        pytest.skip(f"Cannot create a symbolic link: {exc}")
+
+    with pytest.raises(ValueError, match="Incomplete backup artifacts"):
+        with closing(db.connect(alias)):
+            pass
+
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("filename", ["partial-results.sqlite", "backup.partial.sqlite", ".agrireach-backup-notes.sqlite"])
+def test_connect_accepts_legitimate_database_names(tmp_path, filename):
+    with closing(db.connect(tmp_path / filename)) as con:
+        assert con.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] == 6
+
+
+@pytest.mark.parametrize("path", [":memory:", Path(":memory:")])
+def test_connect_preserves_in_memory_database(path):
+    with closing(db.connect(path)) as con:
+        assert con.execute("PRAGMA database_list").fetchone()["file"] == ""
 
 
 @pytest.mark.parametrize("failure", ["open", "verification"])

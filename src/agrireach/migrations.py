@@ -23,6 +23,18 @@ CHECKSUM = hashlib.sha256("\n".join(STATEMENTS).encode()).hexdigest()
 BACKUP_STAGING_PREFIX = ".agrireach-backup-"
 
 
+def validate_database_path(path: str | Path) -> Path:
+    """Reject unpublished backup inputs and return the checked filesystem path."""
+    requested = Path(path)
+    resolved = requested.resolve()
+    for candidate in (requested, resolved):
+        if candidate.name.lower().endswith(".partial") or any(
+            part.lower().startswith(BACKUP_STAGING_PREFIX) for part in candidate.parent.parts
+        ):
+            raise ValueError("Incomplete backup artifacts cannot be used as migration inputs")
+    return resolved
+
+
 def _migration_statements():
     return (STATEMENTS, STATEMENTS_V2, STATEMENTS_V3, STATEMENTS_V4, STATEMENTS_V5, STATEMENTS_V6)
 
@@ -463,15 +475,14 @@ def main():
     parser.add_argument("--adopt-legacy-sms", action="store_true",
                         help="Explicitly adopt complete pre-ledger SMS tables from a known legacy v5 database")
     args = parser.parse_args()
-    for path in (args.path, args.path.resolve()):
-        if path.name.lower().endswith(".partial") or any(
-            part.lower().startswith(BACKUP_STAGING_PREFIX) for part in path.parts
-        ):
-            parser.error("Incomplete backup artifacts cannot be used as migration inputs")
     if args.adopt_legacy_sms and args.verify_only:
         parser.error("--adopt-legacy-sms requires a write migration")
+    try:
+        path = validate_database_path(args.path)
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.verify_only:
-        with closing(sqlite3.connect(args.path.resolve().as_uri() + "?mode=ro", uri=True)) as con:
+        with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as con:
             con.execute("BEGIN")  # Verify one consistent read-only snapshot.
             if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok" or con.execute("PRAGMA foreign_key_check").fetchone():
                 raise RuntimeError("SQLite integrity verification failed")

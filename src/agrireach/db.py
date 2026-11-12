@@ -41,14 +41,18 @@ def db_path() -> str:
     return url.removeprefix("sqlite:///")
 
 
-def connect(path: str | None = None, *, adopt_legacy_sms=False) -> sqlite3.Connection:
-    p = path or db_path()
-    existing_file = p != ":memory:" and Path(p).exists()
+def connect(path: str | os.PathLike[str] | None = None, *, adopt_legacy_sms=False) -> sqlite3.Connection:
+    from agrireach.migrations import ensure_schema, validate_database_path
+
+    p = os.fspath(path or db_path())
+    existing_file = False
     if p != ":memory:":
-        Path(p).parent.mkdir(parents=True, exist_ok=True)
+        checked_path = validate_database_path(p)
+        existing_file = checked_path.exists()
+        checked_path.parent.mkdir(parents=True, exist_ok=True)
+        p = str(checked_path)
     con = sqlite3.connect(p, timeout=10)
     con.row_factory = sqlite3.Row
-    from agrireach.migrations import ensure_schema
     try:
         ensure_schema(con, p, existing_file=existing_file, adopt_legacy_sms=adopt_legacy_sms)
     except BaseException:

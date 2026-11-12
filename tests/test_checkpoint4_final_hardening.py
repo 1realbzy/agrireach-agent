@@ -140,10 +140,14 @@ def test_uvicorn_rejected_request_does_not_log_query(tmp_path):
 
 
 @pytest.mark.parametrize("options", [[], ["--verify-only"]])
-def test_cli_rejects_an_explicitly_selected_partial_database(tmp_path, monkeypatch, options):
-    path = tmp_path / "backup.sqlite.partial"
-    with closing(db.connect(str(path))):
+@pytest.mark.parametrize("relative_path", ["backup.sqlite.partial", ".agrireach-backup-interrupted/backup.sqlite"])
+def test_cli_rejects_an_explicitly_selected_incomplete_backup(tmp_path, monkeypatch, options, relative_path):
+    source = tmp_path / "database.sqlite"
+    with closing(db.connect(str(source))):
         pass
+    path = tmp_path / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    source.rename(path)
     before = path.read_bytes()
     monkeypatch.setattr(sys, "argv", ["migrations", str(path), *options])
     with pytest.raises(SystemExit):
