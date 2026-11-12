@@ -356,17 +356,17 @@ def ensure_safety_line(text: str, passages: list[dict] | None, caveat: dict | No
 
 
 def _llm_rewrite(officer_text: str, question: str, conflicts: bool = False) -> tuple[str, str]:
-    from openai import OpenAI
-
-    client = OpenAI(base_url=os.environ["LLM_BASE_URL"], api_key=os.getenv("LLM_API_KEY", "none"),
-                    timeout=float(os.getenv("LLM_TIMEOUT", "60")))
-    r = llm.create(
-        "farmer_text", os.environ["LLM_MODEL"], client, temperature=0,
-        extra_body=llm.extra_body(os.environ["LLM_BASE_URL"]),
-        messages=[{"role": "system", "content": PROMPT},
-                  {"role": "user", "content": f"Farmer's question: {question}\nSOURCES DIFFER: {'yes' if conflicts else 'no'}\n\n"
-                                                    f"Advice for the officer:\n{officer_text}"}])
-    return (r.choices[0].message.content or "").strip(), f"llm:{os.environ['LLM_MODEL']}"
+    client = llm.provider_client(os.environ["LLM_BASE_URL"], os.getenv("LLM_API_KEY", "none"))
+    try:
+        r = llm.create(
+            "farmer_text", os.environ["LLM_MODEL"], client, temperature=0,
+            extra_body=llm.extra_body(os.environ["LLM_BASE_URL"]),
+            messages=[{"role": "system", "content": PROMPT},
+                      {"role": "user", "content": f"Farmer's question: {question}\nSOURCES DIFFER: {'yes' if conflicts else 'no'}\n\n"
+                                                        f"Advice for the officer:\n{officer_text}"}])
+        return (r.choices[0].message.content or "").strip(), f"llm:{os.environ['LLM_MODEL']}"
+    finally:
+        llm._close_client(client)
 
 
 def zone_caveat(region: str, where: str = "") -> dict:

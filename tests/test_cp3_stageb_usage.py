@@ -1,7 +1,7 @@
 """Stage B: durable model-usage records for assess, failures, and app-level draft retries.
 
-One record is one application call. The OpenAI client may retry inside that call;
-those HTTP tries are not separate records because the client does not report them.
+One record is one application call. Provider clients disable SDK retries, so a record
+is also one HTTP attempt. The local allowance is not a provider bill.
 """
 import asyncio
 import json

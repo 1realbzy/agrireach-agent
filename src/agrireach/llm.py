@@ -5,19 +5,73 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import os
+import threading
+
+from openai import DefaultHttpx2Client, OpenAI
 
 # --- Every model call (drafter, farmer text, judge) sends max_tokens and records its usage.
 # Without max_tokens OpenRouter reserves the model's whole output window and can answer 402 on a small balance.
 MAX_TOKENS = {"draft": 800, "farmer_text": 400, "judge": 1500}
 _usage: contextvars.ContextVar[list | None] = contextvars.ContextVar("agrireach_usage", default=None)
 # App draft attempt (1, then 2). None for assess, approval, and the farmer-text rewrite.
-# The OpenAI client defaults to two hidden HTTP retries inside one create(); those are not separate records.
+# SDK HTTP retries are disabled. One create() is one provider attempt, counted before it is sent.
 _attempt: contextvars.ContextVar[int | None] = contextvars.ContextVar("agrireach_model_attempt", default=None)
+_budget_lock = threading.Lock()
+_budget_used = 0
 _ENTRY_KEYS = ("role", "model", "ok", "error", "prompt_tokens", "completion_tokens", "cost_usd", "attempt")
 # Longer than the longest catalog model id (56) and the longest chat-client error class (30).
 # model_usage rows are not passed through the shared 2000-character tool-log slice.
 _MODEL_CHARS = 256
 _ERROR_CHARS = 64
+
+
+class ProviderBudgetExceeded(RuntimeError):
+    """The local evaluation allowance is exhausted. This is not a provider invoice or a spending limit."""
+
+
+def request_budget() -> int:
+    """Shared ceiling for draft, regeneration, judge and farmer-text calls. Default 30."""
+    raw = os.getenv("AGRIREACH_REQUEST_BUDGET", "30")
+    try:
+        limit = int(raw)
+    except ValueError:
+        limit = 30
+    return max(limit, 0)
+
+
+def reset_request_budget() -> None:
+    """Start a fresh local count. Does not change anything at the provider."""
+    global _budget_used
+    with _budget_lock:
+        _budget_used = 0
+
+
+def reserve_provider_attempt() -> int:
+    """Count one application attempt before HTTP. A refused call is not sent and is not added."""
+    global _budget_used
+    with _budget_lock:
+        limit = request_budget()
+        if _budget_used >= limit:
+            raise ProviderBudgetExceeded(
+                f"The local provider request allowance of {limit} is exhausted. No further request was sent.")
+        _budget_used += 1
+        return _budget_used
+
+
+def provider_client(base_url: str, api_key: str):
+    """OpenAI-compatible client with SDK retries and redirect following turned off.
+
+    Verified against openai 3.29.0, whose default is two hidden retries and an HTTP client that follows redirects.
+    """
+    timeout = float(os.getenv("LLM_TIMEOUT", "60"))
+    http_client = DefaultHttpx2Client(follow_redirects=False, timeout=timeout)
+    return OpenAI(base_url=base_url, api_key=api_key, timeout=timeout, max_retries=0, http_client=http_client)
+
+
+def _close_client(client) -> None:
+    closer = getattr(client, "close", None)
+    if closer is not None:
+        closer()
 
 
 def max_tokens(role: str) -> int:
@@ -64,9 +118,12 @@ def record_usage(role: str, model: str, response) -> dict:
 
 
 def create(role: str, model: str, client, **kw):
-    """client.chat.completions.create with the role's max_tokens, recording the attempt whether or not it succeeds
-    (a 402 or timeout is recorded as a failed call, then re-raised). One record is one application call. HTTP retries
-    made inside the client stay inside that call and are not listed separately."""
+    """client.chat.completions.create with the role's max_tokens.
+
+    The attempt is reserved before the provider is contacted. A timeout, rate limit, HTTP error or auth failure
+    stays counted. The SDK is constructed with retries disabled, so this record is one HTTP attempt.
+    """
+    reserve_provider_attempt()
     try:
         r = client.chat.completions.create(model=model, max_tokens=max_tokens(role), **kw)
     except Exception as e:
@@ -220,10 +277,7 @@ def draft(question: str, passages: list[dict], notes: list[str], conflicts: dict
     """Returns (text, mode_used). `feedback` lists citation-check problems from a previous attempt."""
     if mode() == "stub":
         return stub_draft(question, passages, notes), "stub"
-    from openai import OpenAI
-
-    client = OpenAI(base_url=os.environ["LLM_BASE_URL"], api_key=os.getenv("LLM_API_KEY", "none"),
-                    timeout=float(os.getenv("LLM_TIMEOUT", "60")))
+    client = provider_client(os.environ["LLM_BASE_URL"], os.getenv("LLM_API_KEY", "none"))
     ctx = "\n".join(f"[{p['id']}] {p['text']}" for p in passages) or "(no passages found)"
     msg = (f"Farmer question: {question}\n\nPassages:\n{ctx}\n\n{_conflict_block(conflicts)}"
            f"Reviewer notes: {'; '.join(notes) or 'none'}")
@@ -232,6 +286,9 @@ def draft(question: str, passages: list[dict], notes: list[str], conflicts: dict
                 "\nRewrite it so every figure is copied from the passage cited right after it, every conflict "
                 "side is stated with its own citation, and every sentence is supported by the passage it cites "
                 "(remove any sentence no passage supports).")
-    r = create("draft", os.environ["LLM_MODEL"], client, temperature=0, extra_body=extra_body(os.environ["LLM_BASE_URL"]),
-               messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": msg}])
-    return r.choices[0].message.content.strip(), f"llm:{os.environ['LLM_MODEL']}"
+    try:
+        r = create("draft", os.environ["LLM_MODEL"], client, temperature=0, extra_body=extra_body(os.environ["LLM_BASE_URL"]),
+                   messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": msg}])
+        return r.choices[0].message.content.strip(), f"llm:{os.environ['LLM_MODEL']}"
+    finally:
+        _close_client(client)
