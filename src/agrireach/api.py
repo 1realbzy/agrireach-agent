@@ -247,6 +247,11 @@ def _with_acknowledgement(con, case_id: int, body: dict) -> dict:
     return body
 
 
+REJECTED_FARMER_MESSAGE = (
+    "An extension officer reviewed this question and did not approve any advice. Nothing was sent to you."
+)
+
+
 def _submission_message(status: str, clarification: str | None) -> str:
     """Describe the state that was actually saved. Draft is not officer review."""
     if clarification:
@@ -467,6 +472,8 @@ def _farmer_case_body(con, case_id: int, row) -> dict:
     if row["status"] == "not_delivered":  # approved, but the channel send failed: no answer has reached the farmer
         return {"case_id": case_id, "status": "not_delivered", "answer": None,
                 "message": "Your answer has not been sent yet. An extension officer is working on it."}
+    if row["status"] == "rejected":
+        return {"case_id": case_id, "status": "rejected", "answer": None, "message": REJECTED_FARMER_MESSAGE}
     if row["status"] != "released":
         return {"case_id": case_id, "status": row["status"], "answer": None,
                 "message": "Waiting for an extension officer to review your question."}

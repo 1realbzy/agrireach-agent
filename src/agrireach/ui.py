@@ -35,7 +35,7 @@ def show_result(status, data, text=""):
 LABELS = {"S1": "Required source safeguard", "S2": "Consultation or protection instruction",
           "S3": "Unsourced material or dose", "S4": "Burning without a source", "LANGUAGE": "Language needs additional review",
           "SOURCE_SUPPORT": "Source support needs review", "SOURCE_FIGURES": "Number not in the cited source",
-          "SOURCE_CONFLICT": "Cited sources disagree"}
+          "SOURCE_CONFLICT": "Cited sources disagree", "RELEVANCE": "Reply does not address the question"}
 
 
 PASSAGE_ID = re.compile(r"\[?'?\b([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*:[\w-]+)'?\]?")  # e.g. ['MOFA-MAIZE:p10-when-to-plant']
@@ -424,7 +424,12 @@ def farmer_screen():
                     st.write(data['clarification'])
                 else:
                     _clear_supplement()
-                    st.info(STATES.get(data['status'], 'Your case is being reviewed.'))
+                    if data.get("status") == "rejected":
+                        st.info(data.get("message") or (
+                            "An extension officer reviewed this question and did not approve any advice. "
+                            "Nothing was sent to you."))
+                    else:
+                        st.info(STATES.get(data['status'], 'Your case is being reviewed.'))
                     if data.get('delivery_status'):
                         st.caption('Delivery: ' + data['delivery_status'].replace('_', ' '))
                     if data.get('answer'):
