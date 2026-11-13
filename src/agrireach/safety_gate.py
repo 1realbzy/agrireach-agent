@@ -12,6 +12,7 @@ import json
 import re
 from dataclasses import asdict, dataclass, field
 
+from agrireach import instruction_policy
 from agrireach import relevance
 
 POLICY_VERSION = "chemical-5"
@@ -26,6 +27,29 @@ _MIX_PESTICIDE = re.compile(
     r"\b(?:mix(?:e[sd]|ing)?|combin(?:e|ed|ing)|blend(?:ed|ing)?)\b",
     re.I)
 _WATER_SPRAY = re.compile(r"\bspray\w*\s+(?:clean\s+)?water\b", re.I)
+# "Products" is not itself a pesticide. It counts as one only when the question or
+# the candidate has already established agricultural chemical context.
+_MIX_PRODUCT = re.compile(
+    r"\b(?:mix(?:e[sd]|ing)?|combin(?:e|ed|ing)|blend(?:ed|ing)?)\b(?:\W+\w+){0,8}\W+"
+    r"(?:both\s+|two\s+|the\s+|these\s+|those\s+)*products?\b"
+    r"|\bproducts?\b(?:\W+\w+){0,8}\W+"
+    r"\b(?:mix(?:e[sd]|ing)?|combin(?:e|ed|ing)|blend(?:ed|ing)?)\b",
+    re.I)
+_GENERIC_CLASS = re.compile(
+    r"\b(?:pesticides?|insecticides?|herbicides?|fungicides?|chemicals?|products?)\b", re.I)
+_MIX_BAN = re.compile(
+    r"\b(?:do not|don't|never|avoid)\s+(?:mix(?:e[sd]|ing)?|combin(?:e|ed|ing)|blend(?:ed|ing)?)\b",
+    re.I)
+_AFFIRMATIVE_APPLICATION = re.compile(
+    r"\b(?:spray|apply|treat|drench|dust|pour|sprinkle)\w*\b", re.I)
+# Applying or spraying the products is the same instruction when chemical context is set.
+# "Spray water" stays outside this pattern.
+_APPLY_PRODUCT = re.compile(
+    r"\b(?:use|apply|sprinkle|pour)\w*\b(?:\W+\w+){0,6}\W+"
+    r"(?:both\s+|two\s+|the\s+|these\s+|those\s+)*products?\b"
+    r"|\bspray(?!\w*\s+(?:clean\s+)?water)\w*\b(?:\W+\w+){0,6}\W+"
+    r"(?:both\s+|two\s+|the\s+|these\s+|those\s+)*products?\b",
+    re.I)
 PROTECTIVE_RULE = re.compile(r"^(?:wear (?:protective )?gloves\b|(?:never|do not|don't) (?:use|buy) (?:any )?"
                              r"(?:(?:unapproved|unlabelled) (?:pesticides?|chemicals?)|(?:pesticides?|chemicals?) "
                              r"without (?:a |the )?labels?)\b)", re.I)
@@ -71,12 +95,45 @@ def sentences(text: str) -> list[str]:
     return _sentences(text)
 
 
-def _separate_pesticide_instruction(sentence: str) -> bool:
-    """A water-spray phrase does not cover mixing or another pesticide instruction."""
+def _separate_pesticide_instruction(sentence: str, *, chemical_context: bool = False) -> bool:
+    """A water-spray phrase does not cover mixing or another pesticide instruction.
+
+    Generic "products" count only when the question or candidate already names
+    an agricultural chemical. A pure prohibition is not an instruction to mix.
+    """
+    if _reliable_mix_prohibition(sentence):
+        return False
     if _MIX_PESTICIDE.search(sentence):
+        return True
+    if chemical_context and _product_instruction(sentence):
         return True
     without_water = _WATER_SPRAY.sub(" ", sentence)
     return _PESTICIDE_WORD.search(without_water) is not None
+
+
+def _product_instruction(sentence: str) -> bool:
+    """Mixing, or applying, unnamed products. Spraying water alone does not match."""
+    return _MIX_PRODUCT.search(sentence) is not None or _APPLY_PRODUCT.search(sentence) is not None
+
+
+def _chemical_context(question: str, candidate: str) -> bool:
+    """True when the farmer or the candidate has named an agricultural chemical."""
+    return _PESTICIDE_WORD.search(f"{question or ''}\n{candidate or ''}") is not None
+
+
+def _names_specific_chemical(sentence: str) -> bool:
+    """A brand or named substance remains chemical after generic class words are removed."""
+    return instruction_policy.PRODUCT.search(_GENERIC_CLASS.sub(" ", sentence)) is not None
+
+
+def _reliable_mix_prohibition(sentence: str) -> bool:
+    """A leading ban on mixing, with no dose, brand or second instruction to apply something."""
+    text = sentence.strip()
+    if not _MIX_BAN.search(text):
+        return False
+    if _AFFIRMATIVE_APPLICATION.search(text) or re.search(r"\d", text):
+        return False
+    return not _names_specific_chemical(text)
 
 
 def _referral_relevance(question: str, reply_sentences: list[str]) -> dict:
@@ -128,7 +185,6 @@ class Assessment:
 def assess(text: str, passages: list[dict], *, language: str = "en", question: str = "") -> Assessment:
     """Return pass, review_required or safety_blocked (neither held outcome can be acknowledged)."""
     from agrireach.language import TWI_MARKERS
-    from agrireach import instruction_policy
 
     result = Assessment()
     def add(rule, sentence, reason, evidence=(), *, uncertain=False):
@@ -147,6 +203,7 @@ def assess(text: str, passages: list[dict], *, language: str = "en", question: s
         add("LANGUAGE", "", "Language assessment is outside the English policy", uncertain=True)
     source_sentences = {normalized(s) for p in passages for s in sentences(p.get("text", ""))}
     chemical_passages = [p for p in passages if p.get("risk") == "chemical" or CHEMICAL.search(p.get("text", ""))]
+    chemical_context = _chemical_context(question, text)
     ss = sentences(text)
     referral_sentences = [normalized(s) for s in ss if normalized(s) in {normalized(x) for x in REFERRALS}]
     for p in chemical_passages:
@@ -178,20 +235,27 @@ def assess(text: str, passages: list[dict], *, language: str = "en", question: s
             continue
         # S3: unsourced products, doses, repeats, materials and spraying; protective rules may name chemicals.
         # Spraying water is harmless on its own. It does not exempt mixing or a second pesticide instruction.
+        # A pure "do not mix" ban is not an instruction to mix. "Products" in chemical context is.
+        if _reliable_mix_prohibition(s):
+            result.judge_status = "required"
+            continue
+        product_mix = chemical_context and _product_instruction(s)
         protective = PROTECTIVE_RULE.match(s)
         water_phrase = re.search(
             r"\b(?:without|no|not|never|before you)\s+(?:any\s+)?spray\w*|\bspray\w*\s+(?:clean\s+)?water\b|"
             r"\bwhen spraying\b|\badvice on (?:the )?recommended\b", s, re.I)
-        harmless = protective or (water_phrase and not _separate_pesticide_instruction(s))
+        harmless = protective or (water_phrase and not _separate_pesticide_instruction(s, chemical_context=chemical_context))
         repeat = instruction_policy.REPEAT.search(s)
         problem = instruction_policy.unsourced_input(s) or ("repeats an application" if repeat else
             None if harmless or not CHEMICAL.search(s) else "mentions a pesticide or spraying")
-        if problem and harmless and not re.search(r"\d|\bit\b|\bthem\b", s):
+        if product_mix and not problem:
+            problem = "tells the farmer to mix agricultural products"
+        if problem and harmless and not product_mix and not re.search(r"\d|\bit\b|\bthem\b", s):
             problem = None
         if problem:
             add("S3", s, f"This line {problem} and is not in the cited source. Use the source wording, "
                          "name an ordinary material, or remove it.", [p["id"] for p in passages],
-                uncertain=not CHEMICAL.search(s))  # unsourced spraying/pesticide advice is blocked outright
+                uncertain=not CHEMICAL.search(s))  # unsourced spraying or a named pesticide is blocked outright
         else:
             result.judge_status = "required"
     # A registered referral can be safe and still fail to answer the question.
