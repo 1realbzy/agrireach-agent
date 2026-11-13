@@ -577,10 +577,20 @@ async def file_case(s: S, tools: Tools) -> S:
     return {"status": r["status"], "farmer_draft": stored}
 
 async def clarify(s: S, tools: Tools) -> S:
-    """Missing context: remember the question for the farmer and stop. The officer draft stays empty."""
+    """Missing context: remember the question for the farmer and stop. The officer draft stays empty.
+
+    Safety reasons found in the question are stored with the draft. Asking which crop
+    does not clear them, and no model is called on this path.
+    """
+    reasons = list(s.get("urgent_reasons") or [])
+    payload = {"clarification": s["clarification"], "text": "", "replies": []}
+    if reasons:
+        payload["safety_context"] = reasons
     await tools.call("create_or_update_case", {
         "status": "draft", "case_id": s["case_id"],
-        "farmer_draft": json.dumps({"clarification": s["clarification"], "text": "", "replies": []}, ensure_ascii=False)})
+        "priority": "urgent" if reasons else "routine",
+        "urgent_reasons": reasons,
+        "farmer_draft": json.dumps(payload, ensure_ascii=False)})
     return {"status": "draft", "draft_mode": "rule"}
 
 

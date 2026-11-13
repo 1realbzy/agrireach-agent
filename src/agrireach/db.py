@@ -155,10 +155,15 @@ def continue_clarification(con, case_id: int, *, expected_revision: int, clarifi
     try:
         con.execute("BEGIN IMMEDIATE")
         row = con.execute("SELECT * FROM cases WHERE id=?", (case_id,)).fetchone()
-        if row is None or row["status"] != "draft" or not _open_clarification(row):
+        open_clarification = _open_clarification(row) if row is not None else None
+        if row is None or row["status"] != "draft" or not open_clarification:
             raise GateError("Case is not waiting for farmer information")
         if row["revision"] != expected_revision:
             raise GateError("stale_revision: reload the case")
+        safety_context = open_clarification.get("safety_context")
+        if isinstance(safety_context, list) and safety_context:
+            payload = json.dumps({"clarification": clarification, "text": "", "replies": replies,
+                                  "safety_context": safety_context}, ensure_ascii=False)
         cur = con.execute(
             "UPDATE cases SET crop=?, region=?, farmer_draft=?, updated_at=?, revision=revision+1 "
             "WHERE id=? AND revision=? AND status='draft'",
