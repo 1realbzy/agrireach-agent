@@ -455,7 +455,15 @@ async def write(s: S, tools: Tools) -> S:
     attempts = []
     feedback = None
     text, used = "", ""
+    if not s.get("passages"):
+        # No passage can support a generated treatment. Keep the deterministic gap statement.
+        text, used = llm.stub_draft(s["question"], [], notes), "stub(no-evidence)"
+        attempts.append({"draft_mode": used, "ok": True, "problems": [],
+                         "figures_checked": 0, "sentences_checked": 0})
+    skip_model = bool(attempts)
     for attempt_number in range(1, MAX_DRAFT_ATTEMPTS + 1):
+        if skip_model:
+            break  # the no-evidence stub is already recorded; do not call a model
         # attempt_number is the application retry (citation feedback), not an HTTP retry inside the client.
         attempt_token = llm.begin_attempt(attempt_number)
         try:

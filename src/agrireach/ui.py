@@ -35,7 +35,8 @@ def show_result(status, data, text=""):
 LABELS = {"S1": "Required source safeguard", "S2": "Consultation or protection instruction",
           "S3": "Unsourced material or dose", "S4": "Burning without a source", "LANGUAGE": "Language needs additional review",
           "SOURCE_SUPPORT": "Source support needs review", "SOURCE_FIGURES": "Number not in the cited source",
-          "SOURCE_CONFLICT": "Cited sources disagree", "RELEVANCE": "Reply does not address the question"}
+          "SOURCE_CONFLICT": "Cited sources disagree", "RELEVANCE": "Reply does not address the question",
+          "EVIDENCE_GAP": "No sourced guidance for this question"}
 
 
 PASSAGE_ID = re.compile(r"\[?'?\b([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*:[\w-]+)'?\]?")  # e.g. ['MOFA-MAIZE:p10-when-to-plant']
@@ -399,7 +400,9 @@ def farmer_screen():
                         st.write(data['clarification'])
                     else:
                         _clear_supplement()
-                        if data.get("status") == "pending_review":
+                        if data.get("evidence_gap"):
+                            st.info(data.get("message") or "An extension officer will investigate this question. No treatment advice has been approved.")
+                        elif data.get("status") == "pending_review":
                             st.caption("It is waiting for an extension officer to review. Advice is not available yet.")
                 elif status == 422:
                     st.warning("Check the phone number. Use a Ghana mobile number, or leave the phone field blank.")
@@ -428,6 +431,8 @@ def farmer_screen():
                         st.info(data.get("message") or (
                             "An extension officer reviewed this question and did not approve any advice. "
                             "Nothing was sent to you."))
+                    elif data.get("evidence_gap"):
+                        st.info(data.get("message") or "An extension officer will investigate this question. No treatment advice has been approved.")
                     else:
                         st.info(STATES.get(data['status'], 'Your case is being reviewed.'))
                     if data.get('delivery_status'):

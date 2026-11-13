@@ -9,7 +9,7 @@ import secrets
 import re
 from datetime import datetime, timedelta, timezone
 
-from agrireach import db, knowledge, safety_gate
+from agrireach import db, farmer_reply, instruction_policy, knowledge, safety_gate
 
 # A bare greeting skips the source check. Names are Ghanaian day names only, so "Thanks, Harvest." is checked.
 NAMES = "kwa?sis?|kwesi|akosua|kwadwo|kojo|adwoa|kwabena|ebo|abena|kwaku|kweku|akua|ekua|yaw|yaa|kofi|fiifi|afua|efua|kwame|ato|ama|amma|esi|akwasi"
@@ -36,6 +36,18 @@ def context(con, row) -> dict:
             "policy": safety_gate.POLICY_VERSION, "voice_enabled": tts.enabled()}
 
 
+def _uncertainty_only(text: str) -> bool:
+    """True when every sentence only admits that AgriReach cannot advise yet."""
+    parts = safety_gate.sentences(text or "")
+    if not parts:
+        return False
+    allowed = {safety_gate.normalized(item) for item in safety_gate.NO_ADVICE}
+    allowed.add(safety_gate.normalized(farmer_reply.EVIDENCE_GAP_TEXT))
+    return all(
+        safety_gate.normalized(part) in allowed or instruction_policy.acknowledges_missing_evidence(part)
+        for part in parts)
+
+
 def assess_candidate(text: str, ctx: dict) -> dict:
     """Return structured deterministic and model outcomes without mutating storage."""
     from agrireach import citation_check, claim_check, farmer_reply, llm
@@ -60,6 +72,18 @@ def assess_candidate(text: str, ctx: dict) -> dict:
         reason = sms.length_prompt(text)
         return result | {"outcome": "safety_blocked", "reason": reason,
                          "findings": [safety_gate.Finding("CHANNEL_LENGTH", text, reason).to_dict()]}
+    if not ctx["sources"] and result["outcome"] == "pass" and _uncertainty_only(text):
+        finding = safety_gate.Finding(
+            "EVIDENCE_GAP", text or "",
+            "Insufficient evidence is not a supported agricultural advisory. "
+            "Investigate, request the missing information, or reject. Do not approve a treatment.",
+            recovery=("request_info", "reject"))
+        return result | {
+            "outcome": "review_required",
+            "judge_status": "insufficient_evidence",
+            "reason": "Insufficient evidence is not a supported agricultural advisory",
+            "findings": [*result["findings"], finding.to_dict()],
+        }
     if result["outcome"] != "pass" or result["judge_status"] != "required":
         return result
     if not ctx["sources"]:

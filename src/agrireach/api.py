@@ -250,6 +250,26 @@ def _with_acknowledgement(con, case_id: int, body: dict) -> dict:
 REJECTED_FARMER_MESSAGE = (
     "An extension officer reviewed this question and did not approve any advice. Nothing was sent to you."
 )
+EVIDENCE_GAP_FARMER_MESSAGE = (
+    "AgriReach has no sourced guidance for this question. An extension officer will investigate it. "
+    "No treatment advice has been approved."
+)
+
+
+def _evidence_gap(reasons, sources) -> bool:
+    """A covered question with nothing retrieved. Uncovered crops and contact requests stay on their own path."""
+    if sources:
+        return False
+    joined = " | ".join(str(reason) for reason in reasons or [])
+    if "no grounded evidence found in corpus" not in joined:
+        return False
+    if "is not covered" in joined or "how to reach an extension officer" in joined:
+        return False
+    return True
+
+
+def _row_evidence_gap(row) -> bool:
+    return _evidence_gap(json.loads(row["urgent_reasons"] or "[]"), json.loads(row["sources"] or "[]"))
 
 
 def _submission_message(status: str, clarification: str | None) -> str:
@@ -270,9 +290,14 @@ async def ask(a: Ask):
     # The phone is applied after the case commit and is not passed to the model.
     access_token = db.issue_farmer_case_token(db.connect(), out["case_id"])
     sms = acknowledgement.schedule(out["case_id"], phone, bool(phone))
+    gap = (out.get("status") == "pending_review" and not out.get("clarification")
+           and _evidence_gap(out.get("urgent_reasons"), out.get("sources")))
     body = {"case_id": out["case_id"], "access_token": access_token, "status": out["status"],
-            "clarification": out["clarification"], "message": _submission_message(out["status"], out.get("clarification")),
+            "clarification": out["clarification"],
+            "message": EVIDENCE_GAP_FARMER_MESSAGE if gap else _submission_message(out["status"], out.get("clarification")),
             "acknowledgement": sms}
+    if gap:
+        body["evidence_gap"] = True
     if out.get("clarification"):
         body["revision"] = db.get_case(db.connect(), out["case_id"])["revision"]
     return body
@@ -475,8 +500,12 @@ def _farmer_case_body(con, case_id: int, row) -> dict:
     if row["status"] == "rejected":
         return {"case_id": case_id, "status": "rejected", "answer": None, "message": REJECTED_FARMER_MESSAGE}
     if row["status"] != "released":
-        return {"case_id": case_id, "status": row["status"], "answer": None,
+        body = {"case_id": case_id, "status": row["status"], "answer": None,
                 "message": "Waiting for an extension officer to review your question."}
+        if row["status"] == "pending_review" and _row_evidence_gap(row):
+            body["message"] = EVIDENCE_GAP_FARMER_MESSAGE
+            body["evidence_gap"] = True
+        return body
     contact = db.get_contact(con, case_id)
     job = con.execute("SELECT j.state FROM delivery_jobs j JOIN approvals a ON a.id=j.approval_id WHERE a.case_id=? ORDER BY j.id DESC LIMIT 1", (case_id,)).fetchone()
     if contact and job and job["state"] != "accepted":

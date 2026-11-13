@@ -45,6 +45,8 @@ ROW_RE = re.compile(r'^"?(Major|Minor)(?:\s+cropping)?\s+season\s*\|\s*([^|]+?)\
                     r'\[([A-Z0-9][A-Z0-9-]*):[^\]]*\]', re.I)
 SOURCE_NAMES = {"MOFA": "MoFA", "IITA": "IITA", "APNI": "APNI"}
 CONFIRM = "Your extension officer will confirm which to follow."
+# Closed status when the corpus has no passage for the question. It names no treatment.
+EVIDENCE_GAP_TEXT = "An extension officer needs to answer this case."
 # Regulatory limits (aflatoxin in ppb) are for the officer: a farmer can't measure them, and a quoted limit reads as
 # "safe below this". They stay in the officer draft and never go into the farmer text.
 LIMIT_RE = re.compile(r"\b\d+(?:\.\d+)?\s*(?:ppb|ppm|µg\s*/\s*kg|ug\s*/\s*kg|mg\s*/\s*kg)\b|\bparts\s+per\s+(?:billion|million)\b",
@@ -466,6 +468,12 @@ def _propose(officer_text: str, question: str, language: str, conflicts: bool, c
                            language=language)
     if not officer_text.strip():
         return FarmerDraft("", "none", ["no officer text yet"], needs_officer_text=True)
+    if passages is not None and not passages:
+        # A rewrite model invents treatments when it is asked to answer from an empty source list.
+        audit["skipped_rewrite"] = "no_supporting_evidence"
+        return FarmerDraft(EVIDENCE_GAP_TEXT, "rule", [
+            "no supporting agricultural evidence: the treatment rewrite was not run. "
+            "This is a status for the officer, not sourced advice."])
     notes = ["sources differ: edit to keep only the option you choose"] if conflicts else []
     lead = f"{caveat['sentence']} " if caveat else ""
     if caveat:

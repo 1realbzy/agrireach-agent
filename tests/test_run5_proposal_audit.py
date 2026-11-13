@@ -65,7 +65,7 @@ def test_model_error_and_officer_path_are_audited(monkeypatch):
     def boom(*a, **k):
         raise TimeoutError("model timed out")
     monkeypatch.setattr(fr, "_llm_rewrite", boom)
-    fd = fr.propose("Weed well.", "q", passages=[])
+    fd = fr.propose("Weed well.", "q", passages=[{"id": "P", "text": "Weed the field well."}])
     assert fd.audit["model_error"].startswith("TimeoutError") and fd.audit["path"] == "rule"
     assert fr.propose("Weed well.", "q", language="twi").audit["path"] == "officer"
     assert fr.propose("Note: officer only.", "q").audit["path"] == "officer"
