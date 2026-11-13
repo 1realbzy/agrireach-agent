@@ -246,11 +246,36 @@ def decide(con, case_id: int, *, officer: str, decision: str, edited_text=None,
     return dict(db.get_case(con, case_id))
 
 
+def _current_release_block(farmer_text: str, sources: list) -> dict | None:
+    """Current mandatory release rule for an already stored approval.
+
+    The stored assessment and payload stay untouched. Source-free uncertainty is
+    not agricultural advice under the current rule, including approvals recorded
+    before that rule existed. Supported approvals with sources are unchanged.
+    """
+    if sources or not _uncertainty_only(farmer_text):
+        return None
+    finding = safety_gate.Finding(
+        "EVIDENCE_GAP", farmer_text,
+        "Insufficient evidence is not a supported agricultural advisory. "
+        "Investigate, request the missing information, or reject. Do not approve a treatment.",
+        recovery=("request_info", "reject"))
+    return {
+        "outcome": "review_required",
+        "judge_status": "insufficient_evidence",
+        "reason": "Insufficient evidence is not a supported agricultural advisory",
+        "findings": [finding.to_dict()],
+    }
+
+
 def validated_approval(con, case_id: int) -> tuple[dict, dict]:
     """Validate immutable payload, current sources and current case before exposure.
 
     Never regenerate a judge verdict during delivery. A changed source/policy or
     missing modern approval requires fresh officer review, including legacy rows.
+    Current evidence eligibility is applied here and does not rewrite the stored
+    approval. The policy version string is unchanged so a compatible historical
+    approval keeps its fingerprint.
     """
     row = db.get_case(con, case_id)
     approval = con.execute("SELECT * FROM approvals WHERE case_id=? ORDER BY id DESC LIMIT 1", (case_id,)).fetchone()
@@ -264,13 +289,35 @@ def validated_approval(con, case_id: int) -> tuple[dict, dict]:
     result = safety_gate.assess(payload["farmer_text"], ctx["sources"], language=(json.loads(ctx["case"]["farmer_draft"] or "null") or {}).get("language", "en"), question=ctx["case"]["question"])
     if result.outcome != "pass":
         raise db.SafetyError(result.to_dict())
+    blocked = _current_release_block(payload.get("farmer_text") or "", ctx["sources"])
+    if blocked:
+        raise db.SafetyError(blocked)
     return dict(approval), payload
 
 
+def _delivery_already_accepted(con, case_id: int) -> bool:
+    """True when the latest approval was already accepted by the channel."""
+    approval = con.execute(
+        "SELECT id FROM approvals WHERE case_id=? ORDER BY id DESC LIMIT 1", (case_id,)).fetchone()
+    if not approval:
+        return False
+    return con.execute(
+        "SELECT 1 FROM delivery_jobs WHERE approval_id=? AND state='accepted'",
+        (approval["id"],)).fetchone() is not None
+
+
 def release(con, case_id: int, actor="system") -> dict:
-    """Release one valid immutable approval; repeated requests are idempotent."""
+    """Release one valid immutable approval; repeated requests are idempotent.
+
+    A completed external delivery is not sent again. An approval that is still
+    waiting to go out is checked against the current release rules.
+    """
     try:
         con.execute("BEGIN IMMEDIATE")
+        row = db.get_case(con, case_id)
+        if row and row["status"] == "released" and _delivery_already_accepted(con, case_id):
+            con.rollback()
+            return dict(db.get_case(con, case_id))
         approval, payload = validated_approval(con, case_id)
         row = db.get_case(con, case_id)
         if row["status"] not in ("approved", "not_delivered", "released"):

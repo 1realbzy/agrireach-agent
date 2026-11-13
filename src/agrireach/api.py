@@ -254,6 +254,10 @@ EVIDENCE_GAP_FARMER_MESSAGE = (
     "AgriReach has no sourced guidance for this question. An extension officer will investigate it. "
     "No treatment advice has been approved."
 )
+PROCESSING_FAILURE_MESSAGE = (
+    "AgriReach could not finish preparing this question. An extension officer will review it. "
+    "No treatment advice has been approved."
+)
 
 
 def _evidence_gap(reasons, sources) -> bool:
@@ -270,6 +274,11 @@ def _evidence_gap(reasons, sources) -> bool:
 
 def _row_evidence_gap(row) -> bool:
     return _evidence_gap(json.loads(row["urgent_reasons"] or "[]"), json.loads(row["sources"] or "[]"))
+
+
+def _row_processing_failure(row) -> bool:
+    clarification = db._open_clarification(row)
+    return bool(clarification and clarification.get("processing_failure"))
 
 
 def _submission_message(status: str, clarification: str | None) -> str:
@@ -333,8 +342,11 @@ async def supplement(case_id: int, body: Supplement, x_case_access_token: str | 
         if _revision_conflict(exc):
             raise HTTPException(409, "stale_revision: reload the case")
         raise
-    return {"case_id": out["case_id"], "status": out["status"], "answer": None, "clarification": None,
-            "message": _submission_message(out["status"], None)}
+    completed = _farmer_case_body(con, out["case_id"], db.get_case(con, out["case_id"]))
+    if completed.get("evidence_gap"):
+        return completed
+    return {"case_id": completed["case_id"], "status": completed["status"], "answer": None,
+            "clarification": None, "message": _submission_message(completed["status"], None)}
 
 
 @app.get("/officer/queue")
@@ -489,8 +501,12 @@ def farmer_view(case_id: int, x_case_access_token: str | None = Header(None)):
 
 def _farmer_case_body(con, case_id: int, row) -> dict:
     if row["status"] == "draft" and (clarification := db._open_clarification(row)):
-        return {"case_id": case_id, "status": "draft", "answer": None, "revision": row["revision"],
+        body = {"case_id": case_id, "status": "draft", "answer": None, "revision": row["revision"],
                 "clarification": clarification["clarification"], "message": AWAITING_FARMER}
+        if clarification.get("processing_failure"):
+            body["message"] = PROCESSING_FAILURE_MESSAGE
+            body["processing_failure"] = True
+        return body
     if row["status"] == "undeliverable":  # approved, but the number was removed (STOP or retention purge)
         return {"case_id": case_id, "status": "undeliverable", "answer": None,
                 "message": "No answer was sent: this number was removed from AgriReach."}

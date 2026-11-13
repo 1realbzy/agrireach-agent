@@ -423,7 +423,10 @@ def farmer_screen():
                     st.info(notice)
                 if data.get('clarification'):
                     _bind_supplement(int(cid), data.get('revision'), access_token.strip())
-                    st.info(data.get('message') or 'Awaiting your information before an officer can review this.')
+                    if data.get("processing_failure"):
+                        st.warning(data.get("message") or "AgriReach could not finish preparing this question. No treatment advice has been approved.")
+                    else:
+                        st.info(data.get('message') or 'Awaiting your information before an officer can review this.')
                     st.write(data['clarification'])
                 else:
                     _clear_supplement()
@@ -457,11 +460,18 @@ def farmer_screen():
                                            json={'text': reply, 'expected_revision': st.session_state['farmer_supplement_revision']})
                     if status == 200 and data.get('clarification'):
                         _bind_supplement(supplement_case, data.get('revision'), st.session_state['farmer_supplement_token'])
-                        st.info(data.get('message') or 'Awaiting your information before an officer can review this.')
+                        if data.get("processing_failure"):
+                            st.warning(data.get("message") or "AgriReach could not finish preparing this question. No treatment advice has been approved.")
+                        else:
+                            st.info(data.get('message') or 'Awaiting your information before an officer can review this.')
                         st.write(data['clarification'])
                     elif status == 200:
                         _clear_supplement()
-                        if data.get("status") == "pending_review":
+                        if data.get("evidence_gap"):
+                            st.info(data.get("message") or "An extension officer will investigate this question. No treatment advice has been approved.")
+                        elif data.get("status") == "rejected":
+                            st.info(data.get("message") or "An extension officer reviewed this question and did not approve any advice. Nothing was sent to you.")
+                        elif data.get("status") == "pending_review":
                             st.success(data.get('message') or 'Your question has been received. It is waiting for an extension officer to review.')
                         else:
                             st.success(data.get('message') or 'Your question has been received.')

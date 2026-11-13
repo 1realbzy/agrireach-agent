@@ -177,6 +177,51 @@ def continue_clarification(con, case_id: int, *, expected_revision: int, clarifi
     return dict(get_case(con, case_id))
 
 
+def note_processing_failure(con, case_id: int, reason: str = "retrieval failed before review") -> None:
+    """Keep the last conservative safety state when a draft run stops early.
+
+    Does not open a second case and does not clear a chemical warning. The
+    farmer draft stays a clarification, with a failure note the farmer API can
+    show. Officer-owned cases are left unchanged.
+    """
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute("SELECT * FROM cases WHERE id=?", (case_id,)).fetchone()
+        if row is None or row["status"] != "draft":
+            con.rollback()
+            return
+        open_clarification = _open_clarification(row)
+        draft = dict(open_clarification or {})
+        if not draft:
+            try:
+                loaded = json.loads(row["farmer_draft"] or "null")
+            except json.JSONDecodeError:
+                loaded = None
+            draft = dict(loaded) if isinstance(loaded, dict) else {}
+        draft["processing_failure"] = reason
+        reasons = json.loads(row["urgent_reasons"] or "[]")
+        if not isinstance(reasons, list):
+            reasons = []
+        safety = draft.get("safety_context") if isinstance(draft.get("safety_context"), list) else []
+        merged = list(reasons)
+        for item in safety:
+            if isinstance(item, str) and item not in merged:
+                merged.append(item)
+        if reason not in merged:
+            merged.append(reason)
+        priority = row["priority"]
+        if priority == "urgent" or any("chemical" in str(item) for item in merged):
+            priority = "urgent"
+        con.execute(
+            "UPDATE cases SET priority=?, urgent_reasons=?, farmer_draft=?, updated_at=?, revision=revision+1 "
+            "WHERE id=? AND status='draft'",
+            (priority, json.dumps(merged), json.dumps(draft, ensure_ascii=False), now(), case_id))
+        con.commit()
+    except BaseException:
+        con.rollback()
+        raise
+
+
 def _open_clarification(row) -> dict | None:
     """A draft waiting on the farmer. Empty text means this is not an advisory proposal."""
     try:

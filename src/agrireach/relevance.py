@@ -13,7 +13,9 @@ question is classified with a closed set of operation and chemical intents:
   answer to that question.
 * uncertain: the question fits neither group. Relevance is not claimed.
 * not_applicable: the reply is not only a registered chemical referral, or no
-  question was supplied. Other checks still apply.
+  question was supplied. This does not confirm that the reply answers the
+  question. A no-advice sentence such as "I am not sure." does not remove a
+  registered referral from this check. Other checks still apply.
 
 A local request counter elsewhere is not a provider bill, and a relevance
 label is not officer approval.
@@ -53,17 +55,30 @@ def _subject(normalized_sentences: list[str]) -> str:
     return "chemical_referral"
 
 
-def classify(question: str, normalized_sentences: list[str], *, referral_norms: set[str]) -> dict:
-    """Classify a reply. `normalized_sentences` must already use the gate's comparison form."""
+def classify(question: str, normalized_sentences: list[str], *, referral_norms: set[str],
+             ignored_norms: set[str] | None = None) -> dict:
+    """Classify a reply. `normalized_sentences` must already use the gate's comparison form.
+
+    `ignored_norms` are closed no-advice sentences. They do not confirm relevance
+    and they do not hide a registered referral in the same reply.
+    `not_applicable` means this rule did not confirm relevance.
+    """
     asked = (question or "").strip()
     if not asked or not normalized_sentences:
         return _status("not_applicable", "Relevance was not assessed because the question or the reply was empty.")
-    if not referral_norms or any(sentence not in referral_norms for sentence in normalized_sentences):
+    considered = [sentence for sentence in normalized_sentences if sentence not in (ignored_norms or set())]
+    if not considered:
         return _status(
             "not_applicable",
-            "Relevance was not decided by the referral rule because the reply is not only a registered chemical referral.",
+            "Relevance was not decided by the referral rule because the reply does not contain a registered chemical referral.",
         )
-    subject = _subject(normalized_sentences)
+    if not referral_norms or any(sentence not in referral_norms for sentence in considered):
+        return _status(
+            "not_applicable",
+            "Relevance was not decided by the referral rule because the reply is not only a registered chemical referral. "
+            "not_applicable does not confirm that the reply answers the question.",
+        )
+    subject = _subject(considered)
     if _CHEMICAL_QUESTION.search(asked):
         return _status(
             "aligned",

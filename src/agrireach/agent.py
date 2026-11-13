@@ -20,7 +20,7 @@ from langgraph.graph import END, StateGraph
 from mcp import ClientSession, StdioServerParameters
 from agrireach.mcp_transport import stdio_client
 
-from agrireach import citation_check, claim_check, farmer_reply, knowledge, language, llm, places, rainfall, season, zones
+from agrireach import citation_check, claim_check, db, farmer_reply, knowledge, language, llm, places, rainfall, season, zones
 
 RISK_TERMS = {
     "chemical": ["spray", "herbicide", "pesticide", "insecticide", "fungicide", "chemical", "glyphosate", "paraquat",
@@ -313,13 +313,15 @@ async def intake(s: S, tools: Tools) -> S:
         # automatic question about it; the officer checks first.
         reasons.append(f"no automatic clarifying question because of the flags above; officer should ask: {clar}")
         clar = ""
+    recorded = {"priority": "urgent" if reasons else "routine", "urgent_reasons": reasons}
     if s.get("require_draft") and s.get("case_id"):
         case = await tools.call("create_or_update_case", {
             "status": "draft", "case_id": s["case_id"], "crop": crop, "region": region,
-            "expected_revision": s.get("expected_revision") or 0, "require_draft": True})
+            "expected_revision": s.get("expected_revision") or 0, "require_draft": True, **recorded})
     else:
-        case = await tools.call("create_or_update_case", {"status": "draft", "question": s["question"], "crop": crop,
-                                                          "region": region, **({"inbound_claim": s["inbound_claim"]} if s.get("inbound_claim") else {})})
+        case = await tools.call("create_or_update_case", {
+            "status": "draft", "question": s["question"], "crop": crop, "region": region, **recorded,
+            **({"inbound_claim": s["inbound_claim"]} if s.get("inbound_claim") else {})})
     return {"crop": crop, "region": region, "urgent_reasons": reasons, "clarification": clar, "language": lang,
             "search_query": search_query, "case_id": case["case_id"], "notes": [], "errors": [],
             "received": case.get("created_at", ""), "region_from_text": region_from_text,
@@ -632,6 +634,36 @@ async def run(question: str, crop: str = "", region: str = "", use_fetch: bool |
     if use_fetch is None:
         use_fetch = os.getenv("AGRIREACH_SOURCE_CHECK", "1") == "1"
     own_p, fetch_p = _server_params()
+    try:
+        return await _invoke(question, crop, region, use_fetch, extra_urgent_reasons, queue, inbound_claim,
+                             case_id, expected_revision, farmer_replies, own_p, fetch_p)
+    except Exception as exc:
+        # A lost revision race must not write again; that would invalidate the winner.
+        if case_id is not None and not _revision_problem(exc):
+            db.note_processing_failure(db.connect(), case_id, "retrieval failed before review")
+        raise
+
+
+def _revision_problem(exc: BaseException) -> bool:
+    """True when a supplement lost the race. Walks wrappers from the graph and MCP client."""
+    seen: set[int] = set()
+
+    def walk(err: BaseException | None) -> bool:
+        if err is None or id(err) in seen:
+            return False
+        seen.add(id(err))
+        text = str(err)
+        if "stale_revision" in text or "not waiting for farmer information" in text:
+            return True
+        if isinstance(err, BaseExceptionGroup):
+            return any(walk(item) for item in err.exceptions)
+        return walk(err.__cause__) or walk(err.__context__)
+
+    return walk(exc)
+
+
+async def _invoke(question, crop, region, use_fetch, extra_urgent_reasons, queue, inbound_claim,
+                  case_id, expected_revision, farmer_replies, own_p, fetch_p) -> dict:
     async with AsyncExitStack() as st:
         r, w = await st.enter_async_context(stdio_client(own_p))
         own = await st.enter_async_context(ClientSession(r, w))

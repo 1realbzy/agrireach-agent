@@ -17,6 +17,15 @@ from agrireach import relevance
 POLICY_VERSION = "chemical-5"
 SOURCE_FINGERPRINTS = {'APNI-SARI-2023:weeds-herbicide': '7c089f0dc5fbace588368f1dbef72fea4c00445a0e6c6c4d58d37c68360da91c', 'APNI-SARI-2023-MAIZE:p20-faw-control': 'a54a9501e8bd86701d3823aaea38dd9fbbae8e6eff66985fdcee94ff8077415e', 'APNI-SARI-2023-MAIZE:p22-sacks': '5d7dd431a6b34d46b89760c8ae3709db7b1afdc2937ee845308a5361dd094594'}
 CHEMICAL = re.compile(r"\b(?:pesticides?|insecticides?|herbicides?|fungicides?|chemicals?|spray\w*|glyphosate|paraquat)\b", re.I)
+_PESTICIDE_WORD = re.compile(r"\b(?:pesticides?|insecticides?|herbicides?|fungicides?|chemicals?|glyphosate|paraquat)\b", re.I)
+# Mixing stays visible when the same sentence also tells the farmer to spray water.
+_MIX_PESTICIDE = re.compile(
+    r"\b(?:mix(?:e[sd]|ing)?|combin(?:e|ed|ing)|blend(?:ed|ing)?)\b(?:\W+\w+){0,8}\W+"
+    r"(?:both\s+|two\s+|the\s+|these\s+|those\s+)*(?:pesticides?|insecticides?|herbicides?|fungicides?|chemicals?)\b"
+    r"|\b(?:pesticides?|insecticides?|herbicides?|fungicides?|chemicals?)\b(?:\W+\w+){0,8}\W+"
+    r"\b(?:mix(?:e[sd]|ing)?|combin(?:e|ed|ing)|blend(?:ed|ing)?)\b",
+    re.I)
+_WATER_SPRAY = re.compile(r"\bspray\w*\s+(?:clean\s+)?water\b", re.I)
 PROTECTIVE_RULE = re.compile(r"^(?:wear (?:protective )?gloves\b|(?:never|do not|don't) (?:use|buy) (?:any )?"
                              r"(?:(?:unapproved|unlabelled) (?:pesticides?|chemicals?)|(?:pesticides?|chemicals?) "
                              r"without (?:a |the )?labels?)\b)", re.I)
@@ -62,9 +71,21 @@ def sentences(text: str) -> list[str]:
     return _sentences(text)
 
 
+def _separate_pesticide_instruction(sentence: str) -> bool:
+    """A water-spray phrase does not cover mixing or another pesticide instruction."""
+    if _MIX_PESTICIDE.search(sentence):
+        return True
+    without_water = _WATER_SPRAY.sub(" ", sentence)
+    return _PESTICIDE_WORD.search(without_water) is not None
+
+
 def _referral_relevance(question: str, reply_sentences: list[str]) -> dict:
+    from agrireach.farmer_reply import EVIDENCE_GAP_TEXT
+    ignored = {normalized(s) for s in NO_ADVICE}
+    ignored.add(normalized(EVIDENCE_GAP_TEXT))
     return relevance.classify(
-        question, [normalized(s) for s in reply_sentences], referral_norms={normalized(s) for s in REFERRALS})
+        question, [normalized(s) for s in reply_sentences],
+        referral_norms={normalized(s) for s in REFERRALS}, ignored_norms=ignored)
 
 
 def normalized(text: str) -> str:
@@ -156,9 +177,12 @@ def assess(text: str, passages: list[dict], *, language: str = "en", question: s
             add("S4", s, "Burning is not advised without a cited source. Revise or remove this line.", uncertain=True)
             continue
         # S3: unsourced products, doses, repeats, materials and spraying; protective rules may name chemicals.
-        harmless = PROTECTIVE_RULE.match(s) or re.search(
+        # Spraying water is harmless on its own. It does not exempt mixing or a second pesticide instruction.
+        protective = PROTECTIVE_RULE.match(s)
+        water_phrase = re.search(
             r"\b(?:without|no|not|never|before you)\s+(?:any\s+)?spray\w*|\bspray\w*\s+(?:clean\s+)?water\b|"
             r"\bwhen spraying\b|\badvice on (?:the )?recommended\b", s, re.I)
+        harmless = protective or (water_phrase and not _separate_pesticide_instruction(s))
         repeat = instruction_policy.REPEAT.search(s)
         problem = instruction_policy.unsourced_input(s) or ("repeats an application" if repeat else
             None if harmless or not CHEMICAL.search(s) else "mentions a pesticide or spraying")
@@ -173,6 +197,14 @@ def assess(text: str, passages: list[dict], *, language: str = "en", question: s
     # A registered referral can be safe and still fail to answer the question.
     # This does not approve the text and does not replace the model judge for other sentences.
     result.relevance = _referral_relevance(question, ss)
-    if result.relevance["status"] == "unrelated":
+    # Uncertain with no passage is not a confirmed answer. A cited passage can
+    # still be reviewed by the officer; not_applicable never means relevant.
+    # Asking how to reach an officer can still use a registered referral.
+    officer_reach = re.search(
+        r"\b(?:reach|contact|call|phone|find)\b.{0,40}\b(?:officer|aea|agent)\b|"
+        r"\b(?:officer|aea|agent)\b.{0,40}\b(?:reach|contact|call|phone)\b",
+        question or "", re.I)
+    if result.relevance["status"] == "unrelated" or (
+            result.relevance["status"] == "uncertain" and not passages and not officer_reach):
         add("RELEVANCE", text.strip(), result.relevance["reason"], (question.strip(),), uncertain=True)
     return result
