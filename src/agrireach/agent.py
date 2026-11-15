@@ -614,6 +614,8 @@ def build_graph(tools: Tools):
     g = StateGraph(S)
     for fn in NODES:
         g.add_node(fn.__name__, _bind(fn, tools))
+    # Deliberately no approve/release node: the agent can only file draft or
+    # pending_review cases. Approval exists only behind officer auth in approval.decide().
     g.set_entry_point("intake")
     g.add_conditional_edges("intake", lambda s: "clarify" if s["clarification"] else "retrieve")
     g.add_edge("retrieve", "check_sources")

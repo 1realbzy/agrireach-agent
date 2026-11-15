@@ -129,6 +129,10 @@ def _affirmative_mix_and_apply(sentence: str) -> bool:
     """True when a sentence both mixes and sprays or applies, with no noun required.
 
     "Mix both and spray water" is this instruction. A pure "do not mix" ban is not.
+    The check is per sentence: a split such as "Mix both. Spray water every week."
+    is not an S3 finding. It is still not releasable, because approval requires
+    source support for every non-template line (SOURCE_SUPPORT / judge), and no
+    corpus passage supports "Mix both." (verified 15 Nov 2026, see docs/DEMO.md).
     """
     if _reliable_mix_prohibition(sentence):
         return False

@@ -5,3 +5,7 @@ backgroundColor = "#f6f8f2"
 secondaryBackgroundColor = "#e8efdf"
 textColor = "#173b2c"
 font = "sans serif"
+
+[client]
+# Hide developer menu items (including Deploy) from farmers and officers.
+toolbarMode = "viewer"
