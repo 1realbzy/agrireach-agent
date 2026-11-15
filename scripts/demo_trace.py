@@ -25,12 +25,14 @@ def main() -> int:
         "SELECT id FROM tool_log WHERE case_id=? AND actor='agent' ORDER BY id", (case_id,))]
     if not ids:
         print(f"No agent log for case {case_id}.")
+        con.close()
         return 1
     rows = con.execute(
         "SELECT tool, ok, substr(result_summary, 1, 100) FROM tool_log "
         "WHERE id BETWEEN ? AND ? AND (case_id=? OR case_id IS NULL) ORDER BY id", (ids[0], ids[-1], case_id))
     for tool, ok, summary in rows:
         print(f"{tool:<28} {'ok' if ok else 'BLOCKED':<8} {summary}")
+    con.close()
     return 0
 
 
