@@ -218,7 +218,7 @@ def render_case(case, headers):
 def clear_officer_state():
     """Erase credentials, edits and acknowledgement challenges at sign-out."""
     for key in list(st.session_state):
-        if key not in {'farmer_case_id', 'farmer_case_token', 'farmer_question', 'farmer_lookup_id', 'farmer_lookup_token'}:
+        if key not in {'farmer_case_id', 'farmer_case_token', 'farmer_question', 'farmer_lookup_id', 'farmer_lookup_token', 'farmer_active_question'}:
             del st.session_state[key]
 
 
@@ -358,6 +358,49 @@ def _bind_supplement(case_id, revision, token):
     st.session_state['farmer_supplement_token'] = token
 
 
+def _check_case(cid, access_token):
+    """Fetch one case with its private code and show the farmer-safe result.
+
+    The API authorizes every call; a successful lookup becomes the tab's active question."""
+    status, data = request("GET", f"/farmer/cases/{cid}", headers={"X-Case-Access-Token": access_token})
+    if status == 200:
+        if st.session_state.get('farmer_case_id') != cid:
+            st.session_state.pop('farmer_active_question', None)
+        st.session_state['farmer_case_id'] = cid
+        st.session_state['farmer_case_token'] = access_token
+        notice = (data.get("acknowledgement") or {}).get("message")
+        if notice:
+            st.info(notice)
+        if data.get('clarification'):
+            _bind_supplement(cid, data.get('revision'), access_token)
+            if data.get("processing_failure"):
+                st.warning(data.get("message") or "AgriReach could not finish preparing this question. No treatment advice has been approved.")
+            else:
+                st.info(data.get('message') or 'Awaiting your information before an officer can review this.')
+            st.write(data['clarification'])
+        else:
+            _clear_supplement()
+            if data.get("status") == "rejected":
+                st.info(data.get("message") or (
+                    "An extension officer reviewed this question and did not approve any advice. "
+                    "Nothing was sent to you."))
+            elif data.get("evidence_gap"):
+                st.info(data.get("message") or "An extension officer will investigate this question. No treatment advice has been approved.")
+            else:
+                st.info(STATES.get(data['status'], 'Your case is being reviewed.'))
+            if data.get('delivery_status'):
+                st.caption('Delivery: ' + data['delivery_status'].replace('_', ' '))
+            if data.get('answer'):
+                st.success(data['answer'])
+                st.caption('An extension officer has checked this answer.')
+    elif status == 404:
+        _clear_supplement()
+        st.error("We could not find your question. Check your question number and private code.")
+    else:
+        _clear_supplement()
+        st.error("Unable to check the answer. Please try again shortly.")
+
+
 def farmer_screen():
     st.title("Advice for your next step")
     st.write("Ask an agricultural question. An extension officer checks the advice before you receive it.")
@@ -390,7 +433,8 @@ def farmer_screen():
                     st.session_state['farmer_lookup_id'] = data['case_id']
                     st.session_state['farmer_lookup_token'] = data['access_token']
                     st.success("Your question has been received.")
-                    st.write(f"We received your question. Your question number is {data['case_id']}. Keep your private code to check your answer.")
+                    st.write(f"We received your question. Your question number is {data['case_id']}. This tab keeps your private code; use Check for updates below.")
+                    st.session_state['farmer_active_question'] = question.strip()
                     notice = (data.get("acknowledgement") or {}).get("message")
                     if notice:
                         st.info(notice)
@@ -408,47 +452,40 @@ def farmer_screen():
                     st.warning("Check the phone number. Use a Ghana mobile number, or leave the phone field blank.")
                 else:
                     show_result(status, data)
+    active_id = st.session_state.get('farmer_case_id')
+    active_token = st.session_state.get('farmer_case_token')
     with st.container(border=True):
-        st.subheader("2 · Check your answer")
-        st.caption("Keep your question number and private code. You will need both to see your answer later.")
-        st.session_state.setdefault('farmer_lookup_id', st.session_state.get('farmer_case_id', 1))
-        st.session_state.setdefault('farmer_lookup_token', st.session_state.get('farmer_case_token', ''))
-        cid = st.number_input("Question number", min_value=1, step=1, key="farmer_lookup_id")
-        access_token = st.text_input("Private access code", type="password", key="farmer_lookup_token")
-        if st.button("Check answer", key="farmer_check"):
-            status, data = request("GET", f"/farmer/cases/{cid}", headers={"X-Case-Access-Token": access_token.strip()})
-            if status == 200:
-                notice = (data.get("acknowledgement") or {}).get("message")
-                if notice:
-                    st.info(notice)
-                if data.get('clarification'):
-                    _bind_supplement(int(cid), data.get('revision'), access_token.strip())
-                    if data.get("processing_failure"):
-                        st.warning(data.get("message") or "AgriReach could not finish preparing this question. No treatment advice has been approved.")
-                    else:
-                        st.info(data.get('message') or 'Awaiting your information before an officer can review this.')
-                    st.write(data['clarification'])
-                else:
-                    _clear_supplement()
-                    if data.get("status") == "rejected":
-                        st.info(data.get("message") or (
-                            "An extension officer reviewed this question and did not approve any advice. "
-                            "Nothing was sent to you."))
-                    elif data.get("evidence_gap"):
-                        st.info(data.get("message") or "An extension officer will investigate this question. No treatment advice has been approved.")
-                    else:
-                        st.info(STATES.get(data['status'], 'Your case is being reviewed.'))
-                    if data.get('delivery_status'):
-                        st.caption('Delivery: ' + data['delivery_status'].replace('_', ' '))
-                    if data.get('answer'):
-                        st.success(data['answer'])
-                        st.caption('An extension officer has checked this answer.')
-            elif status == 404:
+        st.subheader("2 · Your question")
+        lookup = None
+        if active_id and active_token:
+            st.markdown(f"**Question {active_id}**")
+            if st.session_state.get('farmer_active_question'):
+                st.caption(st.session_state['farmer_active_question'])
+            # The private code lives only in this tab's server-side session state (never in the
+            # URL or logs). Every check still sends it to the API, which verifies it per request.
+            st.caption("This browser tab remembers your question while it stays open. "
+                       "Refreshing or closing the tab forgets it; use your question number and private code to check again.")
+            refresh_col, forget_col = st.columns(2)
+            if refresh_col.button("Check for updates", key="farmer_refresh", type="primary", width="stretch"):
+                lookup = (int(active_id), active_token)
+            if forget_col.button("Forget this question on this device", key="farmer_forget", width="stretch"):
+                for key in ('farmer_case_id', 'farmer_case_token', 'farmer_lookup_id', 'farmer_lookup_token', 'farmer_active_question'):
+                    st.session_state.pop(key, None)
                 _clear_supplement()
-                st.error("We could not find your question. Check your question number and private code.")
-            else:
-                _clear_supplement()
-                st.error("Unable to check the answer. Please try again shortly.")
+                st.rerun()
+        else:
+            st.caption("After you send a question, its status appears here.")
+        with st.expander("Check a different question", expanded=not active_id):
+            st.caption("Enter the question number and private code. You need both to see an answer.")
+            st.session_state.setdefault('farmer_lookup_id', st.session_state.get('farmer_case_id', 1))
+            st.session_state.setdefault('farmer_lookup_token', st.session_state.get('farmer_case_token', ''))
+            cid = st.number_input("Question number", min_value=1, step=1, key="farmer_lookup_id")
+            access_token = st.text_input("Private access code", type="password", key="farmer_lookup_token",
+                help="Use the eye icon to show the code so you can write it down.")
+            if st.button("Check answer", key="farmer_check"):
+                lookup = (int(cid), access_token.strip())
+        if lookup:
+            _check_case(*lookup)
         supplement_case = st.session_state.get('farmer_supplement_case')
         if st.session_state.get('farmer_supplement_revision') and supplement_case:
             with st.form('farmer_supplement'):
