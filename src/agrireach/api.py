@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from pydantic_core import PydanticCustomError
 
-from agrireach import acknowledgement, approval, agent, db, farmer_reply, knowledge, llm, safe_logging
+from agrireach import acknowledgement, approval, agent, db, farmer_reply, knowledge, llm, safe_logging, triage
 from agrireach.phone import PhoneError, normalize as normalize_phone
 from agrireach.channels import service, simulator, sms, whatsapp
 from agrireach.channels.base import mask_sender
@@ -216,6 +216,7 @@ def _case(row) -> dict:
     d["sources"] = json.loads(d["sources"] or "[]")
     d["urgent_reasons"] = json.loads(d["urgent_reasons"] or "[]")
     d["farmer_draft"] = json.loads(d.get("farmer_draft") or "null")
+    d["triage"] = triage.assess(d)
     if d.get("status") in ("not_delivered", "undeliverable"):  # the send failed or can never happen: say why
         d["delivery_problem"] = db.delivery_problem(db.connect(), d["id"]) or "the send failed"
     return d
@@ -352,7 +353,8 @@ async def supplement(case_id: int, body: Supplement, x_case_access_token: str | 
 @app.get("/officer/queue")
 def queue(officer: str = Depends(current_officer)):
     con = db.connect()
-    return [_case(r) for r in db.list_cases(con, ("pending_review", "not_delivered"))]
+    cases = [_case(r) for r in db.list_cases(con, ("pending_review", "not_delivered"))]
+    return sorted(cases, key=lambda case: (case["triage"]["rank"], case["id"]))
 
 
 CASE_STATUSES = ("draft", "pending_review", "approved", "released", "not_delivered", "undeliverable", "rejected",

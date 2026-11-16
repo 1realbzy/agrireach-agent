@@ -241,10 +241,14 @@ def review_queue(headers):
     if not queue:
         st.info("No cases waiting for review. New farmer questions will appear here automatically.")
     for case in queue:
+        classification = case.get('triage') or {}
+        st.caption(f"Priority: {classification.get('level', 'unclassified').title()} · Provisional routing only")
         if st.button(f"Open case {case['id']} · {case['status'].replace('_', ' ')}", key=f"open{case['id']}", width="stretch"):
             load_review(case)
             st.rerun()
         st.caption(case['question'])
+        for reason in classification.get('reasons', []):
+            st.caption(f"Why: {reason}")
         st.caption(f"Submitted {case.get('created_at', 'time unavailable')}")
 
 
