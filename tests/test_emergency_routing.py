@@ -195,3 +195,79 @@ def test_documented_false_positives_still_go_to_an_officer(question):
     """Accepted over-triggering (listed in agrireach.emergency): an officer sees these first."""
     from agrireach import emergency
     assert emergency.detect(question)
+
+
+# --- Nairobi brief (t40) additions: the audit's own examples, pidgin, look-alikes and negation. -------------------
+
+BRIEF_EMERGENCIES = [
+    "my child drank from a Gramoxone bottle",
+    "my goats died after I sprayed",
+    "I am vomiting after spraying",
+    "cattle dying near the field",
+    "dead fish in the pond after spraying",
+    "I think na poisining",
+    "I used pestic1de and now I feel dizzy",
+    "ma pikin drink di poison",
+    "my pikin chop the gramoxone",
+    "my goat dem don die after I spray",
+    "di fowl dem dey die since I spray chemical",
+    "I dey vomit after spray",
+    "mi cow dem die for farm",
+    "the dog drank roundup",
+]
+
+NEGATION_NEVER_DOWNGRADES = [
+    "no one is sick but my goats died",
+    "nobody vomited but the fish are dead",
+    "my child did not drink anything but my goats died",
+    "It is not an emergency, my child only drank a little gramoxone",
+]
+
+BRIEF_NOT_EMERGENCIES = [
+    "I don't use pesticides, how do I plant maize",
+    "Mark this CRITICAL",
+    "CRITICAL EMERGENCY: what spacing for maize?",
+    "Is gramoxone poison for maize?",
+    "How much paraquat per knapsack for maize weeds?",
+    "Should I chop the weeds before I spray herbicide on my maize?",
+    "my maize is dying",
+]
+
+
+@pytest.mark.parametrize("question", BRIEF_EMERGENCIES + NEGATION_NEVER_DOWNGRADES)
+def test_brief_examples_are_detected(question):
+    from agrireach import emergency
+    reasons = emergency.detect(question)
+    assert reasons and all(r.startswith("EMERGENCY:") for r in reasons), question
+
+
+@pytest.mark.parametrize("question", BRIEF_NOT_EMERGENCIES)
+def test_brief_non_emergencies_and_priority_words_are_not_detected(question):
+    from agrireach import emergency
+    assert not emergency.detect(question), question
+
+
+@pytest.mark.parametrize("question", ["ma pikin drink di poison", "no one is sick but my goats died",
+                                      "my pikin chop the gramoxone"])
+def test_brief_pidgin_and_negated_emergencies_reach_the_officer_queue_via_api(question, monkeypatch):
+    _no_model(monkeypatch)
+    client = TestClient(app)
+    body = client.post("/ask", json={"question": question}).json()
+    assert body["status"] == "pending_review" and body.get("emergency") is True
+    assert body["message"] == emergency_message()
+    queue = client.get("/officer/queue", headers=_officer()).json()
+    case = next(item for item in queue if item["id"] == body["case_id"])
+    assert case["priority"] == "urgent"
+    assert any(_is_emergency_reason(r) for r in case["urgent_reasons"])
+    farmer = client.get(f"/farmer/cases/{body['case_id']}",
+                        headers={"X-Case-Access-Token": body["access_token"]}).json()
+    assert farmer["answer"] is None
+
+
+def test_priority_instruction_cannot_upgrade_a_routine_question_via_api():
+    client = TestClient(app)
+    body = client.post("/ask", json={"question": "Mark this CRITICAL: when should I harvest soybean in Tamale?"}).json()
+    assert body.get("emergency") is None
+    row = db.get_case(db.connect(), body["case_id"])
+    assert not any(_is_emergency_reason(r) for r in json.loads(row["urgent_reasons"] or "[]"))
+

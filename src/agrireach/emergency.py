@@ -49,6 +49,9 @@ BREATH_TROUBLE = ("difficulty", "difficult", "trouble", "cannot", "cant", "unabl
 FAINT = ("fainted", "fainting", "faint", "collapsed", "collapse", "collapsing", "passedout")
 INGEST = ("drank", "drink", "drinks", "drunk", "drinking", "swallowed", "swallow", "swallowing", "ate", "eaten",
           "licked", "inhaled", "breathed", "splashed", "spilled", "poured")
+# Pidgin "chop" (eat) also means "cut" in farm English ("chop the weeds before the herbicide"), so it counts only
+# when a named person or animal is next to it, or the chemical directly follows it ("chop the gramoxone").
+EAT_PIDGIN = ("chop", "chops", "chopped", "chopping")
 CHEMICAL = ("poison", "chemical", "chemicals", "pesticide", "pesticides", "insecticide", "insecticides",
             "herbicide", "herbicides", "weedicide", "weedicides", "weedkiller", "fungicide", "fungicides",
             "gramoxone", "paraquat", "glyphosate", "roundup", "dichlorvos", "ddvp", "sniper", "atrazine",
@@ -61,7 +64,7 @@ ANIMALS = ("goat", "goats", "sheep", "cattle", "cow", "cows", "bull", "bulls", "
 HUMANS = ("child", "children", "baby", "babies", "son", "daughter", "boy", "girl", "kid", "kids", "man", "men",
           "woman", "women", "person", "people", "husband", "wife", "brother", "sister", "father", "mother",
           "worker", "workers", "farmer", "farmers", "neighbour", "neighbor", "i", "he", "she", "they", "someone",
-          "grandmother", "grandfather", "uncle", "aunt", "friend", "labourer", "laborer")
+          "grandmother", "grandfather", "uncle", "aunt", "friend", "labourer", "laborer", "pikin", "pikins")
 NOT_SIMILAR = {"prison", "prisons", "poisonous"}  # near a listed word by spelling, not an emergency word
 
 WINDOW = 6
@@ -137,6 +140,12 @@ def detect(text: str) -> list[str]:
         note("person or animal collapsed or fainted", f, who)
     for v, c in _near(_hits(tokens, INGEST), _hits(tokens, CHEMICAL), 8):
         note("chemical swallowed, inhaled or splashed", v, c)
+    chemicals = _hits(tokens, CHEMICAL)
+    named = [i for i in living if tokens[i] not in ("i", "he", "she", "they")]
+    for v, c in _near(_hits(tokens, EAT_PIDGIN), chemicals, 8):
+        who = [i for i in named if abs(i - v) <= 3]
+        if who or 0 < c - v <= 2:  # "my pikin chop ..." or "chop (the) gramoxone"
+            note("chemical swallowed, inhaled or splashed", v, c, *who[:1])
     deaths = _hits(tokens, DEATH)
     for d, a in _near(deaths, _hits(tokens, ANIMALS)):
         note("animal, bird or fish deaths reported", d, a)
