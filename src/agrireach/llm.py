@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import os
+import re
 import threading
 
 from openai import DefaultHttpx2Client, OpenAI
@@ -229,7 +230,9 @@ SYSTEM = (
     "never add, round, merge or move figures between passages. "
     "If a CONFLICTS section is given, the sources disagree: state each source's figure in its own sentence with only "
     "that source's citation, do not pick one, do not merge them into one range, and do not count sources "
-    "(never write 'two sources say'). Say the officer should choose. "
+    "(never write 'two sources say'). Then copy the exact choice sentence given in the CONFLICTS section (e.g. "
+    "'The officer should choose which planting window to follow.') and add nothing to it, such as local conditions, "
+    "variety or preferences; write no other sentence about choosing. "
     "Every sentence that gives advice must be supported by the passage cited right after it; if no passage says "
     "it, leave it out rather than adding your own conclusion. Only say sources agree if you cite each of them and "
     "each one says it. "
@@ -242,6 +245,10 @@ SYSTEM = (
     "Do not say whether the rains are enough or whether onset has been reached; the officer decides. "
     "If the passages do not answer the question, say you do not know. "
     "Never prescribe pesticide/herbicide products or doses and never confirm a disease diagnosis. "
+    "Do not write your own warnings, refusals or 'do not' instructions (for example about mixing products or raising a "
+    "dose): AgriReach code adds the safety notes and the officer decides. If the farmer asks for something unsafe, give "
+    "only what the passages say, including a passage's own referral line (such as consulting the local AEA), with its "
+    "citation. Reviewer notes are for you only: do not copy or restate them, code adds them to the draft. "
     "Write in English for the officer. Plain language, at most 150 words."
 )
 
@@ -263,12 +270,26 @@ def stub_draft(question: str, passages: list[dict], notes: list[str]) -> str:
     return "\n".join(lines)
 
 
+# The officer-choice sentence for each conflict topic. Each one is a whole-sentence no-advice shape in
+# claim_check.NOT_JUDGED_RE (tests/test_live_draft_prompt.py checks this), so the model never has to invent its own
+# wording ("choose the window that best fits your local conditions" was judged and rejected live, case 12).
+_CHOICE_TOPICS = (("window", "planting window"), ("depth", "planting depth"), ("spacing", "plant spacing"),
+                  ("rate", "seeding rate"))
+
+
+def choice_sentence(conflict_key: str) -> str:
+    topic = next((t for k, t in _CHOICE_TOPICS if k in conflict_key), "option")
+    return f"The officer should choose which {topic} to follow."
+
+
 def _conflict_block(conflicts: dict | None) -> str:
     if not conflicts:
         return ""
     lines = ["CONFLICTS (detected by code; show every side separately):"]
     for key, group in conflicts.items():
         lines.append(f"- {key.replace('_', ' ')}: " + " | ".join(f"[{p['id']}] says: \"{p['text']}\"" for p in group))
+    choices = list(dict.fromkeys(choice_sentence(k) for k in conflicts))
+    lines.append("Choice sentence to copy exactly (once, after the conflicting figures): " + " ".join(choices))
     return "\n".join(lines) + "\n\n"
 
 
@@ -286,6 +307,10 @@ def draft(question: str, passages: list[dict], notes: list[str], conflicts: dict
                 "\nRewrite it so every figure is copied from the passage cited right after it, every conflict "
                 "side is stated with its own citation, and every sentence is supported by the passage it cites "
                 "(remove any sentence no passage supports).")
+        quoted = [m.group(1) for f in feedback if (m := re.match(r"'(.+?)'(?= is | has | names | says | describes )", f))]
+        if quoted:
+            msg += ("\nDelete each of these sentences completely (a long one may be shown shortened with …); do not "
+                    "reword, shorten or move them:\n- " + "\n- ".join(quoted))
     try:
         r = create("draft", os.environ["LLM_MODEL"], client, temperature=0, extra_body=extra_body(os.environ["LLM_BASE_URL"]),
                    messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": msg}])
