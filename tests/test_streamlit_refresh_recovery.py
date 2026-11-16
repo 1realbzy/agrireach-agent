@@ -3,40 +3,35 @@
 import httpx
 from streamlit.testing.v1 import AppTest
 
-from agrireach.ui_feedback import auth_headers
 
-
-def test_officer_refresh_requires_successful_api_authorization(monkeypatch):
+def test_officer_refresh_does_not_restore_a_browser_stored_token(monkeypatch):
     from agrireach import ui
 
-    valid = 'synthetic-officer-tab-token'
     requests = []
-    monkeypatch.setattr(ui, 'tab_state', lambda role, **kwargs:
-                        {'token': valid} if not kwargs.get('value') and not kwargs.get('forget') else None)
+    monkeypatch.setattr(ui, "tab_state", lambda role, **kwargs: {"token": "synthetic-officer-tab-token"})
 
     def backend(method, url, **kwargs):
-        requests.append((url, kwargs.get('headers')))
-        assert kwargs['headers'] == auth_headers(valid)
+        requests.append((url, kwargs.get("headers")))
         return httpx.Response(200, json=[])
 
-    monkeypatch.setattr(httpx, 'request', backend)
-    app = AppTest.from_string('from agrireach.ui import officer_screen\nofficer_screen()').run(timeout=10)
+    monkeypatch.setattr(httpx, "request", backend)
+    app = AppTest.from_string("from agrireach.ui import officer_screen\nofficer_screen()").run(timeout=10)
     assert not app.exception
-    assert app.session_state['officer_token'] == valid
-    assert requests
+    assert "officer_token" not in app.session_state
+    assert requests == []
+    assert "synthetic-officer-tab-token" not in " ".join(
+        str(item.value) for item in list(app.markdown) + list(app.caption) + list(app.text_input))
 
 
 def test_revoked_officer_token_is_not_restored(monkeypatch):
     from agrireach import ui
 
-    monkeypatch.setattr(ui, 'tab_state', lambda role, **kwargs:
-                        {'token': 'revoked'} if not kwargs.get('forget') else None)
-    monkeypatch.setattr(httpx, 'request', lambda *args, **kwargs:
-                        httpx.Response(401, json={'detail': 'invalid'}))
-    app = AppTest.from_string('from agrireach.ui import officer_screen\nofficer_screen()').run()
+    monkeypatch.setattr(ui, "tab_state", lambda role, **kwargs: {"token": "revoked"})
+    monkeypatch.setattr(httpx, "request", lambda *args, **kwargs:
+                        httpx.Response(401, json={"detail": "invalid"}))
+    app = AppTest.from_string("from agrireach.ui import officer_screen\nofficer_screen()").run()
     assert not app.exception
-    assert 'officer_token' not in app.session_state
-    assert app.session_state['officer_tab_forgotten'] is True
+    assert "officer_token" not in app.session_state
 
 
 def test_farmer_refresh_uses_case_header_and_checks_code(monkeypatch):

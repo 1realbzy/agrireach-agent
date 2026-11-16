@@ -9,6 +9,11 @@ import streamlit as st
 from agrireach import knowledge, llm
 from agrireach.phone import PhoneError, normalize as normalize_phone
 from agrireach.tab_recovery import tab_state
+from agrireach.ui_display import (
+    acknowledgement_text, citation_groups, classify_login, emergency_reasons,
+    generation_presentation, is_emergency_case, other_routing_notes, provenance_caption,
+    queue_actions, readable_advice, tool_execution_view, unique_labels,
+)
 from agrireach.ui_feedback import auth_headers, feedback
 
 API = os.getenv("AGRIREACH_API", "http://127.0.0.1:8000")
@@ -126,19 +131,42 @@ def _with_tool_record(case, headers):
     return case
 
 
+def _show_generation(case):
+    """Use the server's generation record. The offline marker inside the draft is not enough."""
+    shown = generation_presentation(case.get("generation"), case.get("draft") or "", llm.STUB_LABEL)
+    st.subheader("How this draft was made")
+    if shown["model_used"]:
+        st.info(shown["headline"])
+    elif shown["known"] and "NO MODEL CALLS" in shown["headline"]:
+        st.caption(shown["headline"])
+    else:
+        st.warning(shown["headline"])
+    for line in shown["usage"]:
+        st.caption(line)
+
+
 def _show_tool_record(case):
-    st.subheader("What was checked")
-    log = case.get("log") or []
-    if not log:
-        st.caption("No tool record is attached to this question.")
+    st.subheader("Tool execution")
+    view = tool_execution_view(case.get("tool_evidence"), case.get("log"))
+    if view["note"]:
+        st.caption(view["note"].strip())
+    if not view["rows"] and not view["timeline"]:
         return
-    for entry in log:
-        name = str(entry.get("tool") or "check")
-        outcome = "completed" if entry.get("ok") else "did not complete"
-        st.markdown(f"**{name}** · {outcome}")
-        summary = entry.get("result_summary")
-        if summary:
-            st.text(str(summary)[:500])
+    for row in view["rows"]:
+        outcome = "completed" if row["ok"] else "did not complete"
+        duration = f" · {row['ms']} ms" if row["ms"] is not None else ""
+        order = row["order"] if row["order"] is not None else "—"
+        server = f" · {row['server']}" if row.get("server") else ""
+        st.markdown(f"**{order}. {row['tool']}**{server} · {outcome}{duration}")
+        if row["error"]:
+            st.caption("Error: " + row["error"])
+    if view["timeline"]:
+        st.caption("Recorded case log, in the order stored.")
+        for item in view["timeline"]:
+            outcome = "completed" if item["ok"] else "did not complete"
+            st.markdown(f"**{item['order']}. {item['tool']}** · {outcome}")
+            if item["summary"]:
+                st.caption(item["summary"])
 
 
 def render_case(case, headers):
@@ -150,8 +178,20 @@ def render_case(case, headers):
             "An officer must approve the exact answer before the farmer can read it."
         )
         st.caption(f"Submitted {case.get('created_at', 'time unavailable')} · Crop: {case.get('crop') or 'Not specified'} · Location: {case.get('region') or 'Not specified'}")
-        for reason in case.get('urgent_reasons', []):
-            st.warning(reason)
+        if is_emergency_case(case):
+            st.error("Emergency classification")
+            for reason in emergency_reasons(case):
+                st.write(reason)
+            notes = other_routing_notes(case)
+            if notes:
+                with st.expander("Other routing notes"):
+                    for note in notes:
+                        st.caption(note)
+        else:
+            for reason in case.get("urgent_reasons") or []:
+                st.warning(reason)
+        _show_generation(case)
+        _show_tool_record(case)
         render_delivery(cid, headers, "queue")
         if case["status"] == "not_delivered" and st.button("Retry release and delivery", key=f"retry{cid}"):
             show_result(*request("POST", f"/cases/{cid}/release", headers=headers))
@@ -159,12 +199,13 @@ def render_case(case, headers):
         if not case["sources"]:
             st.info("No source passages are attached. Review that gap before making a decision.")
         else:
-            st.caption("; ".join(source_name(s) for s in case["sources"]))
-        _show_tool_record(case)
+            st.caption("; ".join(unique_labels(source_name(s) for s in case["sources"])))
         ack_status, ack = request("GET", f"/officer/cases/{cid}/acknowledgement", headers=headers)
         if ack_status == 200:
-            label = "simulated, no message was sent to a phone" if ack.get("simulated") else str(ack.get("state", "")).replace("_", " ")
-            st.caption(f"Question acknowledgement: {label}. Phone {ack.get('phone_masked') or 'not stored'}.")
+            text = acknowledgement_text(ack)
+            phone = ack.get("phone_masked") or "not stored"
+            if text:
+                st.caption(f"{text} Phone {phone}.")
         voice_status, inbound = request("GET", f"/officer/cases/{cid}/voice", headers=headers)
         if voice_status == 200 and inbound.get("has_audio"):
             # Keep the officer's ability to verify the machine transcript.
@@ -178,21 +219,26 @@ def render_case(case, headers):
                 st.text("Machine transcript: " + inbound['transcript'])
             else:
                 st.warning("No machine transcript is available. Listen to the recording before reviewing this case.")
-        if llm.STUB_LABEL in case['draft']:
-            st.warning("Offline demonstration draft: assembled from sources. No language model was used.")
         shown = "\n".join(l for l in case["draft"].splitlines() if not l.startswith(llm.STUB_LABEL))
         # Officers see numbered citations; edits are mapped back to the source IDs before saving.
         shown, cites = number_citations(shown)
         st.subheader("1 · Review or revise advisory")
         edited = st.text_area("Officer draft with citations", shown, key=f"draft{cid}")
-        for n, cite in enumerate(cites, 1):
-            st.caption(f"[{n}] " + source_name(cite[1:-1]))
+        for label, numbers in citation_groups(cites, source_name):
+            st.caption(", ".join(f"[{n}]" for n in numbers) + " " + label)
         with st.expander("Read the source passages"):
-            for source_id in case['sources']:
-                ref = knowledge.reference(source_id)
-                st.markdown('**' + source_name(source_id) + '**')
-                if ref:
-                    st.text(ref.get('text', ''))
+            grouped = {}
+            for source_id in case["sources"]:
+                grouped.setdefault(source_name(source_id), []).append(source_id)
+            for label, source_ids in grouped.items():
+                st.markdown("**" + label + "**")
+                seen_text = set()
+                for source_id in source_ids:
+                    ref = knowledge.reference(source_id) or {}
+                    passage = ref.get("text") or ""
+                    if passage and passage not in seen_text:
+                        seen_text.add(passage)
+                        st.text(passage)
         text = case["draft"] if edited == shown else restore_citations(edited, cites)
         if st.button("Re-propose farmer text", key=f"repropose{cid}"):
             status, proposal = request("POST", f"/officer/cases/{cid}/farmer-draft", headers=headers, json={"officer_text": text})
@@ -203,8 +249,13 @@ def render_case(case, headers):
                 show_result(status, proposal)
         st.subheader("2 · Check safety before anyone receives this")
         farmer_text = st.text_area("Exact answer the farmer would receive", case.get("farmer_text") or (case.get("farmer_draft") or {}).get("text", ""), key=f"farmer{cid}")
-        st.caption("Safety findings below are warnings. Approving is a separate step, and a warning does not mean the answer was sent.")
-        show_holds(cid, farmer_text, headers)
+        st.caption("Safety findings below are warnings about the answer text. Approving is a separate step, and a warning does not mean the answer was sent.")
+        if farmer_text.strip():
+            show_holds(cid, farmer_text, headers)
+        elif is_emergency_case(case):
+            st.caption("No advice text is ready to check. The emergency classification above is the server's routing record, not an approval.")
+        else:
+            st.caption("No advice text is ready to check. Nothing was approved or sent.")
         st.subheader("3 · Record a decision")
         note = st.text_area("Officer note or clarification request", key=f"note{cid}")
         confirmed = st.checkbox("Required for approval: I checked every advice line against the cited sources", key=f"confirm{cid}")
@@ -275,96 +326,103 @@ def _question_preview(question: str) -> str:
 @st.fragment(run_every="10s")
 def review_queue(headers):
     status, queue = request("GET", "/officer/queue", headers=headers)
+    if status == 401:
+        clear_officer_state()
+        st.session_state["officer_tab_forgotten"] = True
+        st.session_state["_signout_note"] = "Your session has ended. Sign in again."
+        st.rerun()
     if status != 200:
-        show_result(status, queue)
+        show_result(status, queue if isinstance(queue, dict) else {})
         return
     st.caption(f"{len(queue)} questions awaiting action · Updates every 10 seconds")
     if not queue:
         st.info("No questions are waiting for review. A new farmer question will appear here automatically.")
     for case in queue:
-        label = _question_preview(case["question"])
+        emergency = is_emergency_case(case)
+        label = ("Emergency · " if emergency else "") + _question_preview(case.get("question") or "")
         if st.button(label, key=f"open{case['id']}", width="stretch"):
             load_review(case)
             st.rerun()
+        if emergency:
+            st.error("Emergency")
+            for reason in emergency_reasons(case):
+                st.caption(reason)
         st.caption(OFFICER_STATUS.get(case["status"], "Needs review"))
+        st.caption(queue_actions(case))
         st.caption(f"Submitted {case.get('created_at', 'time unavailable')}")
 
 
-def _pending_password_sign_in():
-    """Show the email and password layout without authenticating or storing a password."""
-    if st.session_state.pop("_clear_officer_login", False):
-        st.session_state["officer_email_pending"] = ""
-        st.session_state["officer_password_pending_input"] = ""
+def _email_sign_in():
+    """POST /officer/auth/login. The session token stays in Streamlit server state and is never rendered."""
+    note = st.session_state.pop("_signout_note", None)
+    if note:
+        st.info(note)
+    login_error = st.session_state.get("_login_error")
     st.subheader("Sign in")
-    st.caption(
-        "Email and password sign-in is not connected yet. "
-        "Submitting this form does not sign you in, and the password is not saved."
-    )
-    with st.form("officer_password_pending", clear_on_submit=True):
-        st.text_input("Email", key="officer_email_pending")
-        st.text_input("Password", type="password", key="officer_password_pending_input")
-        pending = st.form_submit_button("Sign in with email", key="officer_password_pending_submit")
-    if pending:
-        st.session_state["_clear_officer_login"] = True
-        st.info(
-            "Email sign-in is not available yet. No password was stored. "
-            "Use the operator access code below until sign-in is connected."
-        )
+    st.caption("Use the email and password issued for your officer account.")
+    with st.form("officer_email_signin", clear_on_submit=True):
+        email = st.text_input("Email", key="officer_email_input")
+        password = st.text_input("Password", type="password", key="officer_password_input")
+        submitted = st.form_submit_button("Sign in", key="officer_email_submit")
+    if login_error:
+        st.error(login_error)
+    if not submitted:
+        return
+    st.session_state.pop("_login_error", None)
+    typed_email = email.strip()
+    typed_password = password
+    st.session_state["_drop_password"] = True
+    result = classify_login(*request(
+        "POST", "/officer/auth/login", json={"email": typed_email, "password": typed_password}))
+    if result["ok"]:
+        st.session_state["officer_token"] = result["token"]
+        st.session_state["officer_auth_kind"] = "session"
+        st.session_state["officer_email"] = result.get("email") or typed_email
+        st.session_state["officer_expires_at"] = result.get("expires_at")
+        st.session_state["officer_tab_forgotten"] = False
+        st.rerun()
+    st.session_state["_login_error"] = result["message"]
+    st.rerun()
 
 
 def officer_screen():
-    # Restore only after the backend validates the officer credential. Refresh
-    # must not skip the existing hashed-token authorization check.
-    forgotten = st.session_state.get('officer_tab_forgotten', False)
-    stored = tab_state(
-        'officer',
-        value={'token': st.session_state['officer_token']} if st.session_state.get('officer_token') else None,
-        forget=forgotten,
-    )
-    if not forgotten and not st.session_state.get('officer_token') and isinstance(stored, dict):
-        restored_token = stored.get('token')
-        if isinstance(restored_token, str) and restored_token:
-            status, _ = request('GET', '/officer/queue', headers=auth_headers(restored_token))
-            if status == 200:
-                st.session_state['officer_token'] = restored_token
-                st.rerun()
-            if status == 401:
-                st.session_state['officer_tab_forgotten'] = True
-                st.rerun()
+    # The officer session token stays in this Streamlit server session. It is not
+    # written into the browser component, sessionStorage, or the page.
+    if st.session_state.pop("_drop_password", False):
+        st.session_state.pop("officer_password_input", None)
+    tab_state("officer", forget=True)
     st.caption("AGRIREACH · EXTENSION OFFICER")
     st.title("Review queue" if st.session_state.get('officer_token') else "Officer sign in")
     st.write("Read the farmer's question, check the agricultural sources and safety findings, then approve or reject the exact answer.")
     if not st.session_state.get('officer_token'):
-        _pending_password_sign_in()
-        with st.expander("Current access code"):
-            st.caption("This is the sign-in that works today. Email and password above are not connected yet.")
-            with st.form('officer_signin', clear_on_submit=True):
-                token = st.text_input("Officer sign in token", type="password", key="officer_token_input",
-                    help="Use the officer credential issued by the operator. A farmer case access token cannot sign in here.")
-                submitted = st.form_submit_button("Sign in with access code", key="officer_signin_submit", type="primary")
-            st.caption("The access code stays masked. Do not include quotes or a Bearer prefix. A farmer's private code cannot sign in here.")
-        if submitted:
-            with st.spinner("Checking access…"):
-                status, queue = request("GET", "/officer/queue", headers=auth_headers(token))
-            if status == 200:
-                st.session_state['officer_token'] = token.strip()
-                st.session_state['officer_tab_forgotten'] = False
-                st.rerun()
-            else:
-                show_result(status, queue)
+        _email_sign_in()
         return
     headers = auth_headers(st.session_state['officer_token'])
-    status, _ = request("GET", "/officer/queue", headers=headers)
+    status, me = request("GET", "/officer/auth/me", headers=headers)
     if status == 401:
         clear_officer_state()
         st.session_state['officer_tab_forgotten'] = True
+        st.session_state['_signout_note'] = "Your session has ended. Sign in again."
         st.rerun()
-    if status != 200:
-        show_result(status, {})
+    if status != 200 or not isinstance(me, dict):
+        show_result(status, me if isinstance(me, dict) else {})
         return
+    email = me.get("email") or st.session_state.get("officer_email")
+    expires = me.get("expires_at") or st.session_state.get("officer_expires_at")
+    who = f" as {email}" if email else ""
+    st.caption(f"Signed in{who}. Session ends {expires or 'at the time set by the server'}.")
     if st.button("Sign out", key="officer_signout"):
+        status, data = request("POST", "/officer/auth/logout", headers=headers)
+        if status == 200 and isinstance(data, dict) and data.get("revoked") is True:
+            note = "Signed out. This session can no longer be used."
+        elif status == 200:
+            note = "Signed out. The server said this session was already closed."
+        else:
+            note = ("This screen forgot the session, but the server did not confirm that it was revoked. "
+                    "It remains valid until it expires or an operator revokes it.")
         clear_officer_state()
         st.session_state['officer_tab_forgotten'] = True
+        st.session_state['_signout_note'] = note
         st.rerun()
     left, right = st.columns([1, 2], gap="large")
     with left:
@@ -472,8 +530,8 @@ def _check_case(cid, access_token):
         tab_state('farmer', value={'case_id': cid, 'token': access_token,
                                    'question': st.session_state.get('farmer_active_question', '')},
                   instance='manual_lookup')
-        notice = (data.get("acknowledgement") or {}).get("message")
-        if notice:
+        notice = acknowledgement_text(data.get("acknowledgement") or {})
+        if data.get("acknowledgement") and notice:
             st.info(notice)
         if data.get('clarification'):
             _bind_supplement(cid, data.get('revision'), access_token)
@@ -495,14 +553,67 @@ def _check_case(cid, access_token):
             if data.get('delivery_status'):
                 st.caption('Delivery: ' + data['delivery_status'].replace('_', ' '))
             if data.get('answer'):
-                st.success(data['answer'])
-                st.caption('An extension officer has checked this answer.')
+                _show_farmer_answer(data)
     elif status == 404:
         _clear_supplement()
-        st.error("We could not find your question. Check your question number and private code.")
+        st.error("We could not find your question in this tab.")
     else:
         _clear_supplement()
         st.error("Unable to check the answer. Please try again shortly.")
+
+
+def _show_farmer_answer(data):
+    st.success(readable_advice(data.get("answer") or "", source_name))
+    st.caption(provenance_caption(data))
+
+
+def _farmer_session_headers():
+    session = st.session_state.get("farmer_session")
+    return {"X-Farmer-Session": session} if isinstance(session, str) and session else None
+
+
+def _ensure_farmer_session():
+    """Create the private session once. A phone number is not a session."""
+    current = st.session_state.get("farmer_session")
+    if isinstance(current, str) and current:
+        return current
+    status, data = request("POST", "/farmer/session")
+    if status == 200 and isinstance(data, dict) and isinstance(data.get("farmer_session"), str) and data["farmer_session"]:
+        st.session_state["farmer_session"] = data["farmer_session"]
+        st.session_state["farmer_session_expires"] = data.get("expires_at")
+        return data["farmer_session"]
+    if status == 429:
+        st.warning("Too many questions were sent from this connection. Wait a few minutes and try again. Nothing new was saved.")
+        return False
+    return None
+
+
+def _show_farmer_session_questions():
+    """List only the cases the current private session filed. Never by phone number."""
+    headers = _farmer_session_headers()
+    if not headers:
+        return
+    status, items = request("GET", "/farmer/session/cases", headers=headers)
+    if status == 401:
+        st.session_state.pop("farmer_session", None)
+        st.session_state.pop("farmer_session_expires", None)
+        st.info("This private session has ended. Ask again in this tab. A phone number does not restore it.")
+        return
+    if status != 200 or not isinstance(items, list) or not items:
+        return
+    st.subheader("Questions in this private session")
+    st.caption("These are the questions asked with this tab's private session. A phone number does not open another person's questions.")
+    for item in items:
+        st.markdown(f"**{item.get('question') or 'Question'}**")
+        if item.get("answer"):
+            _show_farmer_answer(item)
+        elif item.get("message"):
+            st.info(item["message"])
+        else:
+            st.caption(STATES.get(item.get("status"), "Waiting for an update."))
+        notice = acknowledgement_text(item.get("acknowledgement") or {})
+        if item.get("acknowledgement") and notice:
+            st.caption(notice)
 
 
 def farmer_screen():
@@ -552,7 +663,11 @@ def farmer_screen():
                     payload["phone"] = phone.strip()
                     payload["sms_consent"] = True
                 with st.spinner("Saving your question…"):
-                    status, data = request("POST", "/ask", json=payload)
+                    session = _ensure_farmer_session()
+                    if session is False:
+                        status, data = None, None
+                    else:
+                        status, data = request("POST", "/ask", headers=_farmer_session_headers(), json=payload)
                 if status == 200:
                     st.session_state['farmer_tab_forgotten'] = False
                     st.session_state['farmer_case_id'] = data['case_id']
@@ -563,8 +678,8 @@ def farmer_screen():
                     st.session_state['farmer_lookup_token'] = data['access_token']
                     st.success("Your question has been received.")
                     st.session_state['farmer_active_question'] = question.strip()
-                    notice = (data.get("acknowledgement") or {}).get("message")
-                    if notice:
+                    notice = acknowledgement_text(data.get("acknowledgement") or {})
+                    if data.get("acknowledgement") and notice:
                         st.info(notice)
                     if data.get('clarification'):
                         _bind_supplement(data['case_id'], data.get('revision'), data['access_token'])
@@ -578,12 +693,13 @@ def farmer_screen():
                             st.caption("It is waiting for an extension officer to review. Advice is not available yet.")
                 elif status == 422:
                     st.warning("Check the phone number. Use a Ghana mobile number, or leave the phone field blank.")
-                else:
+                elif status is not None:
                     st.error("We could not send your question. Nothing was saved. Please try again shortly.")
     active_id = st.session_state.get('farmer_case_id')
     active_token = st.session_state.get('farmer_case_token')
     with st.container(border=True):
         st.subheader("2 · Your question")
+        _show_farmer_session_questions()
         lookup = None
         if active_id and active_token:
             question_text = st.session_state.get('farmer_active_question')
@@ -673,7 +789,7 @@ def main(role="farmer"):
     if status != 200:
         st.warning("The service is unavailable. Try again shortly.")
     elif role == 'officer' and health.get('draft_mode') == 'stub':
-        st.info("Demonstration advice: prepared from saved sources. No AI model is connected.")
+        st.info("This server is preparing new drafts from saved sources. A question still shows earlier model calls when its record includes them.")
     if role == 'officer':
         officer_screen()
     else:

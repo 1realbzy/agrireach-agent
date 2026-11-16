@@ -17,7 +17,7 @@ def feedback(status: int, data: dict) -> tuple[str, str]:
     if status == 422:
         return "error", "Approval was blocked or held for additional review. Nothing was approved or sent. Check the highlighted advice and sources, then revise, request information or reject."
     if status == 401:
-        return "info", "Sign in with a valid officer token to continue."
+        return "info", "Your session has ended. Sign in again."
     if status == 409:
         return "warning", "The action could not proceed with the current case or delivery state. Reload the case; reconcile any uncertain delivery before retrying."
     if status == 400 and isinstance(detail, str) and detail:
