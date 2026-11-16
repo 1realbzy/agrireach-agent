@@ -249,7 +249,17 @@ SYSTEM = (
     "dose): AgriReach code adds the safety notes and the officer decides. If the farmer asks for something unsafe, give "
     "only what the passages say, including a passage's own referral line (such as consulting the local AEA), with its "
     "citation. Reviewer notes are for you only: do not copy or restate them, code adds them to the draft. "
-    "Write in English for the officer. Plain language, at most 150 words."
+    "SOURCE-CONSTRAINED DRAFTING. Build the draft from the passages' own statements: choose the passage sentences "
+    "that answer the farmer's question, put them in a useful order and leave out passages that do not answer it. "
+    "Copy each statement word for word from its passage; do not paraphrase, summarise or shorten it. Keep every "
+    "condition and qualification exactly as written (for example 'well dried and shelled', 'immediately after "
+    "harvesting', 'after three good rains', 'treated with recommended storage chemicals'); if a condition cannot be "
+    "separated from the advice, copy the whole sentence. A passage's own words about chemicals or referral (such as "
+    "'recommended storage chemicals' or consulting the local AEA) are part of its statement: keep them, and never add "
+    "a product, dose, timing or method the passage does not name. The only words you may add are one connector at "
+    "the start of a copied statement ('Also,', 'First,', 'Then,' or 'Finally,') and the choice sentence from the "
+    "CONFLICTS section. "
+    "Write in English for the officer, at most 8 statements."
 )
 
 
@@ -293,6 +303,48 @@ def _conflict_block(conflicts: dict | None) -> str:
     return "\n".join(lines) + "\n\n"
 
 
+_SENT_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"'(])")
+_WORD = re.compile(r"[a-z]{3,}")
+_COMMON = {"the", "and", "for", "with", "should", "are", "this", "that", "from", "your", "you", "can", "not", "will"}
+
+
+def _words(text: str) -> set[str]:
+    return {w for w in _WORD.findall(text.lower()) if w not in _COMMON}
+
+
+def closest_source_statement(sentence: str, passages: list[dict]) -> tuple[str, str] | None:
+    """(passage id, complete passage sentence) sharing the most content words with a rejected sentence, or None when
+    fewer than half of its content words appear there. The retry offers it as the only allowed replacement: a whole
+    source sentence keeps the conditions a paraphrase dropped (live t43 case 1: 'Store shelled grain in jute sacks
+    lined with polythene bags' dropped 'Well dried and shelled ... treated with recommended storage chemicals')."""
+    words = _words(sentence)
+    best, best_score = None, 0
+    for p in passages:
+        for src in _SENT_SPLIT.split(p.get("text") or ""):
+            score = len(words & _words(src))
+            if score > best_score:
+                best, best_score = (p["id"], src.strip()), score
+    return best if best and words and best_score * 2 >= len(words) else None
+
+
+def retry_instructions(rejected: list[str], passages: list[dict]) -> str:
+    """Per rejected statement: its only allowed replacement (the complete source sentence it came from, copied
+    exactly with its citation) or deletion. Everything that passed stays, including referral, safety and conflict
+    lines."""
+    lines = ["Fix only the rejected statements below. Keep every other statement exactly as it was, including any "
+             "referral line, the conflict figures and the choice sentence."]
+    for r in rejected:
+        r = re.sub(r"\s+([.!?])$", r"\1", r.strip())  # the check quotes the sentence with its citation removed
+        found = closest_source_statement(r, passages)
+        if found:
+            pid, src = found
+            lines.append(f"- Rejected: '{r}'. Replace it with this complete source statement, copied exactly, or "
+                         f"delete it if it does not answer the question: \"{src}\" [{pid}]")
+        else:
+            lines.append(f"- Rejected: '{r}'. No passage states it: delete it; do not reword it.")
+    return "\n".join(lines)
+
+
 def draft(question: str, passages: list[dict], notes: list[str], conflicts: dict | None = None,
           feedback: list[str] | None = None) -> tuple[str, str]:
     """Returns (text, mode_used). `feedback` lists citation-check problems from a previous attempt."""
@@ -304,13 +356,12 @@ def draft(question: str, passages: list[dict], notes: list[str], conflicts: dict
            f"Reviewer notes: {'; '.join(notes) or 'none'}")
     if feedback:
         msg += ("\n\nYour previous draft failed the automatic citation check:\n- " + "\n- ".join(feedback) +
-                "\nRewrite it so every figure is copied from the passage cited right after it, every conflict "
+                "\nCorrect it so every figure is copied from the passage cited right after it, every conflict "
                 "side is stated with its own citation, and every sentence is supported by the passage it cites "
                 "(remove any sentence no passage supports).")
         quoted = [m.group(1) for f in feedback if (m := re.match(r"'(.+?)'(?= is | has | names | says | describes )", f))]
         if quoted:
-            msg += ("\nDelete each of these sentences completely (a long one may be shown shortened with …); do not "
-                    "reword, shorten or move them:\n- " + "\n- ".join(quoted))
+            msg += "\n" + retry_instructions(quoted, passages)
     try:
         r = create("draft", os.environ["LLM_MODEL"], client, temperature=0, extra_body=extra_body(os.environ["LLM_BASE_URL"]),
                    messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": msg}])

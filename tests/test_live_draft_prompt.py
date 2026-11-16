@@ -55,14 +55,14 @@ def test_retry_feedback_names_each_rejected_sentence_for_deletion(monkeypatch):
           "'Plant early.' has no citation and is not supported by any cited passage (no shared content words)",
           "planting window: draft gives 5 cm but [A] says 3 cm"]
     llm.draft("q", [{"id": "A:p1", "text": "t"}], [], feedback=fb)
-    tail = seen["msg"].split("Delete each of these sentences completely", 1)[1]
+    tail = seen["msg"].split("Fix only the rejected statements below.", 1)[1]
     for s in ("Choose the window that best fits your local conditions.", "Do not mix insecticides or use double the label dose.",
-              "Plant early."):
-        assert f"- {s}" in tail
+              "Plant early."):  # no passage states them: each is named for deletion, not rewording (t44 retry)
+        assert f"- Rejected: '{s}'. No passage states it: delete it; do not reword it." in tail
     assert "5 cm" not in tail
 
 
 def test_first_attempt_has_no_deletion_list(monkeypatch):
     seen = _capture(monkeypatch)
     llm.draft("q", [{"id": "A:p1", "text": "t"}], [])
-    assert "Delete each of these sentences" not in seen["msg"]
+    assert "Fix only the rejected statements" not in seen["msg"] and "Rejected:" not in seen["msg"]
