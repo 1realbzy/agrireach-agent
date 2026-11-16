@@ -8,6 +8,7 @@ import streamlit as st
 
 from agrireach import knowledge, llm
 from agrireach.phone import PhoneError, normalize as normalize_phone
+from agrireach.tab_recovery import tab_state
 from agrireach.ui_feedback import auth_headers, feedback
 
 API = os.getenv("AGRIREACH_API", "http://127.0.0.1:8000")
@@ -248,6 +249,24 @@ def review_queue(headers):
 
 
 def officer_screen():
+    # Restore only after the backend validates the officer credential. Refresh
+    # must not skip the existing hashed-token authorization check.
+    forgotten = st.session_state.get('officer_tab_forgotten', False)
+    stored = tab_state(
+        'officer',
+        value={'token': st.session_state['officer_token']} if st.session_state.get('officer_token') else None,
+        forget=forgotten,
+    )
+    if not forgotten and not st.session_state.get('officer_token') and isinstance(stored, dict):
+        restored_token = stored.get('token')
+        if isinstance(restored_token, str) and restored_token:
+            status, _ = request('GET', '/officer/queue', headers=auth_headers(restored_token))
+            if status == 200:
+                st.session_state['officer_token'] = restored_token
+                st.rerun()
+            if status == 401:
+                st.session_state['officer_tab_forgotten'] = True
+                st.rerun()
     st.caption("AGRIREACH · EXTENSION OFFICER PORTAL")
     st.title("Officer dashboard" if st.session_state.get('officer_token') else "Officer sign in")
     st.write("Review the question, verify source evidence, and approve the exact response the farmer will receive.")
@@ -262,6 +281,7 @@ def officer_screen():
             status, queue = request("GET", "/officer/queue", headers=auth_headers(token))
             if status == 200:
                 st.session_state['officer_token'] = token.strip()
+                st.session_state['officer_tab_forgotten'] = False
                 st.rerun()
             else:
                 show_result(status, queue)
@@ -272,12 +292,14 @@ def officer_screen():
     status, _ = request("GET", "/officer/queue", headers=headers)
     if status == 401:
         clear_officer_state()
+        st.session_state['officer_tab_forgotten'] = True
         st.rerun()
     if status != 200:
         show_result(status, {})
         return
     if st.button("Sign out", key="officer_signout"):
         clear_officer_state()
+        st.session_state['officer_tab_forgotten'] = True
         st.rerun()
     left, right = st.columns([1, 2], gap="large")
     with left:
@@ -364,10 +386,14 @@ def _check_case(cid, access_token):
     The API authorizes every call; a successful lookup becomes the tab's active question."""
     status, data = request("GET", f"/farmer/cases/{cid}", headers={"X-Case-Access-Token": access_token})
     if status == 200:
+        st.session_state['farmer_tab_forgotten'] = False
         if st.session_state.get('farmer_case_id') != cid:
             st.session_state.pop('farmer_active_question', None)
         st.session_state['farmer_case_id'] = cid
         st.session_state['farmer_case_token'] = access_token
+        tab_state('farmer', value={'case_id': cid, 'token': access_token,
+                                   'question': st.session_state.get('farmer_active_question', '')},
+                  instance='manual_lookup')
         notice = (data.get("acknowledgement") or {}).get("message")
         if notice:
             st.info(notice)
@@ -402,6 +428,27 @@ def _check_case(cid, access_token):
 
 
 def farmer_screen():
+    # Browser tab state survives refresh, not tab closure. Verify a restored
+    # case credential with the same API used for a manual case lookup.
+    forgotten = st.session_state.get('farmer_tab_forgotten', False)
+    active = st.session_state.get('farmer_case_id') and st.session_state.get('farmer_case_token')
+    value = ({'case_id': st.session_state['farmer_case_id'],
+              'token': st.session_state['farmer_case_token'],
+              'question': st.session_state.get('farmer_active_question', '')} if active else None)
+    stored = tab_state('farmer', value=value, forget=forgotten)
+    if not forgotten and not active and isinstance(stored, dict):
+        cid, token = stored.get('case_id'), stored.get('token')
+        if type(cid) is int and cid > 0 and isinstance(token, str) and token:
+            status, _ = request('GET', f'/farmer/cases/{cid}',
+                                headers={'X-Case-Access-Token': token})
+            if status == 200:
+                st.session_state['farmer_case_id'] = cid
+                st.session_state['farmer_case_token'] = token
+                st.session_state['farmer_active_question'] = stored.get('question', '')
+                st.rerun()
+            if status == 404:
+                st.session_state['farmer_tab_forgotten'] = True
+                st.rerun()
     st.title("Advice for your next step")
     st.write("Ask an agricultural question. An extension officer checks the advice before you receive it.")
     with st.container(border=True):
@@ -428,8 +475,11 @@ def farmer_screen():
                 with st.spinner("Saving your question…"):
                     status, data = request("POST", "/ask", json=payload)
                 if status == 200:
+                    st.session_state['farmer_tab_forgotten'] = False
                     st.session_state['farmer_case_id'] = data['case_id']
                     st.session_state['farmer_case_token'] = data['access_token']
+                    tab_state('farmer', value={'case_id': data['case_id'], 'token': data['access_token'],
+                                               'question': question.strip()}, instance='submission')
                     st.session_state['farmer_lookup_id'] = data['case_id']
                     st.session_state['farmer_lookup_token'] = data['access_token']
                     st.success("Your question has been received.")
@@ -461,10 +511,10 @@ def farmer_screen():
             st.markdown(f"**Question {active_id}**")
             if st.session_state.get('farmer_active_question'):
                 st.caption(st.session_state['farmer_active_question'])
-            # The private code lives only in this tab's server-side session state (never in the
-            # URL or logs). Every check still sends it to the API, which verifies it per request.
-            st.caption("This browser tab remembers your question while it stays open. "
-                       "Refreshing or closing the tab forgets it; use your question number and private code to check again.")
+            # The private code survives a refresh in tab-scoped browser storage,
+            # never in a URL. Every API check still validates the credential.
+            st.caption("This tab remembers your question when you refresh. "
+                       "Closing the tab or choosing Forget removes it; keep your question number and private code for later visits.")
             refresh_col, forget_col = st.columns(2)
             if refresh_col.button("Check for updates", key="farmer_refresh", type="primary", width="stretch"):
                 lookup = (int(active_id), active_token)
@@ -472,6 +522,7 @@ def farmer_screen():
                 for key in ('farmer_case_id', 'farmer_case_token', 'farmer_lookup_id', 'farmer_lookup_token', 'farmer_active_question'):
                     st.session_state.pop(key, None)
                 _clear_supplement()
+                st.session_state['farmer_tab_forgotten'] = True
                 st.rerun()
         else:
             st.caption("After you send a question, its status appears here.")

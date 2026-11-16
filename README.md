@@ -86,6 +86,8 @@ From PowerShell in the repository root, after creating `.venv` and installing `r
 
 This starts the API (:8000), the farmer portal (http://127.0.0.1:8501) and the officer portal (http://127.0.0.1:8502) on a new disposable database with no model, judge, SMS or WhatsApp, and prints a one-time officer token. Stop it with `.\scripts\start_demo_offline.ps1 -Stop -DemoRoot <folder it printed>`. The full script, timings and recovery steps are in [docs/DEMO.md](docs/DEMO.md). A longer controlled pilot setup is in [docs/windows-local-pilot.md](docs/windows-local-pilot.md).
 
+**Refresh recovery (experimental):** Both portals remember their active credential in browser `sessionStorage` for the current tab. A normal refresh restores it only after the API validates it again. Sign out or Forget explicitly clears the credential; saved credentials expire after at most 8 hours. Closing the tab normally clears tab storage, but some browsers can restore a previous browsing session. This is not a permanent login, offline mode, or lost-device recovery. JavaScript running on the same site can access `sessionStorage`, so do not load untrusted scripts or use this as a production authentication design. On shared devices, explicitly sign out or choose Forget before handing over the device.
+
 ### Three-step demo (combined single-port UI, historical)
 
 The steps below use `./run.sh` and the combined `ui.py` page. The separate portals above supersede the "Farmer" and "Extension officer" tabs; on the farmer portal, use **Check for updates** in the "Your question" card instead of re-entering the case number.

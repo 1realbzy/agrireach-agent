@@ -41,7 +41,8 @@ def main():
             except httpx.HTTPError:pass
             time.sleep(1)
         with httpx.Client(base_url=env['AGRIREACH_API'],trust_env=False,timeout=180) as client, sync_playwright() as p:
-            browser=p.chromium.launch(channel='chrome',headless=True)
+            chrome_path=os.getenv('AGRIREACH_CHROME_PATH')
+            browser=p.chromium.launch(executable_path=chrome_path,headless=True) if chrome_path else p.chromium.launch(channel='chrome',headless=True)
             ctx=browser.new_context(permissions=['clipboard-read','clipboard-write'],viewport={'width':1440,'height':1400})
             farmer=ctx.new_page();officer=ctx.new_page()
             for tab in (farmer,officer):tab.set_default_timeout(60000)
@@ -61,12 +62,18 @@ def main():
             field=officer.get_by_label('Officer sign in token',exact=True);field.click();field.press('Control+a');field.press('Control+v')
             officer.get_by_role('button',name='Sign in',exact=True).click()
             officer.get_by_role('button',name='Sign out',exact=True).wait_for()
+            officer.reload()
+            officer.get_by_role('button',name='Sign out',exact=True).wait_for()
+            assert officer.get_by_label('Officer sign in token',exact=True).count()==0
             officer.evaluate('()=>navigator.clipboard.writeText("")')
             farmer.get_by_label('Your question',exact=True).fill('When should I harvest soybean in Tamale?')
             farmer.get_by_role('button',name='Send question',exact=True).click()
             farmer.get_by_text('We received your question.',exact=False).wait_for(timeout=180000)
             cid=int(farmer.get_by_label('Question number',exact=True).input_value())
             private=farmer.get_by_label('Private access code',exact=True).input_value()
+            farmer.reload()
+            farmer.get_by_role('button',name='Check for updates',exact=True).wait_for()
+            assert f'Question {cid}' in farmer.locator('body').inner_text()
             access={'X-Case-Access-Token':private};auth={'Authorization':'Bearer '+token}
             farmer.get_by_role('button',name='Check answer',exact=True).click()
             farmer.get_by_text('Waiting for officer review. Advice is not available yet.',exact=True).wait_for()
@@ -91,6 +98,8 @@ def main():
                 assert client.get('/officer/queue',headers=headers).status_code==401
                 assert client.post(f'/cases/{cid}/release',headers=headers).status_code==401
             officer.get_by_role('button',name='Sign out',exact=True).click();officer.get_by_label('Officer sign in token',exact=True).wait_for()
+            officer.reload();officer.get_by_label('Officer sign in token',exact=True).wait_for()
+            assert officer.get_by_role('button',name='Sign out',exact=True).count()==0
             farmer.set_viewport_size({'width':390,'height':844});shot(farmer,'farmer-mobile.png')
             assert farmer.evaluate('document.documentElement.scrollWidth<=innerWidth')
             for tab in (farmer,officer):assert tab.locator('[data-testid="stException"]').count()==0
