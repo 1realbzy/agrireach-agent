@@ -56,7 +56,15 @@ Screenshots of the baseline, before the copy changes:
 - Farmer page leads with the crop question. Phone is labeled as an optional text update. The lookup form is collapsed.
 - The farmer success and status views no longer show the question number. The tab still holds the credential for refresh and "Check for updates".
 - Farmer send and detail failures use plain sentences and do not claim anything was saved or approved.
-- Officer page shows an email and password form that does not call the API and does not keep the password, with the working access-code sign-in under "Operator access code".
+- Officer page shows an email and password form that does not call the API and does not keep the password, with the working access-code sign-in under "Current access code".
+
+## Browser check on the disposable demo
+
+- Farmer: empty question shows "Enter a question before sending." An invalid number with the text-update box checked shows the Ghana number instruction and does not repeat the typed digits. The closed-tab lookup stays collapsed.
+- A real question, "When should I plant maize in Tamale?", was saved as waiting for review. A Streamlit reload during that long request cleared the browser session before the success card could be captured.
+- Officer: the email and password form is on the page and says it is not connected. `docs/ux/audit/officer-signin-pending.png`.
+- The signed-in queue, source passages, safety findings, and approve or reject were not clicked in the browser. The access code is still the only working sign-in, and pasting it into the browser was not completed. Automated tests cover token sign-in, an empty queue, sign-out, and the safety-finding text.
+- A phone-width capture was not confirmed. The page CSS stacks the officer columns below 800px. The screenshot that was taken stayed wide.
 - The review queue is labeled with the question. Opening a question loads the tool record, shows source names and passages, and puts safety findings in their own step.
 - Approval, rejection, request-info, delivery recovery, and sign-out behave as before.
 

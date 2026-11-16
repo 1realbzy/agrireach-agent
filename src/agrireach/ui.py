@@ -336,7 +336,7 @@ def officer_screen():
     st.write("Read the farmer's question, check the agricultural sources and safety findings, then approve or reject the exact answer.")
     if not st.session_state.get('officer_token'):
         _pending_password_sign_in()
-        with st.expander("Operator access code"):
+        with st.expander("Current access code"):
             st.caption("This is the sign-in that works today. Email and password above are not connected yet.")
             with st.form('officer_signin', clear_on_submit=True):
                 token = st.text_input("Officer sign in token", type="password", key="officer_token_input",
