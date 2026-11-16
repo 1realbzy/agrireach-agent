@@ -16,6 +16,9 @@ def feedback(status: int, data: dict) -> tuple[str, str]:
         return "warning", "Approval is waiting for your acknowledgement of the source concerns below. Nothing was sent. Review each concern before acknowledging."
     if status == 422:
         return "error", "Approval was blocked or held for additional review. Nothing was approved or sent. Check the highlighted advice and sources, then revise, request information or reject."
+    if status == 429:
+        return "warning", detail if isinstance(detail, str) and detail else (
+            "Too many questions were sent in a short time. Please wait a few minutes and try again.")
     if status == 401:
         return "info", "Sign in with a valid officer token to continue."
     if status == 409:

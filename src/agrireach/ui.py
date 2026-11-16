@@ -1,4 +1,5 @@
 """Officer and farmer screens with explicit workflow feedback and safe sign in."""
+import hashlib
 import logging
 import os
 import re
@@ -15,8 +16,22 @@ API = os.getenv("AGRIREACH_API", "http://127.0.0.1:8000")
 logger = logging.getLogger(__name__)
 
 
+def _client_marker() -> str | None:
+    """A digest of this browser's address for the API's per-client submission limit (the API sees only the
+    portal container). Behind a reverse proxy the last X-Forwarded-For entry is the address the proxy saw."""
+    try:
+        forwarded = st.context.headers.get("X-Forwarded-For") or ""
+        address = forwarded.split(",")[-1].strip() if forwarded else (st.context.ip_address or "")
+    except Exception:  # no browser session (scripts, tests)
+        return None
+    return hashlib.sha256(address.encode("utf-8")).hexdigest()[:32] if address else None
+
+
 def request(method, path, **kwargs):
     """Handle service errors without displaying credentials or internal exceptions."""
+    marker = _client_marker()
+    if marker:
+        kwargs["headers"] = {**(kwargs.get("headers") or {}), "X-AgriReach-Client": marker}
     try:
         response = httpx.request(method, API + path, timeout=180, **kwargs)
         return response.status_code, response.json()

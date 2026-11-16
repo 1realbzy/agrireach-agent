@@ -37,9 +37,10 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(root / "tests"), str(root / "src"))))
     # The judge is always on for model drafts and fails closed. Tests that fake a model draft get an offline judge
     # that supports every sentence; tests about the judge itself replace this (judge_call=, or patch judge._call).
-    from agrireach import judge, llm
+    from agrireach import judge, llm, ratelimit
 
     llm.reset_request_budget()
+    ratelimit.reset()  # submission counts are per process: start every test with none
 
     def _offline_judge_supports_all(user):
         n = user.count(". SENTENCE: ")

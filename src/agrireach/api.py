@@ -14,7 +14,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from pydantic_core import PydanticCustomError
 
-from agrireach import acknowledgement, approval, agent, db, emergency, farmer_reply, knowledge, llm, safe_logging
+from agrireach import (acknowledgement, approval, agent, db, emergency, farmer_reply, knowledge, llm, ratelimit,
+                       safe_logging)
 from agrireach.phone import PhoneError, normalize as normalize_phone
 from agrireach.channels import service, simulator, sms, whatsapp
 from agrireach.channels.base import mask_sender
@@ -303,9 +304,27 @@ def _submission_message(status: str, clarification: str | None) -> str:
     return "Your question has been received."
 
 
+def _submission_allowed(request: Request, phone: str = "") -> None:
+    """Farmer submissions per client (and per phone number) in a time window; see agrireach.ratelimit.
+
+    The farmer portal calls this API from its own container, so every browser would share the portal's address.
+    With AGRIREACH_TRUST_PORTAL_CLIENT_HEADER=1 the portal's X-AgriReach-Client value (a digest of the browser's
+    address) is used instead. Enable it only where the API port is reachable by the portals alone, otherwise a
+    caller could pick a new value for each request."""
+    client = request.client.host if request.client else "unknown"
+    marker = (request.headers.get("x-agrireach-client") or "").strip()
+    if marker and os.getenv("AGRIREACH_TRUST_PORTAL_CLIENT_HEADER") == "1":
+        client = "portal:" + marker[:128]
+    keys = [ratelimit.key("client", client)] + ([ratelimit.key("phone", phone)] if phone else [])
+    wait = ratelimit.check(keys)
+    if wait is not None:
+        raise HTTPException(429, ratelimit.MESSAGE, headers={"Retry-After": str(wait)})
+
+
 @app.post("/ask")
-async def ask(a: Ask):
+async def ask(a: Ask, request: Request):
     phone = _consented_phone(a.phone, a.sms_consent)
+    _submission_allowed(request, phone)
     out = await agent.run(a.question, a.crop, a.region)
     # The farmer gets only an acknowledgement or a clarifying question, never the draft.
     # The phone is applied after the case commit and is not passed to the model.
@@ -328,12 +347,14 @@ async def ask(a: Ask):
 
 
 @app.post("/farmer/cases/{case_id}/supplement")
-async def supplement(case_id: int, body: Supplement, x_case_access_token: str | None = Header(None)):
+async def supplement(case_id: int, body: Supplement, request: Request,
+                     x_case_access_token: str | None = Header(None)):
     """Add the farmer's own missing crop or place to the same draft. Nothing is approved here."""
     con = db.connect()
     row = db.get_case(con, case_id)
     if not row or not db.farmer_case_token_valid(con, case_id, x_case_access_token):
         raise HTTPException(404, "not found")
+    _submission_allowed(request)
     if row["status"] != "draft" or not db._open_clarification(row):
         raise HTTPException(409, "Case is not waiting for farmer information")
     if body.expected_revision != row["revision"]:
