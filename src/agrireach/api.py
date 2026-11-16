@@ -269,7 +269,45 @@ def _case(row) -> dict:
     d["farmer_draft"] = json.loads(d.get("farmer_draft") or "null")
     if d.get("status") in ("not_delivered", "undeliverable"):  # the send failed or can never happen: say why
         d["delivery_problem"] = db.delivery_problem(db.connect(), d["id"]) or "the send failed"
+    d["generation"] = _generation(db.connect(), d["id"])
     return d
+
+
+def _generation(con, case_id: int) -> dict:
+    """How the draft was made (live model or offline stub) and the case's model usage totals, from the tool log."""
+    proposal = con.execute("SELECT args FROM tool_log WHERE case_id=? AND tool='farmer_text_proposal' "
+                           "ORDER BY id DESC LIMIT 1", (case_id,)).fetchone()
+    draft_mode = None
+    if proposal:
+        try:
+            draft_mode = json.loads(proposal["args"] or "{}").get("draft_mode") or None
+        except ValueError:
+            draft_mode = None
+    calls = prompt = completion = 0
+    cost, cost_complete, models = 0.0, True, set()
+    for row in con.execute("SELECT args FROM tool_log WHERE case_id=? AND tool='model_usage' ORDER BY id", (case_id,)):
+        try:
+            usage = json.loads(row["args"] or "{}")
+        except ValueError:
+            cost_complete = False
+            continue
+        calls += usage.get("calls") or 0
+        for role in (usage.get("by_role") or {}).values():
+            prompt += role.get("prompt_tokens") or 0
+            completion += role.get("completion_tokens") or 0
+        for entry in usage.get("entries") or []:
+            if entry.get("model") and entry.get("ok") is not False:
+                models.add(entry["model"])
+        if isinstance(usage.get("cost_usd"), (int, float)) and usage.get("cost_complete", True):
+            cost += usage["cost_usd"]
+        elif usage.get("calls"):
+            cost_complete = False
+    live = bool(draft_mode and draft_mode.startswith("llm"))
+    label = ("LIVE MODEL DRAFT" if live else "NO MODEL DRAFT (offline stub or rule-based)" if draft_mode
+             else "NO DRAFT (clarification, emergency or not yet drafted)")
+    return {"draft_mode": draft_mode, "live_model": live, "label": label, "model_calls": calls,
+            "prompt_tokens": prompt, "completion_tokens": completion, "models": sorted(models),
+            "cost_usd": round(cost, 6) if cost_complete else None, "cost_complete": cost_complete}
 
 
 @app.get("/health")
