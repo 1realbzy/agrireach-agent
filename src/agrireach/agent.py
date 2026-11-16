@@ -20,7 +20,8 @@ from langgraph.graph import END, StateGraph
 from mcp import ClientSession, StdioServerParameters
 from agrireach.mcp_transport import stdio_client
 
-from agrireach import citation_check, claim_check, db, farmer_reply, knowledge, language, llm, places, rainfall, season, zones
+from agrireach import (citation_check, claim_check, db, emergency, farmer_reply, knowledge, language, llm, places,
+                       rainfall, season, zones)
 
 RISK_TERMS = {
     "chemical": ["spray", "herbicide", "pesticide", "insecticide", "fungicide", "chemical", "glyphosate", "paraquat",
@@ -183,7 +184,9 @@ def clarification_gap(question: str, replies: list[str], *, crop: str = "", regi
     crop, region = crop.lower(), region.lower()
     covered = _crops_covered()
     uncovered = bool(crop and covered and crop not in covered)
-    if not crop:
+    if emergency.detect(" ".join([question, *replies])):
+        clar = ""  # an emergency goes to an officer now, whatever the crop
+    elif not crop:
         clar = (f"Which crop is this about? AgriReach currently covers {_join(covered)} only."
                 if covered else "Which crop is this about? No crops currently have curated sources.")
     elif uncovered or region:
@@ -294,6 +297,9 @@ async def intake(s: S, tools: Tools) -> S:
     if contact:
         reasons.append("farmer asks how to reach an extension officer: officer should reply with local contact "
                        "details (AgriReach holds none)")
+    # Crop-independent emergency check, before any clarifying question: a poisoning, collapse or animal deaths
+    # must reach an officer even when no crop is named. Farmer replies to an earlier question count too.
+    emergency_reasons = emergency.detect(" ".join([s["question"], q, *(s.get("farmer_replies") or [])]))
     topics = {w for w in re.findall(r"[a-z]+", AFTER_PLANTING.sub(" ", q))} - {"when"}
     if ASKS_WHEN.search(q):
         topics.add("when")
@@ -304,6 +310,11 @@ async def intake(s: S, tools: Tools) -> S:
     elif crop and not uncovered and not region and topics & {"plant", "planting", "sow", "when", "spacing",
                                                                "seed", "seeds"}:
         clar = "Which district or region is your farm in? Planting guidance differs by region."
+    if emergency_reasons:
+        # No clarifying question, no retrieval and no model draft: the officer answers. Emergency reasons go first
+        # so they are the first thing on the officer screen. Words such as "urgent" never add one (see emergency).
+        clar = ""
+        reasons = emergency_reasons + reasons
     if clar and lang == "twi":
         # Never answer a Twi speaker with an English question: route the case to an officer instead.
         reasons.append(f"could not ask the farmer a clarifying question in Twi; officer should ask: {clar}")
@@ -326,7 +337,7 @@ async def intake(s: S, tools: Tools) -> S:
             "search_query": search_query, "case_id": case["case_id"], "notes": [], "errors": [],
             "received": case.get("created_at", ""), "region_from_text": region_from_text,
             "filing_revision": case.get("revision"),
-            "skip_retrieval": uncovered or not crop}
+            "skip_retrieval": uncovered or not crop or bool(emergency_reasons)}
 
 async def retrieve(s: S, tools: Tools) -> S:
     """Calls the MCP read tools: corpus search, reference check, zone planting windows, crop calendar, rainfall.
@@ -345,7 +356,7 @@ async def retrieve(s: S, tools: Tools) -> S:
                      "approximate zone map): officer should confirm which zone's timing applies.")
     passages, cal = [], []
     if s.get("skip_retrieval"):
-        # Uncovered crop or a contact request: searching another crop's guidance would only mislead.
+        # Uncovered crop, a contact request or an emergency: searching crop guidance would only mislead.
         reasons.append("no grounded evidence found in corpus")
         return {"passages": [], "calendar": [], "errors": errors, "notes": notes, "conflicts": {},
                 "zone": zone, "zone_mismatch": False, "urgent_reasons": sorted(set(reasons), key=reasons.index)}

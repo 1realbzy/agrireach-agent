@@ -17,7 +17,7 @@ import traceback
 import uuid
 from pathlib import Path
 
-from agrireach import agent, db, voice_script
+from agrireach import agent, db, emergency, voice_script
 from agrireach.channels import location, stt, tts
 from agrireach.channels.base import Channel, InboundMessage, OutboundMessage, SendResult, mask_sender  # noqa: F401
 
@@ -223,7 +223,9 @@ async def _file(con, msg: InboundMessage, channel, question, extra, audio_path, 
            {"from": mask_sender(msg.sender_id), "voice_note": bool(audio_path),
             "transcript_chars": len(transcript_text or "")},
            f"case {case_id} -> {out['status']}", case_id=case_id)
-    reply = out["clarification"] or ACK
+    # A possible poisoning or animal deaths gets the fixed referral text (112, health facility, vet), not advice.
+    urgent = any(emergency.is_emergency_reason(r) for r in out["urgent_reasons"] or [])
+    reply = out["clarification"] or (emergency.FARMER_MESSAGE if urgent else ACK)
     sent = None
     if channel is not None:
         if INBOUND_CLAIM.get():

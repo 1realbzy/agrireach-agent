@@ -121,7 +121,7 @@ def render_case(case, headers):
         st.caption(f"{case['status'].replace('_', ' ').title()} | Revision {case['revision']} | Human approval required")
         st.caption(f"Submitted {case.get('created_at', 'time unavailable')} · Crop: {case.get('crop') or 'Not specified'} · Location: {case.get('region') or 'Not specified'}")
         for reason in case.get('urgent_reasons', []):
-            st.warning(reason)
+            (st.error if str(reason).startswith("EMERGENCY:") else st.warning)(reason)
         render_delivery(cid, headers, "queue")
         if case["status"] == "not_delivered" and st.button("Retry release and delivery", key=f"retry{cid}"):
             show_result(*request("POST", f"/cases/{cid}/release", headers=headers))
@@ -410,6 +410,8 @@ def _check_case(cid, access_token):
                 st.info(data.get("message") or (
                     "An extension officer reviewed this question and did not approve any advice. "
                     "Nothing was sent to you."))
+            elif data.get("emergency"):
+                st.error(data.get("message") or "This may be an emergency. Call 112 now or go to the nearest health facility. An extension officer has been alerted.")
             elif data.get("evidence_gap"):
                 st.info(data.get("message") or "An extension officer will investigate this question. No treatment advice has been approved.")
             else:
@@ -494,7 +496,9 @@ def farmer_screen():
                         st.write(data['clarification'])
                     else:
                         _clear_supplement()
-                        if data.get("evidence_gap"):
+                        if data.get("emergency"):
+                            st.error(data.get("message") or "This may be an emergency. Call 112 now or go to the nearest health facility. An extension officer has been alerted.")
+                        elif data.get("evidence_gap"):
                             st.info(data.get("message") or "An extension officer will investigate this question. No treatment advice has been approved.")
                         elif data.get("status") == "pending_review":
                             st.caption("It is waiting for an extension officer to review. Advice is not available yet.")
@@ -555,7 +559,9 @@ def farmer_screen():
                         st.write(data['clarification'])
                     elif status == 200:
                         _clear_supplement()
-                        if data.get("evidence_gap"):
+                        if data.get("emergency"):
+                            st.error(data.get("message") or "This may be an emergency. Call 112 now or go to the nearest health facility. An extension officer has been alerted.")
+                        elif data.get("evidence_gap"):
                             st.info(data.get("message") or "An extension officer will investigate this question. No treatment advice has been approved.")
                         elif data.get("status") == "rejected":
                             st.info(data.get("message") or "An extension officer reviewed this question and did not approve any advice. Nothing was sent to you.")

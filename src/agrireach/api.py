@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from pydantic_core import PydanticCustomError
 
-from agrireach import acknowledgement, approval, agent, db, farmer_reply, knowledge, llm, safe_logging
+from agrireach import acknowledgement, approval, agent, db, emergency, farmer_reply, knowledge, llm, safe_logging
 from agrireach.phone import PhoneError, normalize as normalize_phone
 from agrireach.channels import service, simulator, sms, whatsapp
 from agrireach.channels.base import mask_sender
@@ -260,6 +260,18 @@ PROCESSING_FAILURE_MESSAGE = (
 )
 
 
+# Fixed referral text for a possible poisoning or animal deaths. Not agricultural advice; no model writes it.
+EMERGENCY_FARMER_MESSAGE = emergency.FARMER_MESSAGE
+
+
+def _emergency(reasons) -> bool:
+    return any(emergency.is_emergency_reason(reason) for reason in reasons or [])
+
+
+def _row_emergency(row) -> bool:
+    return _emergency(json.loads(row["urgent_reasons"] or "[]"))
+
+
 def _evidence_gap(reasons, sources) -> bool:
     """A covered question with nothing retrieved. Uncovered crops and contact requests stay on their own path."""
     if sources:
@@ -299,12 +311,15 @@ async def ask(a: Ask):
     # The phone is applied after the case commit and is not passed to the model.
     access_token = db.issue_farmer_case_token(db.connect(), out["case_id"])
     sms = acknowledgement.schedule(out["case_id"], phone, bool(phone))
-    gap = (out.get("status") == "pending_review" and not out.get("clarification")
-           and _evidence_gap(out.get("urgent_reasons"), out.get("sources")))
+    queued = out.get("status") == "pending_review" and not out.get("clarification")
+    urgent = queued and _emergency(out.get("urgent_reasons"))
+    gap = queued and not urgent and _evidence_gap(out.get("urgent_reasons"), out.get("sources"))
+    message = (EMERGENCY_FARMER_MESSAGE if urgent else EVIDENCE_GAP_FARMER_MESSAGE if gap
+               else _submission_message(out["status"], out.get("clarification")))
     body = {"case_id": out["case_id"], "access_token": access_token, "status": out["status"],
-            "clarification": out["clarification"],
-            "message": EVIDENCE_GAP_FARMER_MESSAGE if gap else _submission_message(out["status"], out.get("clarification")),
-            "acknowledgement": sms}
+            "clarification": out["clarification"], "message": message, "acknowledgement": sms}
+    if urgent:
+        body["emergency"] = True
     if gap:
         body["evidence_gap"] = True
     if out.get("clarification"):
@@ -343,7 +358,7 @@ async def supplement(case_id: int, body: Supplement, x_case_access_token: str | 
             raise HTTPException(409, "stale_revision: reload the case")
         raise
     completed = _farmer_case_body(con, out["case_id"], db.get_case(con, out["case_id"]))
-    if completed.get("evidence_gap"):
+    if completed.get("evidence_gap") or completed.get("emergency"):
         return completed
     return {"case_id": completed["case_id"], "status": completed["status"], "answer": None,
             "clarification": None, "message": _submission_message(completed["status"], None)}
@@ -518,7 +533,10 @@ def _farmer_case_body(con, case_id: int, row) -> dict:
     if row["status"] != "released":
         body = {"case_id": case_id, "status": row["status"], "answer": None,
                 "message": "Waiting for an extension officer to review your question."}
-        if row["status"] == "pending_review" and _row_evidence_gap(row):
+        if row["status"] == "pending_review" and _row_emergency(row):
+            body["message"] = EMERGENCY_FARMER_MESSAGE
+            body["emergency"] = True
+        elif row["status"] == "pending_review" and _row_evidence_gap(row):
             body["message"] = EVIDENCE_GAP_FARMER_MESSAGE
             body["evidence_gap"] = True
         return body
