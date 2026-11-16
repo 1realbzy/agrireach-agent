@@ -49,24 +49,49 @@ def llama_like_judge(monkeypatch):
     return sent
 
 
-def test_case12_trigger_planting_conflict_injected_into_a_pest_question():
+QW = "When should I plant maize in the Northern Region?"
+D12W_BODY = (f"Maize planting in the northern region should be done between early June and July 10th [{W}]. "
+             "Major season in the Guinea/Sudan savannah is End of May-early July [MOFA-MAIZE:p12-guinea-sudan-major]. "
+             "Major cropping season in the Guinea savannah is End of May - End of July [IITA-MAIZE-2025:p16-guinea-major]. ")
+LIVE12_IDS = (S, P, C, W, "MOFA-MAIZE:p12-guinea-sudan-major", "IITA-MAIZE-2025:p16-guinea-major")
+
+
+def test_case12_trigger_reproduced_with_the_baseline_scoring(monkeypatch):
+    """d33ab46 scoring (place words counted): 'northern region' pulls the planting window into the pest question."""
+    monkeypatch.setattr(knowledge, "GEO_STEMS", frozenset())
     with_region = [p["id"] for p in knowledge.search(QA, crop="maize")]
     without = [p["id"] for p in knowledge.search(QA.replace(" in the Northern Region", ""), crop="maize")]
-    assert W in with_region and "MOFA-MAIZE:p12-guinea-sudan-major" in with_region   # 'northern region' overlap + conflict completeness
+    assert W in with_region and "MOFA-MAIZE:p12-guinea-sudan-major" in with_region   # overlap + conflict completeness
     assert W not in without
 
 
-def test_case12_reproduced_choose_sentence_judged_and_rejected_twice(monkeypatch):
-    calls = fake_drafter(monkeypatch, [D12, D12])          # live attempt 2 repeated the sentence (it is the final reason)
+def test_case12_trigger_fixed_place_words_do_not_pull_planting_passages():
+    with_region = [p["id"] for p in knowledge.search(QA, crop="maize")]
+    without = [p["id"] for p in knowledge.search(QA.replace(" in the Northern Region", ""), crop="maize")]
+    assert with_region == without == [S, P, C]
+
+
+def test_case12_reproduced_exact_live_judge_rejection_on_the_live_passage_set(monkeypatch):
+    """The live drafter saw these 6 passages; the choose sentence is judged and rejected with the live reason."""
     sent = llama_like_judge(monkeypatch)
-    out = asyncio.run(agent.run(QA, use_fetch=False))
-    assert calls[0]["conflicts"] == ["maize_planting_window"]           # the drafter was told to show a conflict
+    by_id = {p["id"]: p for p in knowledge.load()["passages"]}
+    res = claim_check.check_claims(D12, [by_id[i] for i in LIVE12_IDS])
+    assert not res.ok
+    assert any(r.startswith("'Choose the window that best fits your local conditions.' is not supported by its "
+                            "citation according to the judge model: No source") for r in res.problems)
+    assert sum("best fits" in s for s in sent) == 1
+
+
+def test_case12_choose_sentence_rejected_twice_in_the_agent_loop(monkeypatch):
+    """A real planting-window conflict question still gets the conflict, and the invented choice line still fails
+    both attempts (fallback to sources); the retry feedback quotes it so llm.draft can list it for deletion."""
+    calls = fake_drafter(monkeypatch, [D12W_BODY + CHOOSE_LIVE] * 2)
+    llama_like_judge(monkeypatch)
+    out = asyncio.run(agent.run(QW, use_fetch=False))
+    assert calls[0]["conflicts"] == ["maize_planting_window"]
     assert len(calls) == 2 and calls[0]["feedback"] is None
-    assert any("best fits your local conditions" in f and "judge model" in f for f in calls[1]["feedback"])  # retry IS fed back
+    assert any(f.startswith(f"'{CHOOSE_LIVE}' ") for f in calls[1]["feedback"])
     assert out["draft_mode"] == "stub(citation-check-fallback after llm:mistralai/mistral-small-3.2-24b-instruct)"
-    assert any(r.startswith("citation check failed: 'Choose the window that best fits your local conditions.' is not "
-                            "supported by its citation according to the judge model: No source") for r in out["urgent_reasons"])
-    assert sum("best fits" in s for s in sent) == 2                       # judged on both attempts
     assert [a["ok"] for a in out["citation_check"]["attempts"]] == [False, False]
 
 
@@ -79,9 +104,9 @@ def test_case12_only_the_choose_sentence_fails():
 
 
 def test_case12_same_draft_with_an_exempt_choice_line_passes(monkeypatch):
-    fake_drafter(monkeypatch, [D12_BODY + "The officer should choose which planting window to follow."])
+    fake_drafter(monkeypatch, [D12W_BODY + llm.choice_sentence("maize_planting_window")])
     llama_like_judge(monkeypatch)
-    out = asyncio.run(agent.run(QA, use_fetch=False))
+    out = asyncio.run(agent.run(QW, use_fetch=False))
     assert out["citation_check"]["ok"] and out["draft_mode"].startswith("llm:")
 
 

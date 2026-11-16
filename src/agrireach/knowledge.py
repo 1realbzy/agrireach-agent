@@ -73,11 +73,21 @@ def _in_scope(p: dict, crop: str | None, region: str | None) -> bool:
     return (not crop or p["crop"] == crop.lower()) and (not region or p["region"] in region.lower())
 
 
+# Geographic words (regions, zones, compass words, place nouns). Matching on them says where, not what.
+GEO_STEMS = {stem(w) for w in (
+    "region", "regions", "regional", "district", "districts", "municipal", "area", "areas", "town", "village", "near",
+    "zone", "zones", "northern", "southern", "eastern", "western", "central", "north", "south", "east", "west", "upper",
+    "savannah", "guinea", "sudan", "ghana")}
+
+
 def search(query: str, crop: str | None = None, region: str | None = None, limit: int = 4) -> list[dict]:
     kb = load()
     q = tokens(_normalise(query))
     topics = {_topic(t) for t in q} - {None}
-    q_stems = {stem(t) for t in q if len(t) > 3}
+    # Place words never count as a topical match: "Tamale in the Northern Region" in a pest question used to score the
+    # planting-window passage ("Maize planting in the northern region...") into the hits, and conflict completeness then
+    # added every other source's window (live case 12, 16 Nov). Topic matches and the zone tool are unaffected.
+    q_stems = {stem(t) for t in q if len(t) > 3} - GEO_STEMS
     out = []
     for p in kb["passages"]:
         if not _in_scope(p, crop, region):
