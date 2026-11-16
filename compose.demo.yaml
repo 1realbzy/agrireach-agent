@@ -1,0 +1,60 @@
+# Local-only boundary. Do not directly publish these ports or expose the officer token.
+# External HTTPS, access policy, backups, and domain setup must be verified separately.
+x-common: &common
+  build: .
+  restart: unless-stopped
+  environment: &common-env
+    DATABASE_URL: sqlite:////var/lib/agrireach/agrireach.db
+    AGRIREACH_SIMULATOR: "0"
+    SMS_ENABLED: "0"
+    WHATSAPP_ENABLED: "0"
+    AGRIREACH_RAINFALL: "off"
+    AGRIREACH_SOURCE_CHECK: "0"
+    AGRIREACH_STT: "none"
+    AGRIREACH_MEDIA_DIR: /var/lib/agrireach/media
+    AGRIREACH_OUTBOX: /var/lib/agrireach/outbox
+    LLM_BASE_URL: ""
+    LLM_MODEL: ""
+    LLM_API_KEY: ""
+    AGRIREACH_JUDGE_BASE_URL: ""
+    AGRIREACH_JUDGE_API_KEY: ""
+  volumes:
+    - demo_data:/var/lib/agrireach
+
+services:
+  api:
+    <<: *common
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  farmer:
+    <<: *common
+    command: ["python", "-m", "streamlit", "run", "src/agrireach/farmer_ui.py", "--server.address", "0.0.0.0", "--server.port", "8501", "--server.headless", "true", "--browser.gatherUsageStats", "false"]
+    environment:
+      <<: *common-env
+      AGRIREACH_API: http://api:8000
+    ports:
+      - "127.0.0.1:8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  officer:
+    <<: *common
+    command: ["python", "-m", "streamlit", "run", "src/agrireach/officer_ui.py", "--server.address", "0.0.0.0", "--server.port", "8502", "--server.headless", "true", "--browser.gatherUsageStats", "false"]
+    environment:
+      <<: *common-env
+      AGRIREACH_API: http://api:8000
+    ports:
+      - "127.0.0.1:8502:8502"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  demo_data:

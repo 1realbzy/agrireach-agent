@@ -1,0 +1,16 @@
+.git
+.venv
+.env
+.env.*
+!.env.example
+**/__pycache__
+**/.pytest_cache
+**/*.pyc
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+**/*-wal
+**/*-shm
+demo-evidence*/
+*.log
+_split_probe.py
