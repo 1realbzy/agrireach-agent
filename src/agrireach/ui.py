@@ -21,10 +21,13 @@ def _client_marker() -> str | None:
     portal container). Behind a reverse proxy the last X-Forwarded-For entry is the address the proxy saw."""
     try:
         forwarded = st.context.headers.get("X-Forwarded-For") or ""
-        address = forwarded.split(",")[-1].strip() if forwarded else (st.context.ip_address or "")
+        address = forwarded.split(",")[-1].strip() if isinstance(forwarded, str) and forwarded else (
+            st.context.ip_address or "")
     except Exception:  # no browser session (scripts, tests)
         return None
-    return hashlib.sha256(address.encode("utf-8")).hexdigest()[:32] if address else None
+    if not isinstance(address, str) or not address:  # e.g. Streamlit's AppTest has no real client address
+        return None
+    return hashlib.sha256(address.encode("utf-8")).hexdigest()[:32]
 
 
 def request(method, path, **kwargs):
