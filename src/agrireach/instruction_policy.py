@@ -4,6 +4,8 @@ safety_gate records them as S3, S2, S4 (S1 is the separate chemical safeguard). 
 pesticide or spraying lines are blocked; other S3 and S4 hits are held for the officer.
 S3 unsourced_input(): a product, dose or rate, a vague thing applied ("Pour it..."), or anything on plants.
 S2 skips_officer(): an AEA mention that is not a plain referral ("Do not ask the AEA").
+A closed evidence-gap sentence ("An extension officer needs to answer this case.")
+is not a skip. Any added instruction, condition or treatment keeps the check.
 S4 burns_land(): burning or setting fire, unless it says not to or a cited source burns."""
 import re
 
@@ -67,8 +69,21 @@ DEVALUE = re.compile(r"\b(?:no|not|never|don't|without|instead|unnecessary|skip|
                      r"bother|wait|delay|yourself|alone|only|unless|rather|optional)\b|n't\b", re.I)
 
 
+_EVIDENCE_GAP = re.compile(r"^(?:an|your) (?:agricultural )?extension officer needs to answer this case$", re.I)
+
+
+def acknowledges_missing_evidence(sentence: str) -> bool:
+    """True only for one closed sentence that names no treatment, condition or contrast."""
+    clause = sentence.strip().rstrip(".!?")
+    if re.search(r"[,:;]|\b(?:but|and|or|then|so|before|after|until|if|when|while)\b", clause, re.I):
+        return False
+    return _EVIDENCE_GAP.fullmatch(clause) is not None
+
+
 def skips_officer(sentence: str) -> bool:
     """True when a line steers the farmer from the officer: an officer clause must be a plain referral."""
+    if acknowledges_missing_evidence(sentence):
+        return False
     s = sentence.strip().rstrip(".!?")
     if re.search(r"\binstead\b", s, re.I) and re.search(r"\b(?:ask|consult|talk to|see|call)\b", s, re.I): return True
     for clause in re.split(r"[,;:]|\b(?:but|though|although)\b", s):

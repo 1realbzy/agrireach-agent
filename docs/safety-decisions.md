@@ -8,6 +8,23 @@ HTTP 409 is intentional for an application workflow conflict requiring explicit 
 
 Only known registered topics can be excluded from S1; the immutable question plus reply determine applicability. Unclassified context and changed source hashes keep safeguards enabled. C1 was corrected and verified before introducing this filter. Unknown material instruction shapes require nonacknowledgeable review even on nonchemical cases; this conservative choice can also hold legitimate nonchemical material instructions. Source hashes deliberately require review after corpus edits. A typo correction requires explicit policy/source registration review, not automatic hash acceptance.
 
+## Referral relevance is separate from safety
+
+`chemical-5` keeps the registered pesticide, herbicide and fall armyworm referral lines as safe templates. Safety does not make a template an answer to every question.
+
+`relevance.classify` runs only when every sentence is one of those registered referrals. It does not score shared words between the question and the reply, and it does not call the model judge. The question is matched against a closed set of intents:
+
+* A question that itself asks about a pest, weed, spray or chemical choice is `aligned`. The referral can still pass the safety gate. An officer must approve it before anything is released.
+* A question about harvest, planting or storage, with none of those chemical intents, is `unrelated`. The gate returns `review_required` with rule `RELEVANCE`. That text cannot be approved as written. This is the soybean-harvest pesticide-referral case.
+* Any other question is `uncertain`. The assessment says relevance was not established. It does not label the reply relevant, and it does not create an automatic approval. The officer can still review it.
+* A reply that contains anything other than those registered referrals, or a check with no question, is `not_applicable`. Ordinary advice still goes through the existing safety rules and, when required, the judge.
+
+The judge is not the only control for this mismatch. A wholly registered referral never reaches the judge; the deterministic relevance result is what stops an unrelated referral from receiving an unrestricted pass.
+
+## Safe acknowledgement of missing evidence
+
+`An extension officer needs to answer this case.` is the closed sentence used when the curated sources do not answer the question. It is not an S2 officer-skip. The exception is the whole sentence only. A condition, contrast, or treatment in the same sentence stays under S2 and S3, including an unsupported dose or product placed beside that sentence. Other sentences that mention an extension officer are not exempt.
+
 ## Why full sentences and explicit templates
 
 Word overlap accepted a negated consultation referral in the baseline. The shared gate therefore preserves polarity and conditions and holds unrecognised chemical paraphrases. This can restrict valid wording. It is intentionally not described as semantic proof.

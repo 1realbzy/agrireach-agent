@@ -2,18 +2,25 @@
 from __future__ import annotations
 
 import json
+import logging
+from contextlib import closing
 import os
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel, Field, field_validator
+from pydantic_core import PydanticCustomError
 
-from agrireach import approval, agent, db, farmer_reply, knowledge, llm
+from agrireach import acknowledgement, approval, agent, db, farmer_reply, knowledge, llm, safe_logging
+from agrireach.phone import PhoneError, normalize as normalize_phone
 from agrireach.channels import service, simulator, sms, whatsapp
 from agrireach.channels.base import mask_sender
 
+logger = logging.getLogger(__name__)
+safe_logging.protect_uvicorn_access()
 app = FastAPI(title="AgriReach", version="0.1.0")
 if whatsapp.enabled():  # off by default; see docs/whatsapp-setup.md
     app.include_router(whatsapp.router(whatsapp.Config.from_env()))
@@ -21,10 +28,80 @@ if sms.enabled():  # off by default; see docs/sms-setup.md
     app.include_router(sms.router(sms.Config.from_env()))
 
 
+VALIDATION_MESSAGES = {
+    "json_invalid": "Invalid JSON body",
+    "model_attributes_type": "Expected a JSON object",
+    "model_type": "Expected a JSON object",
+    "missing": "Field required",
+    "string_type": "Expected text",
+    "string_too_short": "Text is too short",
+    "string_too_long": "Text is too long",
+    "bool_type": "Expected a boolean",
+    "bool_parsing": "Expected a boolean",
+    "int_type": "Expected an integer",
+    "int_parsing": "Expected an integer",
+    "int_from_float": "Expected an integer",
+    "greater_than_equal": "Value is below the minimum",
+    "blank_question": "Question must contain text",
+    "blank_supplement": "Text must contain text",
+}
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error(_request: Request, exc: RequestValidationError):
+    # FastAPI's default response includes input and validator context. Messages
+    # from validators can also interpolate private data, so use fixed messages.
+    errors = []
+    for error in exc.errors():
+        kind = error["type"]
+        # The first two components identify the request source and declared field
+        # in these models. Deeper locations can contain user-supplied map keys.
+        location = error["loc"][:2]
+        if kind not in VALIDATION_MESSAGES:
+            kind = "invalid_request"
+            location = location[:1]
+        errors.append({"loc": location, "type": kind, "msg": VALIDATION_MESSAGES.get(kind, "Invalid input")})
+    return JSONResponse(status_code=422, content={"detail": errors})
+
+
 class Ask(BaseModel):
-    question: str
-    crop: str = ""
-    region: str = ""
+    question: str = Field(min_length=1, max_length=2000)
+    crop: str = Field(default="", max_length=100)
+    region: str = Field(default="", max_length=100)
+    phone: str = ""
+    sms_consent: bool = False
+
+    @field_validator("question")
+    @classmethod
+    def question_is_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise PydanticCustomError("blank_question", "Question must contain text")
+        return value
+
+
+class Supplement(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
+    expected_revision: int = Field(ge=1)
+
+    @field_validator("text")
+    @classmethod
+    def text_is_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise PydanticCustomError("blank_supplement", "Text must contain text")
+        return value
+
+
+AWAITING_FARMER = "Awaiting your information before an officer can review this."
+
+
+def _revision_conflict(exc: BaseException) -> bool:
+    """True when a supplement lost the race or the draft was no longer open. Walks ExceptionGroups from the MCP client."""
+    if isinstance(exc, BaseExceptionGroup):
+        return any(_revision_conflict(item) for item in exc.exceptions)
+    text = str(exc)
+    return "stale_revision" in text or "not waiting for farmer information" in text
 
 
 def current_officer(authorization: str | None = Header(None)) -> str:
@@ -80,13 +157,46 @@ def reconcile_delivery(job_id: int, body: ReconcileRequest, officer: str = Depen
     """Record an officer's verified provider disposition without sending again."""
     from agrireach import delivery
     try:
-        delivery.reconcile(db.connect(), job_id, officer=officer,
-                           accepted=body.accepted, provider_evidence=body.provider_evidence)
-    except db.GateError as exc:
-        raise HTTPException(409, str(exc))
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
+        with closing(db.connect()) as con:
+            delivery.reconcile(con, job_id, officer=officer, accepted=body.accepted,
+                               provider_evidence=body.provider_evidence)
+    except db.GateError:
+        raise HTTPException(409, "Only an unknown delivery job can be reconciled") from None
+    except ValueError:
+        raise HTTPException(400, "Named officer and verified provider evidence reference required") from None
+    except Exception:
+        logger.error("Could not record delivery reconciliation")
+        raise HTTPException(500, "Could not record reconciliation") from None
     return {"job_id": job_id, "state": "accepted" if body.accepted else "definitely_failed"}
+
+
+@app.get("/officer/cases/{case_id}/acknowledgement")
+def acknowledgement_status(case_id: int, officer: str = Depends(current_officer)):
+    """Acknowledgement disposition for an officer. The phone is masked."""
+    con = db.connect()
+    if not db.get_case(con, case_id):
+        raise HTTPException(404, "not found")
+    view = acknowledgement.operator_status(con, case_id)
+    if view is None:
+        raise HTTPException(404, "no acknowledgement")
+    return view
+
+
+@app.post("/officer/acknowledgement-jobs/{job_id}/reconcile")
+def reconcile_acknowledgement(job_id: int, body: ReconcileRequest, officer: str = Depends(current_officer)):
+    """Record provider evidence for an unknown acknowledgement. Nothing is sent."""
+    try:
+        with closing(db.connect()) as con:
+            acknowledgement.reconcile(con, job_id, officer=officer, accepted=body.accepted,
+                               provider_evidence=body.provider_evidence)
+    except db.GateError:
+        raise HTTPException(409, "Only an unknown acknowledgement job can be reconciled") from None
+    except ValueError:
+        raise HTTPException(400, "Named officer and verified provider evidence reference required") from None
+    except Exception:
+        logger.error("Could not record acknowledgement reconciliation")
+        raise HTTPException(500, "Could not record reconciliation") from None
+    return {"job_id": job_id, "state": "accepted" if body.accepted else "definitely_failed", "handset_delivered": False}
 
 
 @app.post("/officer/cases/{case_id}/reopen")
@@ -116,12 +226,127 @@ def health():
     return {"ok": True, "draft_mode": llm.mode()}
 
 
+def _consented_phone(raw: str, consent: bool) -> str:
+    """Validate before a case exists. The error text does not repeat the submitted number."""
+    if not consent:
+        return ""
+    text = (raw or "").strip()
+    if not text:
+        raise HTTPException(422, "Enter a Ghana mobile number, or leave SMS updates unchecked.")
+    try:
+        return normalize_phone(text)
+    except PhoneError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+def _with_acknowledgement(con, case_id: int, body: dict) -> dict:
+    """Add SMS state when one exists. Legacy cases keep their previous response shape."""
+    sms = acknowledgement.public_status(con, case_id)
+    if sms["status"] != "not_requested":
+        body["acknowledgement"] = sms
+    return body
+
+
+REJECTED_FARMER_MESSAGE = (
+    "An extension officer reviewed this question and did not approve any advice. Nothing was sent to you."
+)
+EVIDENCE_GAP_FARMER_MESSAGE = (
+    "AgriReach has no sourced guidance for this question. An extension officer will investigate it. "
+    "No treatment advice has been approved."
+)
+PROCESSING_FAILURE_MESSAGE = (
+    "AgriReach could not finish preparing this question. An extension officer will review it. "
+    "No treatment advice has been approved."
+)
+
+
+def _evidence_gap(reasons, sources) -> bool:
+    """A covered question with nothing retrieved. Uncovered crops and contact requests stay on their own path."""
+    if sources:
+        return False
+    joined = " | ".join(str(reason) for reason in reasons or [])
+    if "no grounded evidence found in corpus" not in joined:
+        return False
+    if "is not covered" in joined or "how to reach an extension officer" in joined:
+        return False
+    return True
+
+
+def _row_evidence_gap(row) -> bool:
+    return _evidence_gap(json.loads(row["urgent_reasons"] or "[]"), json.loads(row["sources"] or "[]"))
+
+
+def _row_processing_failure(row) -> bool:
+    clarification = db._open_clarification(row)
+    return bool(clarification and clarification.get("processing_failure"))
+
+
+def _submission_message(status: str, clarification: str | None) -> str:
+    """Describe the state that was actually saved. Draft is not officer review."""
+    if clarification:
+        return AWAITING_FARMER
+    if status == "pending_review":
+        return ("Your question has been received. It is waiting for an extension officer to review. "
+                "Advice is not available yet.")
+    return "Your question has been received."
+
+
 @app.post("/ask")
 async def ask(a: Ask):
+    phone = _consented_phone(a.phone, a.sms_consent)
     out = await agent.run(a.question, a.crop, a.region)
     # The farmer gets only an acknowledgement or a clarifying question, never the draft.
-    return {"case_id": out["case_id"], "status": out["status"], "clarification": out["clarification"],
-            "message": out["clarification"] or "Your question was sent to an extension officer for review."}
+    # The phone is applied after the case commit and is not passed to the model.
+    access_token = db.issue_farmer_case_token(db.connect(), out["case_id"])
+    sms = acknowledgement.schedule(out["case_id"], phone, bool(phone))
+    gap = (out.get("status") == "pending_review" and not out.get("clarification")
+           and _evidence_gap(out.get("urgent_reasons"), out.get("sources")))
+    body = {"case_id": out["case_id"], "access_token": access_token, "status": out["status"],
+            "clarification": out["clarification"],
+            "message": EVIDENCE_GAP_FARMER_MESSAGE if gap else _submission_message(out["status"], out.get("clarification")),
+            "acknowledgement": sms}
+    if gap:
+        body["evidence_gap"] = True
+    if out.get("clarification"):
+        body["revision"] = db.get_case(db.connect(), out["case_id"])["revision"]
+    return body
+
+
+@app.post("/farmer/cases/{case_id}/supplement")
+async def supplement(case_id: int, body: Supplement, x_case_access_token: str | None = Header(None)):
+    """Add the farmer's own missing crop or place to the same draft. Nothing is approved here."""
+    con = db.connect()
+    row = db.get_case(con, case_id)
+    if not row or not db.farmer_case_token_valid(con, case_id, x_case_access_token):
+        raise HTTPException(404, "not found")
+    if row["status"] != "draft" or not db._open_clarification(row):
+        raise HTTPException(409, "Case is not waiting for farmer information")
+    if body.expected_revision != row["revision"]:
+        raise HTTPException(409, "stale_revision: reload the case")
+    stored = db._open_clarification(row)
+    replies = stored["replies"] + [body.text]
+    crop, region, clar = agent.clarification_gap(
+        row["question"], replies, crop=row["crop"] or "", region=row["region"] or "")
+    if clar:
+        try:
+            updated = db.continue_clarification(con, case_id, expected_revision=body.expected_revision,
+                                                clarification=clar, replies=replies, crop=crop, region=region)
+        except db.GateError as exc:
+            raise HTTPException(409, str(exc))
+        return {"case_id": case_id, "status": "draft", "answer": None, "clarification": clar,
+                "revision": updated["revision"], "message": AWAITING_FARMER}
+    try:
+        out = await agent.run(row["question"], crop=crop, region=region, case_id=case_id,
+                              expected_revision=body.expected_revision, farmer_replies=replies)
+    except Exception as exc:
+        if _revision_conflict(exc):
+            raise HTTPException(409, "stale_revision: reload the case")
+        raise
+    completed = _farmer_case_body(con, out["case_id"], db.get_case(con, out["case_id"]))
+    if completed.get("evidence_gap"):
+        return completed
+    return {"case_id": completed["case_id"], "status": completed["status"], "answer": None,
+            "clarification": None, "message": _submission_message(completed["status"], None)}
 
 
 @app.get("/officer/queue")
@@ -245,7 +470,8 @@ def assess(case_id: int, body: FarmerText, officer: str = Depends(current_office
     row = db.get_case(con, case_id)
     if not row:
         raise HTTPException(404, "not found")
-    return approval.assess_candidate(body.farmer_text, approval.context(con, row))
+    with llm.usage_logged(case_id, f"officer:{officer}", "assess"):
+        return approval.assess_candidate(body.farmer_text, approval.context(con, row))
 
 
 @app.post("/cases/{case_id}/release")
@@ -264,20 +490,38 @@ def release(case_id: int, officer: str = Depends(current_officer)):
 
 
 @app.get("/farmer/cases/{case_id}")
-def farmer_view(case_id: int):
+def farmer_view(case_id: int, x_case_access_token: str | None = Header(None)):
+    """Case numbers are sequential; require a separate secret for every farmer view."""
     con = db.connect()
     row = db.get_case(con, case_id)
-    if not row:
+    if not row or not db.farmer_case_token_valid(con, case_id, x_case_access_token):
         raise HTTPException(404, "not found")
+    return _with_acknowledgement(con, case_id, _farmer_case_body(con, case_id, row))
+
+
+def _farmer_case_body(con, case_id: int, row) -> dict:
+    if row["status"] == "draft" and (clarification := db._open_clarification(row)):
+        body = {"case_id": case_id, "status": "draft", "answer": None, "revision": row["revision"],
+                "clarification": clarification["clarification"], "message": AWAITING_FARMER}
+        if clarification.get("processing_failure"):
+            body["message"] = PROCESSING_FAILURE_MESSAGE
+            body["processing_failure"] = True
+        return body
     if row["status"] == "undeliverable":  # approved, but the number was removed (STOP or retention purge)
         return {"case_id": case_id, "status": "undeliverable", "answer": None,
                 "message": "No answer was sent: this number was removed from AgriReach."}
     if row["status"] == "not_delivered":  # approved, but the channel send failed: no answer has reached the farmer
         return {"case_id": case_id, "status": "not_delivered", "answer": None,
                 "message": "Your answer has not been sent yet. An extension officer is working on it."}
+    if row["status"] == "rejected":
+        return {"case_id": case_id, "status": "rejected", "answer": None, "message": REJECTED_FARMER_MESSAGE}
     if row["status"] != "released":
-        return {"case_id": case_id, "status": row["status"], "answer": None,
+        body = {"case_id": case_id, "status": row["status"], "answer": None,
                 "message": "Waiting for an extension officer to review your question."}
+        if row["status"] == "pending_review" and _row_evidence_gap(row):
+            body["message"] = EVIDENCE_GAP_FARMER_MESSAGE
+            body["evidence_gap"] = True
+        return body
     contact = db.get_contact(con, case_id)
     job = con.execute("SELECT j.state FROM delivery_jobs j JOIN approvals a ON a.id=j.approval_id WHERE a.case_id=? ORDER BY j.id DESC LIMIT 1", (case_id,)).fetchone()
     if contact and job and job["state"] != "accepted":
@@ -287,12 +531,8 @@ def farmer_view(case_id: int):
     try:
         _approval, payload = validated_approval(con, case_id)
     except db.GateError:
-        # Grandfather only already published historical text; never enqueue it.
-        legacy = con.execute("SELECT payload FROM approvals WHERE case_id=? AND provenance='legacy_unvalidated' ORDER BY id DESC LIMIT 1", (case_id,)).fetchone()
-        historic = json.loads(legacy[0]) if legacy else {}
-        if historic.get("status") == "released":
-            return {"case_id": case_id, "status": "released", "answer": historic.get("farmer_text") or historic.get("final_text"),
-                    "assessment_status": "legacy_unvalidated", "approved_by": historic.get("officer")}
+        # SafetyError is a GateError. Either failed check withholds the answer. A legacy_unvalidated
+        # row stays stored for history and is not returned as the authorized text.
         return {"case_id": case_id, "status": "review_required", "answer": None}
     return {"case_id": case_id, "status": "released", "answer": payload["farmer_text"],
             "approved_by": row["officer"],
@@ -317,7 +557,7 @@ async def simulator_inbound(sender: str = Form(...), text: str = Form(""), audio
         raise HTTPException(400, str(e))
     audio_path = None
     if audio is not None and audio.filename:
-        data = await audio.read()
+        data = await audio.read(16_000_001)
         if len(data) > 16_000_000:
             raise HTTPException(413, "voice note over 16 MB")
         audio_path = service.save_audio(data, Path(audio.filename).suffix or ".wav")

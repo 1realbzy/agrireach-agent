@@ -2,7 +2,9 @@
 
 **An MCP enabled agricultural extension agent for Ghana**
 
-> **Build status (26 Oct 2026):** a working MVP runs locally. The MCP server, LangGraph agent, case database, officer approval with its safety gate, API, UI and tests have been run and verified. LLM drafting has been run with the open-weights model `mistralai/mistral-small-3.2-24b-instruct` via OpenRouter (see [EVALS.md](EVALS.md), which includes real LLM failures). Tests and CI run in offline stub mode. Nothing is deployed. See the status table below and [ARCHITECTURE.md](ARCHITECTURE.md).
+> **Build status (15 Nov 2026, branch `work/final-contextual-mixing-closure`):** separate farmer and officer portals, the officer approval gate and the offline test suite (1359 passed, 1 skipped) were verified locally on Windows; the five-minute demonstration and its offline fallback are in [docs/DEMO.md](docs/DEMO.md) and a code tour is in [docs/CODEBASE_WALKTHROUGH.md](docs/CODEBASE_WALKTHROUGH.md). Nothing is deployed.
+>
+> **Earlier status (26 Oct 2026):** a working MVP runs locally. The MCP server, LangGraph agent, case database, officer approval with its safety gate, API, UI and tests have been run and verified. LLM drafting has been run with the open-weights model `mistralai/mistral-small-3.2-24b-instruct` via OpenRouter (see [EVALS.md](EVALS.md), which includes real LLM failures). Tests and CI run in offline stub mode. Nothing is deployed. See the status table below and [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Problem statement
 
@@ -74,7 +76,21 @@ Requires Python 3.11+ (tested on 3.13). From a clean clone:
 
 To use a model, copy `.env.example` to `.env` and set `LLM_BASE_URL`, `LLM_MODEL` and `LLM_API_KEY` for any OpenAI-compatible endpoint serving an open-weights model. If these are left empty, the app runs in a clearly labelled OFFLINE STUB mode. Never commit `.env`.
 
-### Three-step demo
+### Windows offline demonstration (recommended)
+
+From PowerShell in the repository root, after creating `.venv` and installing `requirements.txt`:
+
+```powershell
+.\scripts\start_demo_offline.ps1
+```
+
+This starts the API (:8000), the farmer portal (http://127.0.0.1:8501) and the officer portal (http://127.0.0.1:8502) on a new disposable database with no model, judge, SMS or WhatsApp, and prints a one-time officer token. Stop it with `.\scripts\start_demo_offline.ps1 -Stop -DemoRoot <folder it printed>`. The full script, timings and recovery steps are in [docs/DEMO.md](docs/DEMO.md). A longer controlled pilot setup is in [docs/windows-local-pilot.md](docs/windows-local-pilot.md).
+
+**Refresh recovery (experimental):** Both portals remember their active credential in browser `sessionStorage` for the current tab. A normal refresh restores it only after the API validates it again. Sign out or Forget explicitly clears the credential; saved credentials expire after at most 8 hours. Closing the tab normally clears tab storage, but some browsers can restore a previous browsing session. This is not a permanent login, offline mode, or lost-device recovery. JavaScript running on the same site can access `sessionStorage`, so do not load untrusted scripts or use this as a production authentication design. On shared devices, explicitly sign out or choose Forget before handing over the device.
+
+### Three-step demo (combined single-port UI, historical)
+
+The steps below use `./run.sh` and the combined `ui.py` page. The separate portals above supersede the "Farmer" and "Extension officer" tabs; on the farmer portal, use **Check for updates** in the "Your question" card instead of re-entering the case number.
 
 1. **Start the app.** Run `./run.sh`, then open http://127.0.0.1:8501. With no `.env`, it runs in offline stub mode.
 2. **Sign in as an officer.** In a second terminal, from the repo root, run `.venv/bin/python scripts/add_officer.py "Ama Mensah"`. It prints `Officer 'Ama Mensah' registered. Sign-in token (shown once, keep it private):` and the token on the next line. Paste the token into **Officer sign in token** on the **Extension officer** tab. Running the script again for the same name issues a new token, and the old one stops working. If your `.env` sets `DATABASE_URL`, run `set -a; . ./.env; set +a` first, so the script uses the same database as the app.
@@ -86,7 +102,17 @@ The Farmer tab's default question, "When should I plant soybean in Tamale?", sho
 
 - UI: as in the demo. Urgent cases are listed first. The officer can edit the draft and the farmer text, re-propose the farmer text, approve, reject or request info. When a case opens, any hold on the farmer text is shown with the line it applies to and the reason. The farmer only sees an answer after it is approved.
 - CLI: `PYTHONPATH=src .venv/bin/python -m agrireach.agent "When should I harvest soybean in Tamale?"`
-- API: `POST /ask`, `GET /farmer/cases/{id}`. Officer routes need `Authorization: Bearer <token>`: `GET /officer/queue`, `GET /officer/cases/{id}` (with its tool log), `POST /officer/cases/{id}/assess` (read-only safety check), `POST /officer/cases/{id}/decision`, and `POST /cases/{id}/release`, which refuses any case without a valid officer approval.
+- API: `POST /ask`, `POST /farmer/cases/{id}/supplement` (answer a clarifying question), `GET /farmer/cases/{id}`. Officer routes need `Authorization: Bearer <token>`: `GET /officer/queue`, `GET /officer/cases/{id}` (with its tool log), `POST /officer/cases/{id}/assess` (read-only safety check), `POST /officer/cases/{id}/decision`, and `POST /cases/{id}/release`, which refuses any case without a valid officer approval.
+
+## Farmer case privacy
+
+The public `POST /ask` response includes a randomly generated `access_token` in addition to the case number. Keep it private. To check a web case, call `GET /farmer/cases/{case_id}` with the `X-Case-Access-Token` header. A sequential case number alone cannot read an answer. The farmer portal keeps the active question's number and code in that browser tab's Streamlit session only (never in the URL), and **Check for updates** sends the code to the API on every check, so the server still authorizes each request. Refreshing or closing the tab forgets it; **Check a different question** accepts the number and code again. Do not put tokens in URLs or logs.
+
+**Compatibility:** Cases created before the private access migration do not have access tokens. They are not automatically made public or assigned a discoverable token. An operator must establish a verified recovery workflow before exposing those historical answers. SMS and WhatsApp continue to deliver only through the approved channel and do not expose a farmer case lookup token to the sender.
+
+**Migration:** Database schema version 3 creates the separate token digest table without modifying the original case or approval evidence. Keep database backups and do not roll back a production database by dropping the table.
+
+See [codebase audit](docs/codebase-audit-2026-11-05.md) for remaining reliability and deployment risks. This branch is not a production-readiness certification.
 
 ## Technology stack
 
@@ -157,13 +183,14 @@ Then the figures must match the cited sources (SOURCE_FIGURES), sources that dis
 | SQLite cases + officer gate + release block | **Working** (tests) |
 | Approval safety gate (S1 to S4, figure, conflict, language and judge checks) | **Working** (tests, plus the strict replay of recorded live cases in CI) |
 | CI | **Working**: GitHub Actions runs the offline suite, the strict safety replay, the legacy migration check and the speech tests |
-| FastAPI + Streamlit | **Working** locally (API calls verified; UI page served, HTTP 200) |
+| FastAPI + Streamlit | **Working** locally. Separate farmer and officer portals browser-verified on 15 Nov 2026: 13/13 checks (submission, clarification, evidence, proposal, officer sign-in, approval, farmer retrieval, evidence gap, unsafe text withheld, session and error handling, mobile 390x844) in Microsoft Edge, offline stub, disposable database |
+| Offline test suite | 1359 passed, 1 skipped on Windows 11, Python 3.13 (15 Nov 2026); strict safety replay: 15/15 unsafe cases blocked |
 | One-command run `./run.sh` from clean clone | **Working** (verified) |
 | Deployment / public demo | Not done |
 
 ## Human in the loop workflow
 
-No advice ever reaches a farmer without approval from a named extension officer. The agent drafts, and the officer decides. Every draft advisory enters a review queue. Risk and uncertainty only set its priority: cases where sources conflict, the location or crop context is missing, confidence is low, or advice could have material consequences go to the urgent queue, and all other cases go to the routine queue. The extension officer can review the original question, retrieved references and draft advisory. The reason for an urgent flag is in the case record (`urgent_reasons` in `GET /officer/cases/{id}`); the officer screen lists urgent cases first but does not show the reason yet. The officer can approve, edit, reject, or request more information, and each decision is recorded with the officer's name and a timestamp. Approval covers the exact text the farmer receives: the officer sees the cited draft and a short plain-language farmer version, can edit either, and the approved farmer text is what is sent. The agent must not autonomously prescribe hazardous chemical use or present a suspected plant disease as a confirmed diagnosis.
+No advice ever reaches a farmer without approval from a named extension officer. The agent drafts, and the officer decides. Every draft advisory enters a review queue. Risk and uncertainty only set its priority: cases where sources conflict, the location or crop context is missing, confidence is low, or advice could have material consequences go to the urgent queue, and all other cases go to the routine queue. The extension officer can review the original question, retrieved references and draft advisory. The reason for an urgent flag is in the case record (`urgent_reasons` in `GET /officer/cases/{id}`); the officer screen lists urgent cases first and shows each urgent reason when the case is opened. The officer can approve, edit, reject, or request more information, and each decision is recorded with the officer's name and a timestamp. Approval covers the exact text the farmer receives: the officer sees the cited draft and a short plain-language farmer version, can edit either, and the approved farmer text is what is sent. The agent must not autonomously prescribe hazardous chemical use or present a suspected plant disease as a confirmed diagnosis.
 
 ## Development roadmap
 
@@ -227,7 +254,7 @@ src/agrireach/
   claim_check.py      sentences without figures: named sources, agreement claims, word overlap, judge
   judge.py            second-model judge; always on, fails closed
   farmer_reply.py     the plain farmer-facing text the officer approves
-  safety_gate.py      deterministic approval gate (S1 chemical safeguard, S2, S3, S4, LANGUAGE); POLICY_VERSION
+  safety_gate.py      deterministic approval gate (S1 chemical safeguard, S2, S3, S4, LANGUAGE, RELEVANCE); POLICY_VERSION chemical-5
   instruction_policy.py  the hard-stop word lists: unsourced input, REPEAT, skips officer, burning
   approval.py         approval assessment, binding, immutable approvals and release
   delivery.py         atomic delivery claims; unknown outcomes are never retried automatically
@@ -237,12 +264,20 @@ src/agrireach/
   voice_script.py     short spoken script for an approved answer
   api.py              FastAPI backend
   ui.py, ui_feedback.py  Streamlit farmer and officer screens, and plain workflow messages
+  farmer_ui.py, officer_ui.py  separate portal entrypoints (ports 8501 and 8502)
+  relevance.py        holds a chemical referral that does not answer the question
+  acknowledgement.py  question-received SMS acknowledgement jobs (simulated unless configured)
+  phone.py, safe_logging.py, mcp_transport.py  Ghana number checks, log redaction, MCP stdio shutdown
   evalset.py          field-evidence eval set loading and routing checks
 src/agrireach/channels/
   base.py  service.py  simulator.py  stt.py  tts.py  location.py  retention.py
   whatsapp.py  sms.py   (both code only, off by default)
 scripts/
   add_officer.py              register an officer and print their sign-in token once
+  start_demo_offline.ps1      Windows OFFLINE FALLBACK demo: API + both portals on a disposable database
+  demo_trace.py               read-only list of a case's MCP tool calls (demo aid)
+  start_pilot_ui.ps1          start one portal against an existing pilot environment
+  verify_separate_portals.py  opt-in browser acceptance of the two portals
   run_evals.py                run the EVALS task set against the real agent and MCP servers
   verify_corpus.py            check every passage appears verbatim in its source document
   replay_safety.py            deterministic replay of recorded live cases through the gate (CI, --strict)

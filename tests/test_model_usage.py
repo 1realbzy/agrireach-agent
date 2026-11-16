@@ -1,5 +1,4 @@
 """Every model call sends max_tokens and records its token usage and provider cost (Grok Bot's live run hit 402s)."""
-import sys
 import types
 
 import pytest
@@ -25,7 +24,7 @@ class _FakeOpenAI:
 @pytest.fixture
 def fake_openai(monkeypatch):
     _FakeOpenAI.calls = []
-    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=_FakeOpenAI))
+    monkeypatch.setattr(llm, "OpenAI", _FakeOpenAI)
     monkeypatch.setenv("LLM_BASE_URL", "https://openrouter.ai/api/v1")
     monkeypatch.setenv("LLM_MODEL", "test-model")
     monkeypatch.setenv("LLM_API_KEY", "x")

@@ -172,7 +172,7 @@ def test_approved_text_is_sent_byte_for_byte_and_never_re_proposed(monkeypatch):
     assert d["status"] == "released" and d["delivery"]["ok"], d
     assert not any("safety line" in w for w in d["warnings"]), d["warnings"]
     phone = simulator.SimulatorChannel().messages(SENDER)[-1]["text"]
-    view = c.get(f"/farmer/cases/{cid}").json()["answer"]
+    view = c.get(f"/farmer/cases/{cid}", headers={"X-Case-Access-Token": db.issue_farmer_case_token(db.connect(), cid)}).json()["answer"]
     record = db.get_case(db.connect(), cid)["farmer_text"]
     assert phone.encode() == view.encode() == record.encode() == text.encode()
 
@@ -189,5 +189,5 @@ def test_officer_who_removes_the_line_is_warned_and_it_is_not_put_back(monkeypat
     # Safety removal is now blocked; the submitted text is retained, never rewritten.
     assert d["detail"]["outcome"] == "safety_blocked"
     assert db.get_case(db.connect(), cid)["status"] == "pending_review"
-    assert c.get(f"/farmer/cases/{cid}").json()["answer"] is None
+    assert c.get(f"/farmer/cases/{cid}", headers={"X-Case-Access-Token": db.issue_farmer_case_token(db.connect(), cid)}).json()["answer"] is None
     assert db.connect().execute("SELECT farmer_text FROM advisory_submissions WHERE case_id=? ORDER BY id DESC", (cid,)).fetchone()[0] == edited

@@ -7,6 +7,8 @@ import httpx
 import streamlit as st
 
 from agrireach import knowledge, llm
+from agrireach.phone import PhoneError, normalize as normalize_phone
+from agrireach.tab_recovery import tab_state
 from agrireach.ui_feedback import auth_headers, feedback
 
 API = os.getenv("AGRIREACH_API", "http://127.0.0.1:8000")
@@ -34,7 +36,8 @@ def show_result(status, data, text=""):
 LABELS = {"S1": "Required source safeguard", "S2": "Consultation or protection instruction",
           "S3": "Unsourced material or dose", "S4": "Burning without a source", "LANGUAGE": "Language needs additional review",
           "SOURCE_SUPPORT": "Source support needs review", "SOURCE_FIGURES": "Number not in the cited source",
-          "SOURCE_CONFLICT": "Cited sources disagree"}
+          "SOURCE_CONFLICT": "Cited sources disagree", "RELEVANCE": "Reply does not address the question",
+          "EVIDENCE_GAP": "No sourced guidance for this question"}
 
 
 PASSAGE_ID = re.compile(r"\[?'?\b([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*:[\w-]+)'?\]?")  # e.g. ['MOFA-MAIZE:p10-when-to-plant']
@@ -99,6 +102,8 @@ def render_delivery(case_id, headers, key):
     if status != 200:
         show_result(status, jobs)
         return
+    if not jobs and key == 'queue':
+        st.caption("Delivery: no channel send recorded. Web answers become available only after approval and release.")
     for job in jobs:
         st.caption(f"Delivery {job['id']}: {job['state'].replace('_', ' ')}")
         if job["state"] == "unknown":
@@ -112,11 +117,19 @@ def render_delivery(case_id, headers, key):
 
 def render_case(case, headers):
     cid = case["id"]
-    with st.expander(f"Case {cid}: {case['question']}"):
+    with st.expander(f"Case {cid}: {case['question']}", expanded=True):
+        st.caption(f"{case['status'].replace('_', ' ').title()} | Revision {case['revision']} | Human approval required")
+        st.caption(f"Submitted {case.get('created_at', 'time unavailable')} · Crop: {case.get('crop') or 'Not specified'} · Location: {case.get('region') or 'Not specified'}")
+        for reason in case.get('urgent_reasons', []):
+            st.warning(reason)
         render_delivery(cid, headers, "queue")
         if case["status"] == "not_delivered" and st.button("Retry release and delivery", key=f"retry{cid}"):
             show_result(*request("POST", f"/cases/{cid}/release", headers=headers))
         st.caption("Sources: " + "; ".join(source_name(s) for s in case["sources"]))
+        ack_status, ack = request("GET", f"/officer/cases/{cid}/acknowledgement", headers=headers)
+        if ack_status == 200:
+            label = "simulated, no message was sent to a phone" if ack.get("simulated") else str(ack.get("state", "")).replace("_", " ")
+            st.caption(f"Question acknowledgement: {label}. Phone {ack.get('phone_masked') or 'not stored'}.")
         voice_status, inbound = request("GET", f"/officer/cases/{cid}/voice", headers=headers)
         if voice_status == 200 and inbound.get("has_audio"):
             # Keep the officer's ability to verify the machine transcript.
@@ -126,14 +139,27 @@ def render_case(case, headers):
                     st.audio(audio.content)
             except httpx.HTTPError:
                 st.warning("Voice note unavailable. Ask the operator to restore access before relying on the transcript.")
-            st.text("Machine transcript: " + (inbound.get("transcript") or ""))
-        # The offline label is for logs and tests; officers see only the advice.
+            if inbound.get('transcript'):
+                st.text("Machine transcript: " + inbound['transcript'])
+            else:
+                st.warning("No machine transcript is available. Listen to the recording before reviewing this case.")
+        if llm.STUB_LABEL in case['draft']:
+            st.warning("Offline demonstration draft: assembled from sources. No language model was used.")
         shown = "\n".join(l for l in case["draft"].splitlines() if not l.startswith(llm.STUB_LABEL))
         # Officers see numbered citations; edits are mapped back to the source IDs before saving.
         shown, cites = number_citations(shown)
+        st.subheader("1 · Review or revise advisory")
         edited = st.text_area("Officer draft with citations", shown, key=f"draft{cid}")
         for n, cite in enumerate(cites, 1):
             st.caption(f"[{n}] " + source_name(cite[1:-1]))
+        with st.expander("Read source evidence"):
+            if not case['sources']:
+                st.info("No source passages are attached. Review the evidence gap before making a decision.")
+            for source_id in case['sources']:
+                ref = knowledge.reference(source_id)
+                st.markdown('**' + source_name(source_id) + '**')
+                if ref:
+                    st.text(ref.get('text', ''))
         text = case["draft"] if edited == shown else restore_citations(edited, cites)
         if st.button("Re-propose farmer text", key=f"repropose{cid}"):
             status, proposal = request("POST", f"/officer/cases/{cid}/farmer-draft", headers=headers, json={"officer_text": text})
@@ -142,8 +168,10 @@ def render_case(case, headers):
                 st.info("New proposal prepared. Check it against the sources before approving.")
             else:
                 show_result(status, proposal)
+        st.subheader("2 · Verify the farmer response")
         farmer_text = st.text_area("Farmer text: exactly what will be sent", case.get("farmer_text") or (case.get("farmer_draft") or {}).get("text", ""), key=f"farmer{cid}")
         show_holds(cid, farmer_text, headers)
+        st.subheader("3 · Record a decision")
         note = st.text_area("Officer note or clarification request", key=f"note{cid}")
         confirmed = st.checkbox("Required for approval: I checked every advice line against the cited sources", key=f"confirm{cid}")
         status, preview = request("POST", f"/officer/cases/{cid}/voice-preview", headers=headers, json={"officer_text": farmer_text})
@@ -164,7 +192,7 @@ def render_case(case, headers):
                 st.session_state[f"challenge{cid}"] = {"body": candidate, "token": detail["acknowledgement"]}
             st.session_state[f"assessment_retry{cid}"] = status == 503
 
-        if st.button("Approve and release", key=f"approve{cid}", disabled=not confirmed):
+        if st.button("Approve and release", key=f"approve{cid}", type="primary", disabled=not confirmed):
             submit(body)
         # Retry only re-checks the text. Approving is always a separate click.
         if st.session_state.get(f"assessment_retry{cid}") and st.button("Retry assessment", key=f"assessment{cid}"):
@@ -175,6 +203,8 @@ def render_case(case, headers):
                 show_findings(data.get("findings", []), farmer_text)
             else:
                 show_result(status, data)
+        st.divider()
+        st.caption("Reject or request information · A note and explicit confirmation are required. No advice is released.")
         for label, decision in (("Reject", "reject"), ("Request info", "request_info")):
             sure = st.checkbox(f"Confirm: {label.lower()} this case with the note above", key=f"sure{decision}{cid}")
             if st.button(label, key=f"{decision}{cid}", disabled=not (sure and note.strip())):
@@ -186,18 +216,111 @@ def render_case(case, headers):
                 submit(body | {"acknowledgement": challenge["token"]})
 
 
-def officer_screen():
-    token = st.text_input("Officer sign in token", type="password")
-    if not token.strip():
-        st.info("Sign in with your officer token to see the review queue.")
-        return
-    headers = auth_headers(token)
-    if st.button("Reload cases"):
-        st.rerun()
+def clear_officer_state():
+    """Erase credentials, edits and acknowledgement challenges at sign-out."""
+    for key in list(st.session_state):
+        if key not in {'farmer_case_id', 'farmer_case_token', 'farmer_question', 'farmer_lookup_id', 'farmer_lookup_token', 'farmer_active_question'}:
+            del st.session_state[key]
+
+
+def load_review(case):
+    """Bind fresh widgets to one server revision; never reuse stale confirmation."""
+    cid = case['id']
+    for prefix in ('draft', 'farmer', 'note', 'confirm', 'voice', 'challenge', 'assessment_retry', 'holds', 'ack', 'surereject', 'surerequest_info'):
+        st.session_state.pop(f'{prefix}{cid}', None)
+    st.session_state['review_case'] = case
+
+
+@st.fragment(run_every="10s")
+def review_queue(headers):
     status, queue = request("GET", "/officer/queue", headers=headers)
     if status != 200:
         show_result(status, queue)
         return
+    st.caption(f"{len(queue)} cases awaiting action · Updates every 10 seconds")
+    if not queue:
+        st.info("No cases waiting for review. New farmer questions will appear here automatically.")
+    for case in queue:
+        if st.button(f"Open case {case['id']} · {case['status'].replace('_', ' ')}", key=f"open{case['id']}", width="stretch"):
+            load_review(case)
+            st.rerun()
+        st.caption(case['question'])
+        st.caption(f"Submitted {case.get('created_at', 'time unavailable')}")
+
+
+def officer_screen():
+    # Restore only after the backend validates the officer credential. Refresh
+    # must not skip the existing hashed-token authorization check.
+    forgotten = st.session_state.get('officer_tab_forgotten', False)
+    stored = tab_state(
+        'officer',
+        value={'token': st.session_state['officer_token']} if st.session_state.get('officer_token') else None,
+        forget=forgotten,
+    )
+    if not forgotten and not st.session_state.get('officer_token') and isinstance(stored, dict):
+        restored_token = stored.get('token')
+        if isinstance(restored_token, str) and restored_token:
+            status, _ = request('GET', '/officer/queue', headers=auth_headers(restored_token))
+            if status == 200:
+                st.session_state['officer_token'] = restored_token
+                st.rerun()
+            if status == 401:
+                st.session_state['officer_tab_forgotten'] = True
+                st.rerun()
+    st.caption("AGRIREACH · EXTENSION OFFICER PORTAL")
+    st.title("Officer dashboard" if st.session_state.get('officer_token') else "Officer sign in")
+    st.write("Review the question, verify source evidence, and approve the exact response the farmer will receive.")
+    if not st.session_state.get('officer_token'):
+        with st.form('officer_signin', clear_on_submit=True):
+            st.subheader("Secure access for extension officers")
+            token = st.text_input("Officer sign in token", type="password", key="officer_token_input",
+                help="Use the officer credential issued by the operator. A farmer case access token cannot sign in here.")
+            submitted = st.form_submit_button("Sign in", key="officer_signin_submit", type="primary")
+        st.caption("Paste the officer token issued by your operator. A farmer case access token cannot sign in here. Do not include quotes or a Bearer prefix; the token stays masked.")
+        if submitted:
+            status, queue = request("GET", "/officer/queue", headers=auth_headers(token))
+            if status == 200:
+                st.session_state['officer_token'] = token.strip()
+                st.session_state['officer_tab_forgotten'] = False
+                st.rerun()
+            else:
+                show_result(status, queue)
+        else:
+            st.info("Sign in with your officer token to see the review queue.")
+        return
+    headers = auth_headers(st.session_state['officer_token'])
+    status, _ = request("GET", "/officer/queue", headers=headers)
+    if status == 401:
+        clear_officer_state()
+        st.session_state['officer_tab_forgotten'] = True
+        st.rerun()
+    if status != 200:
+        show_result(status, {})
+        return
+    if st.button("Sign out", key="officer_signout"):
+        clear_officer_state()
+        st.session_state['officer_tab_forgotten'] = True
+        st.rerun()
+    left, right = st.columns([1, 2], gap="large")
+    with left:
+        st.subheader("Review queue")
+        review_queue(headers)
+    with right:
+        case = st.session_state.get('review_case')
+        if case:
+            if st.button("Reload case and discard unsaved edits", key="reload_case"):
+                cid = case['id']
+                status, current = request("GET", f"/officer/cases/{cid}", headers=headers)
+                if status == 200:
+                    load_review(current)
+                    st.rerun()
+                else:
+                    show_result(status, current)
+            # Edits stay tied to the loaded revision; concurrent decisions must
+            # fail at the API until the officer explicitly reloads the case.
+            render_case(case, headers)
+        else:
+            st.info("Choose a case from the queue to review its advice and sources.")
     with st.expander("Case history and delivery recovery"):
         status, cases = request("GET", "/officer/cases", headers=headers)
         if status == 200:
@@ -207,59 +330,265 @@ def officer_screen():
         else:
             show_result(status, cases)
     with st.expander("Return an unsent case to review"):
-        cid = st.number_input("Case to reopen", min_value=1, step=1)
-        reason = st.text_input("Additional information or reason for fresh review")
-        if st.button("Reload and reopen case", disabled=not reason.strip()):
+        cid = st.number_input("Case to reopen", min_value=1, step=1, key="reopen_id")
+        reason = st.text_input("Additional information or reason for fresh review", key="reopen_reason")
+        if st.button("Reload and reopen case", key="reopen_submit", disabled=not reason.strip()):
             status, case = request("GET", f"/officer/cases/{cid}", headers=headers)
             if status == 200:
                 show_result(*request("POST", f"/officer/cases/{cid}/reopen", headers=headers,
                     json={"expected_revision": case["revision"], "information": reason}))
             else:
                 show_result(status, case)
-    for case in queue:
-        render_case(case, headers)
 
 
-def main():
-    st.set_page_config(page_title="AgriReach", layout="wide")
-    st.title("AgriReach")
+STATES = {
+    'pending_review': 'Waiting for officer review. Advice is not available yet.',
+    'draft': 'Your question is being prepared for review.',
+    'approved': 'Approved by an officer. Release is still pending.',
+    'released': 'Approved response available.',
+    'rejected': 'The officer rejected this advice. No advice was released.',
+    'needs_info': 'The officer needs more information before approving advice.',
+    'not_delivered': 'Delivery has not been confirmed. An officer must review it.',
+    'undeliverable': 'Delivery is unavailable because the recipient was removed.',
+    'review_required': 'This case needs further review before an answer can be shown.',
+}
+
+
+def _phone_problem(phone: str, consent: bool) -> str | None:
+    """Farmer-facing phone feedback. The message does not repeat the typed number."""
+    if not consent:
+        return None
+    raw = (phone or "").strip()
+    if not raw:
+        return "Enter a Ghana mobile number, or leave SMS updates unchecked."
+    try:
+        normalize_phone(raw)
+    except PhoneError as exc:
+        return str(exc)
+    return None
+
+
+def _clear_supplement():
+    """Drop the reply target so a later question cannot post to an older case."""
+    for key in ("farmer_supplement_case", "farmer_supplement_revision", "farmer_supplement_token"):
+        st.session_state.pop(key, None)
+
+
+def _bind_supplement(case_id, revision, token):
+    st.session_state['farmer_supplement_case'] = case_id
+    st.session_state['farmer_supplement_revision'] = revision
+    st.session_state['farmer_supplement_token'] = token
+
+
+def _check_case(cid, access_token):
+    """Fetch one case with its private code and show the farmer-safe result.
+
+    The API authorizes every call; a successful lookup becomes the tab's active question."""
+    status, data = request("GET", f"/farmer/cases/{cid}", headers={"X-Case-Access-Token": access_token})
+    if status == 200:
+        st.session_state['farmer_tab_forgotten'] = False
+        if st.session_state.get('farmer_case_id') != cid:
+            st.session_state.pop('farmer_active_question', None)
+        st.session_state['farmer_case_id'] = cid
+        st.session_state['farmer_case_token'] = access_token
+        tab_state('farmer', value={'case_id': cid, 'token': access_token,
+                                   'question': st.session_state.get('farmer_active_question', '')},
+                  instance='manual_lookup')
+        notice = (data.get("acknowledgement") or {}).get("message")
+        if notice:
+            st.info(notice)
+        if data.get('clarification'):
+            _bind_supplement(cid, data.get('revision'), access_token)
+            if data.get("processing_failure"):
+                st.warning(data.get("message") or "AgriReach could not finish preparing this question. No treatment advice has been approved.")
+            else:
+                st.info(data.get('message') or 'Awaiting your information before an officer can review this.')
+            st.write(data['clarification'])
+        else:
+            _clear_supplement()
+            if data.get("status") == "rejected":
+                st.info(data.get("message") or (
+                    "An extension officer reviewed this question and did not approve any advice. "
+                    "Nothing was sent to you."))
+            elif data.get("evidence_gap"):
+                st.info(data.get("message") or "An extension officer will investigate this question. No treatment advice has been approved.")
+            else:
+                st.info(STATES.get(data['status'], 'Your case is being reviewed.'))
+            if data.get('delivery_status'):
+                st.caption('Delivery: ' + data['delivery_status'].replace('_', ' '))
+            if data.get('answer'):
+                st.success(data['answer'])
+                st.caption('An extension officer has checked this answer.')
+    elif status == 404:
+        _clear_supplement()
+        st.error("We could not find your question. Check your question number and private code.")
+    else:
+        _clear_supplement()
+        st.error("Unable to check the answer. Please try again shortly.")
+
+
+def farmer_screen():
+    # Browser tab state survives refresh, not tab closure. Verify a restored
+    # case credential with the same API used for a manual case lookup.
+    forgotten = st.session_state.get('farmer_tab_forgotten', False)
+    active = st.session_state.get('farmer_case_id') and st.session_state.get('farmer_case_token')
+    value = ({'case_id': st.session_state['farmer_case_id'],
+              'token': st.session_state['farmer_case_token'],
+              'question': st.session_state.get('farmer_active_question', '')} if active else None)
+    stored = tab_state('farmer', value=value, forget=forgotten)
+    if not forgotten and not active and isinstance(stored, dict):
+        cid, token = stored.get('case_id'), stored.get('token')
+        if type(cid) is int and cid > 0 and isinstance(token, str) and token:
+            status, _ = request('GET', f'/farmer/cases/{cid}',
+                                headers={'X-Case-Access-Token': token})
+            if status == 200:
+                st.session_state['farmer_case_id'] = cid
+                st.session_state['farmer_case_token'] = token
+                st.session_state['farmer_active_question'] = stored.get('question', '')
+                st.rerun()
+            if status == 404:
+                st.session_state['farmer_tab_forgotten'] = True
+                st.rerun()
+    st.title("Advice for your next step")
+    st.write("Ask an agricultural question. An extension officer checks the advice before you receive it.")
+    with st.container(border=True):
+        st.subheader("1 · Ask a question")
+        with st.form('farmer_submit'):
+            question = st.text_area("Your question", key="farmer_question", placeholder="What crop are you growing, where, and what do you need help with?")
+            phone_input = st.text_input("Phone number", key="farmer_phone", placeholder="Ghana mobile number")
+            consent = st.checkbox(
+                "I agree that AgriReach may text this number about this question, and may send approved advice when that is available.",
+                key="farmer_sms_consent", value=False)
+            st.caption("The box starts unchecked. The number is used only for those messages. Leave it blank if you do not want SMS.")
+            submitted = st.form_submit_button("Send question", key="farmer_submit_button")
+        if submitted:
+            phone = phone_input
+            if not question.strip():
+                st.warning("Enter a question before sending.")
+            elif problem := _phone_problem(phone, consent):
+                st.warning(problem)
+            else:
+                payload = {"question": question}
+                if consent:
+                    payload["phone"] = phone.strip()
+                    payload["sms_consent"] = True
+                with st.spinner("Saving your question…"):
+                    status, data = request("POST", "/ask", json=payload)
+                if status == 200:
+                    st.session_state['farmer_tab_forgotten'] = False
+                    st.session_state['farmer_case_id'] = data['case_id']
+                    st.session_state['farmer_case_token'] = data['access_token']
+                    tab_state('farmer', value={'case_id': data['case_id'], 'token': data['access_token'],
+                                               'question': question.strip()}, instance='submission')
+                    st.session_state['farmer_lookup_id'] = data['case_id']
+                    st.session_state['farmer_lookup_token'] = data['access_token']
+                    st.success("Your question has been received.")
+                    st.write(f"We received your question. Your question number is {data['case_id']}. This tab keeps your private code; use Check for updates below.")
+                    st.session_state['farmer_active_question'] = question.strip()
+                    notice = (data.get("acknowledgement") or {}).get("message")
+                    if notice:
+                        st.info(notice)
+                    if data.get('clarification'):
+                        _bind_supplement(data['case_id'], data.get('revision'), data['access_token'])
+                        st.info(data.get('message') or 'Awaiting your information before an officer can review this.')
+                        st.write(data['clarification'])
+                    else:
+                        _clear_supplement()
+                        if data.get("evidence_gap"):
+                            st.info(data.get("message") or "An extension officer will investigate this question. No treatment advice has been approved.")
+                        elif data.get("status") == "pending_review":
+                            st.caption("It is waiting for an extension officer to review. Advice is not available yet.")
+                elif status == 422:
+                    st.warning("Check the phone number. Use a Ghana mobile number, or leave the phone field blank.")
+                else:
+                    show_result(status, data)
+    active_id = st.session_state.get('farmer_case_id')
+    active_token = st.session_state.get('farmer_case_token')
+    with st.container(border=True):
+        st.subheader("2 · Your question")
+        lookup = None
+        if active_id and active_token:
+            st.markdown(f"**Question {active_id}**")
+            if st.session_state.get('farmer_active_question'):
+                st.caption(st.session_state['farmer_active_question'])
+            # The private code survives a refresh in tab-scoped browser storage,
+            # never in a URL. Every API check still validates the credential.
+            st.caption("This tab remembers your question when you refresh. "
+                       "Closing the tab or choosing Forget removes it; keep your question number and private code for later visits.")
+            refresh_col, forget_col = st.columns(2)
+            if refresh_col.button("Check for updates", key="farmer_refresh", type="primary", width="stretch"):
+                lookup = (int(active_id), active_token)
+            if forget_col.button("Forget this question on this device", key="farmer_forget", width="stretch"):
+                for key in ('farmer_case_id', 'farmer_case_token', 'farmer_lookup_id', 'farmer_lookup_token', 'farmer_active_question'):
+                    st.session_state.pop(key, None)
+                _clear_supplement()
+                st.session_state['farmer_tab_forgotten'] = True
+                st.rerun()
+        else:
+            st.caption("After you send a question, its status appears here.")
+        with st.expander("Check a different question", expanded=not active_id):
+            st.caption("Enter the question number and private code. You need both to see an answer.")
+            st.session_state.setdefault('farmer_lookup_id', st.session_state.get('farmer_case_id', 1))
+            st.session_state.setdefault('farmer_lookup_token', st.session_state.get('farmer_case_token', ''))
+            cid = st.number_input("Question number", min_value=1, step=1, key="farmer_lookup_id")
+            access_token = st.text_input("Private access code", type="password", key="farmer_lookup_token",
+                help="Use the eye icon to show the code so you can write it down.")
+            if st.button("Check answer", key="farmer_check"):
+                lookup = (int(cid), access_token.strip())
+        if lookup:
+            _check_case(*lookup)
+        supplement_case = st.session_state.get('farmer_supplement_case')
+        if st.session_state.get('farmer_supplement_revision') and supplement_case:
+            with st.form('farmer_supplement'):
+                st.caption(f"This detail is for question {supplement_case}.")
+                reply = st.text_input('Add the missing detail', key='farmer_supplement_text')
+                if st.form_submit_button('Send details', key='farmer_supplement_button'):
+                    status, data = request('POST', f"/farmer/cases/{supplement_case}/supplement",
+                                           headers={'X-Case-Access-Token': st.session_state['farmer_supplement_token']},
+                                           json={'text': reply, 'expected_revision': st.session_state['farmer_supplement_revision']})
+                    if status == 200 and data.get('clarification'):
+                        _bind_supplement(supplement_case, data.get('revision'), st.session_state['farmer_supplement_token'])
+                        if data.get("processing_failure"):
+                            st.warning(data.get("message") or "AgriReach could not finish preparing this question. No treatment advice has been approved.")
+                        else:
+                            st.info(data.get('message') or 'Awaiting your information before an officer can review this.')
+                        st.write(data['clarification'])
+                    elif status == 200:
+                        _clear_supplement()
+                        if data.get("evidence_gap"):
+                            st.info(data.get("message") or "An extension officer will investigate this question. No treatment advice has been approved.")
+                        elif data.get("status") == "rejected":
+                            st.info(data.get("message") or "An extension officer reviewed this question and did not approve any advice. Nothing was sent to you.")
+                        elif data.get("status") == "pending_review":
+                            st.success(data.get('message') or 'Your question has been received. It is waiting for an extension officer to review.')
+                        else:
+                            st.success(data.get('message') or 'Your question has been received.')
+                    else:
+                        show_result(status, data)
+
+
+def main(role="farmer"):
+    st.set_page_config(page_title="AgriReach · Reviewed agricultural advice", page_icon="🌱", layout="wide")
+    st.markdown("""<style>
+    .stApp { background: #f6f8f2; color: #173b2c; }
+    [data-testid="stSidebar"] { background: #e8efdf; }
+    .block-container { max-width: 1180px; padding-top: 4.5rem; }
+    [data-testid="stCaptionContainer"] { opacity: 1 !important; }
+    [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: #4c6255 !important; }
+    h1,h2,h3 { color: #173b2c; letter-spacing: -.025em; }
+    .stButton>button, .stFormSubmitButton>button { min-height: 48px; border-radius: 8px; border-color: #507447; }
+    @media(max-width:640px) { .block-container { padding: 4.5rem 1rem 1rem; } }
+    </style>""", unsafe_allow_html=True)
+    st.markdown("### 🌱 AgriReach")
     status, health = request("GET", "/health")
     if status != 200:
         st.warning("The service is unavailable. Try again shortly.")
-    farmer, voice, officer = st.tabs(["Farmer", "Voice note simulator", "Extension officer"])
-    with farmer:
-        question = st.text_area("Your question", "When should I plant soybean in Tamale?")
-        if st.button("Send"):
-            status, data = request("POST", "/ask", json={"question": question})
-            if status == 200:
-                st.info(f"Case {data['case_id']}: your question is waiting for review.")
-            else:
-                show_result(status, data)
-        cid = st.number_input("Check case number", min_value=1, step=1)
-        if st.button("Check answer"):
-            status, data = request("GET", f"/farmer/cases/{cid}")
-            if status == 200:
-                st.info(data.get("answer") or "Your case is waiting for officer review or confirmed delivery.")
-            else:
-                show_result(status, data)
-    with voice:
-        st.caption("Local demonstration only. Use a simulated sender, never a real number.")
-        sender = st.text_input("Simulated sender", "sim:farmer-1")
-        clip = st.file_uploader("Voice note", type=["wav", "ogg", "mp3", "m4a"])
-        typed = st.text_input("Or type a question")
-        if st.button("Send to AgriReach"):
-            status, data = request("POST", "/channels/simulator/inbound", data={"sender": sender, "text": typed},
-                files={"audio": (clip.name, clip.getvalue())} if clip else None)
-            show_result(status, data)
-        if st.button("Show messages"):
-            status, data = request("GET", "/channels/simulator/outbox", params={"sender": sender})
-            if status == 200:
-                for message in data:
-                    st.info(message["text"])
-            else:
-                show_result(status, data)
-    with officer:
+    elif role == 'officer' and health.get('draft_mode') == 'stub':
+        st.info("Demonstration advice: prepared from saved sources. No AI model is connected.")
+    if role == 'officer':
         officer_screen()
+    else:
+        farmer_screen()
 
 
 if __name__ == "__main__":

@@ -5,11 +5,73 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import os
+import threading
+
+from openai import DefaultHttpx2Client, OpenAI
 
 # --- Every model call (drafter, farmer text, judge) sends max_tokens and records its usage.
 # Without max_tokens OpenRouter reserves the model's whole output window and can answer 402 on a small balance.
 MAX_TOKENS = {"draft": 800, "farmer_text": 400, "judge": 1500}
 _usage: contextvars.ContextVar[list | None] = contextvars.ContextVar("agrireach_usage", default=None)
+# App draft attempt (1, then 2). None for assess, approval, and the farmer-text rewrite.
+# SDK HTTP retries are disabled. One create() is one provider attempt, counted before it is sent.
+_attempt: contextvars.ContextVar[int | None] = contextvars.ContextVar("agrireach_model_attempt", default=None)
+_budget_lock = threading.Lock()
+_budget_used = 0
+_ENTRY_KEYS = ("role", "model", "ok", "error", "prompt_tokens", "completion_tokens", "cost_usd", "attempt")
+# Longer than the longest catalog model id (56) and the longest chat-client error class (30).
+# model_usage rows are not passed through the shared 2000-character tool-log slice.
+_MODEL_CHARS = 256
+_ERROR_CHARS = 64
+
+
+class ProviderBudgetExceeded(RuntimeError):
+    """The local evaluation allowance is exhausted. This is not a provider invoice or a spending limit."""
+
+
+def request_budget() -> int:
+    """Shared ceiling for draft, regeneration, judge and farmer-text calls. Default 30."""
+    raw = os.getenv("AGRIREACH_REQUEST_BUDGET", "30")
+    try:
+        limit = int(raw)
+    except ValueError:
+        limit = 30
+    return max(limit, 0)
+
+
+def reset_request_budget() -> None:
+    """Start a fresh local count. Does not change anything at the provider."""
+    global _budget_used
+    with _budget_lock:
+        _budget_used = 0
+
+
+def reserve_provider_attempt() -> int:
+    """Count one application attempt before HTTP. A refused call is not sent and is not added."""
+    global _budget_used
+    with _budget_lock:
+        limit = request_budget()
+        if _budget_used >= limit:
+            raise ProviderBudgetExceeded(
+                f"The local provider request allowance of {limit} is exhausted. No further request was sent.")
+        _budget_used += 1
+        return _budget_used
+
+
+def provider_client(base_url: str, api_key: str):
+    """OpenAI-compatible client with SDK retries and redirect following turned off.
+
+    Verified against openai 3.29.0, whose default is two hidden retries and an HTTP client that follows redirects.
+    """
+    timeout = float(os.getenv("LLM_TIMEOUT", "60"))
+    http_client = DefaultHttpx2Client(follow_redirects=False, timeout=timeout)
+    return OpenAI(base_url=base_url, api_key=api_key, timeout=timeout, max_retries=0, http_client=http_client)
+
+
+def _close_client(client) -> None:
+    closer = getattr(client, "close", None)
+    if closer is not None:
+        closer()
 
 
 def max_tokens(role: str) -> int:
@@ -28,11 +90,27 @@ def start_usage() -> list:
     return calls
 
 
+def begin_attempt(number: int):
+    """Mark the application draft attempt. Does not change the model request."""
+    return _attempt.set(number)
+
+
+def end_attempt(token) -> None:
+    _attempt.reset(token)
+
+
+def _call_record(role: str, model: str, *, ok: bool, error: str | None, prompt_tokens, completion_tokens, cost_usd) -> dict:
+    """One application invocation. Unknown tokens and cost stay None; a failed request is never priced at 0."""
+    return {"role": role, "model": model, "ok": ok, "error": error, "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens, "cost_usd": cost_usd, "attempt": _attempt.get()}
+
+
 def record_usage(role: str, model: str, response) -> dict:
     u = getattr(response, "usage", None)
-    entry = {"role": role, "model": model, "ok": True,
-             "prompt_tokens": getattr(u, "prompt_tokens", None), "completion_tokens": getattr(u, "completion_tokens", None),
-             "cost_usd": getattr(u, "cost", None) if u is not None else None}
+    entry = _call_record(
+        role, model, ok=True, error=None,
+        prompt_tokens=getattr(u, "prompt_tokens", None), completion_tokens=getattr(u, "completion_tokens", None),
+        cost_usd=getattr(u, "cost", None) if u is not None else None)
     calls = _usage.get()
     if calls is not None:
         calls.append(entry)
@@ -40,15 +118,19 @@ def record_usage(role: str, model: str, response) -> dict:
 
 
 def create(role: str, model: str, client, **kw):
-    """client.chat.completions.create with the role's max_tokens, recording the attempt whether or not it succeeds
-    (a 402 or timeout is recorded as a failed call, then re-raised)."""
+    """client.chat.completions.create with the role's max_tokens.
+
+    The attempt is reserved before the provider is contacted. A timeout, rate limit, HTTP error or auth failure
+    stays counted. The SDK is constructed with retries disabled, so this record is one HTTP attempt.
+    """
+    reserve_provider_attempt()
     try:
         r = client.chat.completions.create(model=model, max_tokens=max_tokens(role), **kw)
     except Exception as e:
         calls = _usage.get()
         if calls is not None:
-            calls.append({"role": role, "model": model, "ok": False, "error": type(e).__name__,
-                          "prompt_tokens": None, "completion_tokens": None, "cost_usd": None})
+            calls.append(_call_record(role, model, ok=False, error=type(e).__name__,
+                                      prompt_tokens=None, completion_tokens=None, cost_usd=None))
         raise
     record_usage(role, model, r)
     return r
@@ -60,10 +142,31 @@ def log_usage(case_id, calls: list, actor: str = "agent", path: str | None = Non
     if calls and case_id:
         from agrireach import db
         cost = "unknown" if summary["cost_usd"] is None else f"${summary['cost_usd']}"
-        db.log(db.connect(), actor, "model_usage", summary | ({"path": path} if path else {}),
+        payload = summary | ({"path": path} if path else {})
+        db.log(db.connect(), actor, "model_usage", _bounded_usage(payload),
                f"{summary['calls']} of {summary['attempted']} model calls succeeded, cost {cost}",
-               ok=not summary["failed"], case_id=case_id)
+               ok=not summary["failed"], case_id=case_id, args_limit=None)
     return summary
+
+
+def _clip(value: str | None, limit: int) -> str | None:
+    if value is None or len(value) <= limit:
+        return value
+    return value[:limit]
+
+
+def _bounded_usage(payload: dict) -> dict:
+    """Keep a model-usage row complete for real model ids and error classes, and bounded past that."""
+    entries = []
+    shortened = False
+    for entry in payload.get("entries") or []:
+        model, error = entry.get("model"), entry.get("error")
+        clipped_model, clipped_error = _clip(model, _MODEL_CHARS), _clip(error, _ERROR_CHARS)
+        shortened = shortened or clipped_model != model or clipped_error != error
+        entries.append(entry | {"model": clipped_model, "error": clipped_error})
+    errors = [_clip(error, _ERROR_CHARS) for error in payload.get("errors") or []]
+    shortened = shortened or errors != list(payload.get("errors") or [])
+    return payload | {"entries": entries, "errors": errors, "identifiers_complete": not shortened}
 
 
 @contextlib.contextmanager
@@ -80,19 +183,42 @@ def usage_logged(case_id, actor: str, path: str):
 
 
 def usage_summary(calls: list) -> dict:
-    """Totals for one run. cost_usd is the provider's own figure; None if it didn't report one for every call."""
-    by_role: dict = {}
-    failed = [c for c in calls if c.get("ok") is False]
-    calls = [c for c in calls if c.get("ok") is not False]
-    for c in calls:
-        r = by_role.setdefault(c["role"], {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0})
-        r["calls"] += 1
-        r["prompt_tokens"] += c["prompt_tokens"] or 0
-        r["completion_tokens"] += c["completion_tokens"] or 0
-    costs = [c["cost_usd"] for c in calls]
-    return {"attempted": len(calls) + len(failed), "calls": len(calls), "failed": len(failed),
+    """Totals for one run. cost_usd is the provider's own figure; None if a successful call did not report one.
+
+    Failed requests stay in entries with cost_usd None. They are not added to the total as 0, and a known success
+    price is kept (the total is then only the reported successes)."""
+    recorded = list(calls)
+    failed = [c for c in recorded if c.get("ok") is False]
+    succeeded = [c for c in recorded if c.get("ok") is not False]
+    grouped: dict = {}
+    for entry in succeeded:
+        grouped.setdefault(entry["role"], []).append(entry)
+    by_role = {}
+    for role, group in grouped.items():
+        by_role[role] = {"calls": len(group),
+                         "prompt_tokens": _total(entry.get("prompt_tokens") for entry in group),
+                         "completion_tokens": _total(entry.get("completion_tokens") for entry in group)}
+    costs = [entry.get("cost_usd") for entry in succeeded]
+    # Success prices only. Unknown failure usage stays null in entries and is not added as 0.
+    # cost_usd remains that known sum so one unknown failure does not erase a reported price.
+    return {"attempted": len(succeeded) + len(failed), "calls": len(succeeded), "failed": len(failed),
             "errors": sorted({c["error"] for c in failed}), "by_role": by_role,
-            "cost_usd": round(sum(costs), 6) if costs and all(isinstance(x, (int, float)) for x in costs) else None}
+            "entries": [{key: entry.get(key) for key in _ENTRY_KEYS} for entry in recorded],
+            "tokens_complete": all(_known_number(entry.get("prompt_tokens")) and _known_number(entry.get("completion_tokens"))
+                                   for entry in recorded),
+            "cost_complete": all(_known_number(entry.get("cost_usd")) for entry in recorded),
+            "cost_usd": round(sum(costs), 6) if costs and all(_known_number(cost) for cost in costs) else None}
+
+
+def _known_number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _total(values) -> int | float | None:
+    values = list(values)
+    if not values or any(not _known_number(value) for value in values):
+        return None
+    return sum(values)
 
 STUB_LABEL = "[OFFLINE STUB DRAFT - no language model was used; text is assembled from retrieved passages]"
 
@@ -151,10 +277,7 @@ def draft(question: str, passages: list[dict], notes: list[str], conflicts: dict
     """Returns (text, mode_used). `feedback` lists citation-check problems from a previous attempt."""
     if mode() == "stub":
         return stub_draft(question, passages, notes), "stub"
-    from openai import OpenAI
-
-    client = OpenAI(base_url=os.environ["LLM_BASE_URL"], api_key=os.getenv("LLM_API_KEY", "none"),
-                    timeout=float(os.getenv("LLM_TIMEOUT", "60")))
+    client = provider_client(os.environ["LLM_BASE_URL"], os.getenv("LLM_API_KEY", "none"))
     ctx = "\n".join(f"[{p['id']}] {p['text']}" for p in passages) or "(no passages found)"
     msg = (f"Farmer question: {question}\n\nPassages:\n{ctx}\n\n{_conflict_block(conflicts)}"
            f"Reviewer notes: {'; '.join(notes) or 'none'}")
@@ -163,6 +286,9 @@ def draft(question: str, passages: list[dict], notes: list[str], conflicts: dict
                 "\nRewrite it so every figure is copied from the passage cited right after it, every conflict "
                 "side is stated with its own citation, and every sentence is supported by the passage it cites "
                 "(remove any sentence no passage supports).")
-    r = create("draft", os.environ["LLM_MODEL"], client, temperature=0, extra_body=extra_body(os.environ["LLM_BASE_URL"]),
-               messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": msg}])
-    return r.choices[0].message.content.strip(), f"llm:{os.environ['LLM_MODEL']}"
+    try:
+        r = create("draft", os.environ["LLM_MODEL"], client, temperature=0, extra_body=extra_body(os.environ["LLM_BASE_URL"]),
+                   messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": msg}])
+        return r.choices[0].message.content.strip(), f"llm:{os.environ['LLM_MODEL']}"
+    finally:
+        _close_client(client)

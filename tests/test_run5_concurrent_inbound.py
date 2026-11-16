@@ -11,7 +11,9 @@ run on ccc609a didn't reproduce it.
 Fix: model calls run in worker threads (asyncio.to_thread); a channel case is filed as 'draft' and the service saves
 the contact and moves it to pending_review in one transaction, so a failed run never leaves a queued case without
 its contact; the farmer is asked to resend, every sub-exception is logged with its traceback, and the error is
-re-raised (not swallowed). Here: MCP_TIMEOUT=1 s and model calls that block for longer and fail at random."""
+re-raised (not swallowed). Model calls below block and fail at random. Assert directly that each runs off the
+event loop; a one-second MCP deadline also timed out cold case writes before any model ran on the review PC.
+Keep the normal application deadline for transport/database I/O rather than using it as a thread assertion."""
 import asyncio
 import json
 import random
@@ -32,23 +34,34 @@ DRAFT = "Scout the maize field at least once a week [APNI-SARI-2023-MAIZE:p18-sc
 
 @pytest.fixture
 def slow_flaky_models(monkeypatch):
-    monkeypatch.setenv("MCP_TIMEOUT", "1")
+    monkeypatch.delenv("MCP_TIMEOUT", raising=False)  # normal application deadline; not a performance benchmark
     monkeypatch.setattr(llm, "mode", lambda: "llm")
     rnd = random.Random(7)
+    loop_calls = []
+
+    def record_thread(name):
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return  # model work belongs in a worker thread without an event loop
+        loop_calls.append(name)
 
     def draft(*a, **k):
-        time.sleep(1.5)  # a live model call: synchronous and longer than MCP_TIMEOUT
+        record_thread("draft")
+        time.sleep(1.5)  # a slow synchronous model call
         if rnd.random() < 0.4:
             raise RuntimeError("502 from the model provider")
         return DRAFT, "llm:fake"
 
     def rewrite(*a, **k):
+        record_thread("rewrite")
         time.sleep(1.2)
         if rnd.random() < 0.5:
             raise TimeoutError("model timed out")
         return "Walk through your maize field at least once a week.", "llm:fake"
 
     def judge_call(user):
+        record_thread("judge")
         time.sleep(0.4)
         if rnd.random() < 0.3:
             return '{"verdicts": [{"verdict": "supported"}]}'  # malformed: no "n"
@@ -57,6 +70,7 @@ def slow_flaky_models(monkeypatch):
     monkeypatch.setattr(llm, "draft", draft)
     monkeypatch.setattr(fr, "_llm_rewrite", rewrite)
     monkeypatch.setattr(judge, "_call", judge_call)
+    return loop_calls
 
 
 def run_together(n):
@@ -77,6 +91,7 @@ def assert_no_half_saved_case():
 
 def test_concurrent_farmers_with_slow_flaky_models_all_get_contact_and_ack(slow_flaky_models):
     res, ch = run_together(4)
+    assert not slow_flaky_models, f"synchronous model calls on event loop: {slow_flaky_models}"
     errors = [r for r in res if isinstance(r, BaseException)]
     assert not errors, errors
     con = db.connect()

@@ -1,11 +1,11 @@
 # AgriReach architecture
 
-This is the one architecture document. It describes the code on `main` as of 26 Oct 2026. Nothing is deployed; the app runs locally. Measured results are in [EVALS.md](EVALS.md), sources and licences in [docs/data-sources.md](docs/data-sources.md), and case statuses in [docs/workflow.md](docs/workflow.md).
+This is the one architecture document. It describes branch `work/final-contextual-mixing-closure` as of 15 Nov 2026 (`main` is an older ancestor). A file-by-file tour is in [docs/CODEBASE_WALKTHROUGH.md](docs/CODEBASE_WALKTHROUGH.md). Nothing is deployed; the app runs locally. Measured results are in [EVALS.md](EVALS.md), sources and licences in [docs/data-sources.md](docs/data-sources.md), and case statuses in [docs/workflow.md](docs/workflow.md).
 
 ```text
-farmer (UI, API, voice-note simulator, WhatsApp/SMS adapters)
+farmer (farmer portal :8501, API, voice-note simulator, WhatsApp/SMS adapters off by default)
   -> LangGraph agent: intake -> retrieve (MCP) -> check_sources (fetch MCP) -> write (draft + checks) -> file_case
-  -> officer queue (urgent or routine) -> officer edits and approves the exact farmer text
+  -> officer portal :8502 queue (urgent or routine) -> officer edits and approves the exact farmer text
   -> approval safety gate -> immutable approval -> release -> delivery
 ```
 
@@ -53,7 +53,7 @@ These run in the `write` node, before the officer sees the draft:
 
 ## Approval safety gate
 
-When an officer approves, the exact farmer text goes through `approval.assess_candidate()`. It runs the deterministic gate in `safety_gate.assess()` first, then the source checks. `POLICY_VERSION` in `safety_gate.py` is `chemical-4`.
+When an officer approves, the exact farmer text goes through `approval.assess_candidate()`. It runs the deterministic gate in `safety_gate.assess()` first, then the source checks. `POLICY_VERSION` in `safety_gate.py` is `chemical-5`. A registered chemical referral that does not answer a harvest, planting or storage question is held with `RELEVANCE` and is not an unrestricted pass.
 
 ### Deterministic gate (`safety_gate.py`, `instruction_policy.py`)
 
@@ -63,7 +63,7 @@ Empty text is `safety_blocked` (TEXT). S1 and LANGUAGE look at the whole text. S
 |---|---|---|
 | **S1** chemical safeguard | A cited chemical passage applies, but the reply drops its AEA consultation line and has no fixed referral line. A source that is not registered in `SOURCE_FINGERPRINTS`, or whose text has changed, always keeps S1 on. A registered source that is off the question's topic is skipped. | `safety_blocked`; an unknown or changed chemical source is `review_required` |
 | **S2** skips the officer or reverses safety advice | A mention of the AEA or extension officer that is not a plain referral ("Do not ask the AEA."), or a line that reverses label or glove advice (`skips_officer()`, plus the reversal pattern in `assess()`) | `safety_blocked` |
-| **S3** unsourced input | A product or household chemical, a dose or rate, a vague thing applied ("Pour it on"), anything put on the plants, a cure claim (`unsourced_input()`), a repeat application (`REPEAT`), or a pesticide or spraying mention | `safety_blocked` if the line mentions a pesticide or spraying, otherwise `review_required` |
+| **S3** unsourced input | A product or household chemical, a dose or rate, a vague thing applied ("Pour it on"), anything put on the plants, a cure claim (`unsourced_input()`), a repeat application (`REPEAT`), a pesticide or spraying mention, or chemical mixing (a mix/combine/blend verb near a chemical noun; unnamed "products" mixed or applied once the question or reply names a chemical; or a noun-free "mix both ... spray" in chemical context). A plain ban such as "Never mix pesticides." passes. The rule is per sentence; a split such as "Mix both. Spray water every week." is held by SOURCE_SUPPORT or the judge instead | `safety_blocked` if the line mentions a pesticide or spraying, otherwise `review_required` |
 | **S4** burning | Advice to burn or set fire, unless the line says not to or a cited source mentions burning (`burns_land()`) | `review_required` |
 | **LANGUAGE** | Text that is not English (for example Twi markers or a non-Latin script). The English rules can't read it, so a reviewer who reads the language must check it. | `review_required` |
 
@@ -106,6 +106,14 @@ Officers sign in with a bearer token from `scripts/add_officer.py`; only its SHA
 2. The assessment runs before any write lock, so a slow model call doesn't block other cases.
 3. Inside `BEGIN IMMEDIATE`, the snapshot and the officer credential are checked again. If anything changed, the officer must reload.
 4. The submission, the assessment and the approval are written together. The approval payload holds the farmer text, officer text, context, assessment and a binding fingerprint. Database triggers make approvals, submissions, assessments and audit events immutable.
+
+## Farmer access and portals
+
+`POST /ask` returns a random per-case access code; only its SHA-256 is stored (`farmer_case_access`, migration v3). `GET /farmer/cases/{id}` and `/supplement` need it in `X-Case-Access-Token` and answer 404 otherwise, because case numbers are sequential. The farmer portal keeps the active case number and code in the tab's Streamlit session state and sends the code on each **Check for updates**; nothing is put in URLs or logs. Officer tokens and farmer codes are separate credentials: a farmer code used as a bearer token gets 401. The two portals (`farmer_ui.py`, `officer_ui.py`) are separate Streamlit processes that share only the API.
+
+## Persistence and migrations
+
+`db.connect()` applies `migrations.ensure_schema()`, which backs up an existing file and verifies it before any upgrade. `schema_migrations` is a checksum ledger: v1 submission and assessment evidence, v2 approvals, challenges, audit and delivery tables, v3 farmer access tokens, v4 durable inbound ledger, v5 sender-scoped erasure and reconciliation reasons, v6 SMS consent and acknowledgement jobs. A ledger whose checksums do not match is refused.
 
 ## Delivery (`approval.release()`, `delivery.py`, `channels/`)
 

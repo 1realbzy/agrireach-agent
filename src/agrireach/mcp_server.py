@@ -79,7 +79,8 @@ def retrieve_reference(passage_id: str) -> str:
 @mcp.tool()
 def create_or_update_case(status: str, question: str = "", case_id: int = 0, crop: str = "", region: str = "",
                           draft: str = "", source_ids: list[str] | None = None, priority: str = "routine",
-                          urgent_reasons: list[str] | None = None, farmer_draft: str = "") -> str:
+                          urgent_reasons: list[str] | None = None, farmer_draft: str = "", inbound_claim: dict | None = None,
+                          expected_revision: int = 0, require_draft: bool = False) -> str:
     """Create or update a farmer case. status must be 'draft' or 'pending_review'.
     farmer_draft is only a proposal for the officer (JSON); the officer approves the text that is sent.
     Approval is reserved for a named extension officer and cannot be set here."""
@@ -87,13 +88,15 @@ def create_or_update_case(status: str, question: str = "", case_id: int = 0, cro
     cid = db.agent_upsert_case(con, status=status, question=question, case_id=case_id or None, crop=crop or None,
                                region=region or None, draft=draft or None, sources=source_ids or [],
                                priority=priority, urgent_reasons=urgent_reasons or [],
-                               farmer_draft=farmer_draft or None)
+                               farmer_draft=farmer_draft or None, inbound_claim=inbound_claim,
+                               expected_revision=expected_revision or None, require_draft=require_draft)
     db.log(con, "agent", "create_or_update_case",
            {"status": status, "priority": priority, "urgent_reasons": urgent_reasons, "sources": source_ids},
            f"case {cid} -> {status}", case_id=cid)
     # created_at: when the question was received; the agent puts it next to the cited planting windows.
+    stored = db.get_case(con, cid)
     return json.dumps({"case_id": cid, "status": status, "priority": priority,
-                       "created_at": db.get_case(con, cid)["created_at"]})
+                       "revision": stored["revision"], "created_at": stored["created_at"]})
 
 
 def main():

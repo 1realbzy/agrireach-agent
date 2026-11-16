@@ -14,6 +14,8 @@ from __future__ import annotations
 import json
 import os
 
+from agrireach import llm
+
 PROMPT = (
     "You check an agricultural advisory draft against its sources. For each numbered item you get one sentence "
     "from the draft and the source passage(s) it cites. Answer 'supported' if the passages state or directly imply "
@@ -50,17 +52,14 @@ def build_user_message(items: list[tuple[str, list[dict]]]) -> str:
 
 
 def _call(user: str) -> str:
-    from openai import OpenAI
-
-    from agrireach import llm
-
     base = os.getenv("AGRIREACH_JUDGE_BASE_URL") or os.environ["LLM_BASE_URL"]
-    client = OpenAI(base_url=base,
-                    api_key=os.getenv("AGRIREACH_JUDGE_API_KEY") or os.getenv("LLM_API_KEY", "none"),
-                    timeout=float(os.getenv("LLM_TIMEOUT", "60")))
-    r = llm.create("judge", model(), client, temperature=0, extra_body=llm.extra_body(base),
-                   messages=[{"role": "system", "content": PROMPT}, {"role": "user", "content": user}])
-    return r.choices[0].message.content or ""
+    client = llm.provider_client(base, os.getenv("AGRIREACH_JUDGE_API_KEY") or os.getenv("LLM_API_KEY", "none"))
+    try:
+        r = llm.create("judge", model(), client, temperature=0, extra_body=llm.extra_body(base),
+                       messages=[{"role": "system", "content": PROMPT}, {"role": "user", "content": user}])
+        return r.choices[0].message.content or ""
+    finally:
+        llm._close_client(client)
 
 
 class JudgeParseError(ValueError):

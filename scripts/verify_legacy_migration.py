@@ -1,4 +1,6 @@
 """Upgrade a temporary legacy fixture copy and verify preserved publication/audit data."""
+from contextlib import closing
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -12,8 +14,9 @@ def main():
     fixture = Path(__file__).resolve().parents[1] / "tests/fixtures/safety/legacy.sql"
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "legacy.sqlite"
-        with sqlite3.connect(path) as con:
+        with closing(sqlite3.connect(path)) as con:
             con.executescript(fixture.read_text())
+            con.commit()
             before = con.execute("SELECT * FROM cases").fetchall()
             logs = con.execute("SELECT * FROM tool_log").fetchall()
         con = sqlite3.connect(path)
@@ -26,7 +29,8 @@ def main():
         backups = list(Path(directory).glob("*.before-safety-*.sqlite"))
         assert backups
         for backup in backups:
-            assert backup.stat().st_mode & 0o777 == 0o600
+            if os.name != "nt":  # Windows permissions are inherited ACLs, not POSIX mode bits.
+                assert backup.stat().st_mode & 0o777 == 0o600
         subprocess.run([sys.executable, "-m", "agrireach.migrations", str(path), "--verify-only"], check=True)
     print("Legacy publication, audit rows, backfill, backup and verification preserved")
 
