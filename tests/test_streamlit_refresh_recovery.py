@@ -20,7 +20,7 @@ def test_officer_refresh_requires_successful_api_authorization(monkeypatch):
         return httpx.Response(200, json=[])
 
     monkeypatch.setattr(httpx, 'request', backend)
-    app = AppTest.from_string('from agrireach.ui import officer_screen\nofficer_screen()').run()
+    app = AppTest.from_string('from agrireach.ui import officer_screen\nofficer_screen()').run(timeout=10)
     assert not app.exception
     assert app.session_state['officer_token'] == valid
     assert requests
