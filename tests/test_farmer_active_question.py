@@ -47,7 +47,8 @@ def test_check_for_updates_reuses_the_session_code_without_re_entry(monkeypatch)
     views = {(8, "secret-code-8"): {"case_id": 8, "status": "pending_review", "answer": None}}
     seen = _backend(monkeypatch, views)
     app = _submit(AppTest.from_string(SCRIPT, default_timeout=20).run())
-    assert "Question 8" in _rendered(app)
+    assert "When should I harvest soybean in Tamale?" in _rendered(app)
+    assert "Question 8" not in _rendered(app)
     assert "farmer_refresh" in [b.key for b in app.button]
     app.button(key="farmer_refresh").click().run()
     gets = [call for call in seen if call[0] == "GET" and "/farmer/cases/" in call[1]]
@@ -91,6 +92,7 @@ def test_manual_lookup_becomes_the_active_question(monkeypatch):
     app.button(key="farmer_check").click().run()
     assert any("Approved text." in item.value for item in app.success)
     app.run()  # the card is drawn above the lookup, so it shows the adopted case on the next run
-    assert "Question 5" in _rendered(app)
+    assert "farmer_refresh" in [b.key for b in app.button]
+    assert "Question 5" not in _rendered(app)
     app.button(key="farmer_refresh").click().run()
     assert any("Approved text." in item.value for item in app.success)

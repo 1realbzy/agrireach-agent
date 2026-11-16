@@ -35,7 +35,7 @@ def test_streamlit_signed_out_renders_farmer_page_only(monkeypatch):
     app = AppTest.from_file(str(Path(__file__).parents[1] / "src/agrireach/ui.py"), default_timeout=15).run()
     assert not app.exception
     assert len(app.tabs) == 0
-    assert any(item.value == "Advice for your next step" for item in app.title)
+    assert any(item.value == "Ask about your crop" for item in app.title)
     assert not any(item.label == "Officer sign in token" for item in app.text_input)
     assert len(calls) == 1
 
@@ -58,14 +58,14 @@ def test_officer_form_authentication_and_signout_clear_private_review(monkeypatc
     app = AppTest.from_string('from agrireach.ui import officer_screen\nofficer_screen()', default_timeout=20).run()
     assert not seen  # A blank form does not issue an officer request.
     app.text_input(key='officer_token_input').set_value('invalid')
-    app.button[0].click().run()
+    app.button(key='officer_signin_submit').click().run()
     assert 'officer_token' not in app.session_state
     assert any('valid officer token' in item.value for item in app.info)
     app.text_input(key='officer_token_input').set_value('  ' + valid + '  ')
-    app.button[0].click().run()
+    app.button(key='officer_signin_submit').click().run()
     assert not app.exception
     assert app.session_state['officer_token'] == valid
-    assert any('No cases waiting' in item.value for item in app.info)
+    assert any('No questions are waiting' in item.value for item in app.info)
     app.session_state['challenge12'] = {'token': 'synthetic-challenge'}
     app.session_state['farmer_case_id'] = 9
     app.button(key='officer_signout').click().run()
@@ -74,3 +74,21 @@ def test_officer_form_authentication_and_signout_clear_private_review(monkeypatc
     assert 'challenge12' not in app.session_state
     assert app.session_state['farmer_case_id'] == 9
     assert any(item.label == 'Officer sign in token' for item in app.text_input)
+
+
+def test_pending_email_sign_in_does_not_authenticate(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    from streamlit import env_util
+    monkeypatch.setattr(env_util, 'is_repl', lambda: False)
+    seen = []
+    monkeypatch.setattr(httpx, 'request', lambda *args, **kwargs: seen.append(args) or httpx.Response(500, json={}))
+    app = AppTest.from_string('from agrireach.ui import officer_screen\nofficer_screen()', default_timeout=20).run()
+    app.text_input(key='officer_email_pending').set_value('officer@example.com')
+    app.text_input(key='officer_password_pending_input').set_value('not-a-real-password')
+    app.button(key='officer_password_pending_submit').click().run()
+    assert not app.exception
+    assert not seen
+    assert 'officer_token' not in app.session_state
+    rendered = "\n".join(item.value for item in list(app.info) + list(app.caption) + list(app.markdown))
+    assert 'not available yet' in rendered
+    assert 'not-a-real-password' not in rendered
