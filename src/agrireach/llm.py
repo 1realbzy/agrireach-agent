@@ -257,8 +257,9 @@ SYSTEM = (
     "separated from the advice, copy the whole sentence. A passage's own words about chemicals or referral (such as "
     "'recommended storage chemicals' or consulting the local AEA) are part of its statement: keep them, and never add "
     "a product, dose, timing or method the passage does not name. The only words you may add are one connector at "
-    "the start of a copied statement ('Also,', 'First,', 'Then,' or 'Finally,') and the choice sentence from the "
-    "CONFLICTS section. "
+    "the start of a copied statement ('Also,', 'First,', 'Then,' or 'Finally,'), never before a statement about "
+    "chemicals, pesticides, treatment or referral (copy those exactly as written), and, only when a CONFLICTS "
+    "section is given, its choice sentence. With no CONFLICTS section, write no sentence about choosing. "
     "Write in English for the officer, at most 8 statements."
 )
 
@@ -285,6 +286,16 @@ def stub_draft(question: str, passages: list[dict], notes: list[str]) -> str:
 # wording ("choose the window that best fits your local conditions" was judged and rejected live, case 12).
 _CHOICE_TOPICS = (("window", "planting window"), ("depth", "planting depth"), ("spacing", "plant spacing"),
                   ("rate", "seeding rate"))
+
+
+def stray_choice_problems(text: str, conflicts: dict | None) -> list[str]:
+    """A code-built choice sentence is only true when code found a conflict. It is an exempt no-advice shape, so the
+    claim check would pass it anywhere: t44 live, GPT-4o-mini added 'The officer should choose which planting window
+    to follow.' to 3 answers that had no conflict (fertilizer, aflatoxin storage, armyworm)."""
+    if conflicts:
+        return []
+    return [f"'{m.group(0)}' names a choice between sources, but no source conflict was found for this question"
+            for m in re.finditer(r"The officer should choose which [a-z ]+ to follow\.", text or "")]
 
 
 def choice_sentence(conflict_key: str) -> str:
@@ -335,7 +346,7 @@ def retry_instructions(rejected: list[str], passages: list[dict]) -> str:
              "referral line, the conflict figures and the choice sentence."]
     for r in rejected:
         r = re.sub(r"\s+([.!?])$", r"\1", r.strip())  # the check quotes the sentence with its citation removed
-        found = closest_source_statement(r, passages)
+        found = None if r.startswith("The officer should choose which") else closest_source_statement(r, passages)
         if found:
             pid, src = found
             lines.append(f"- Rejected: '{r}'. Replace it with this complete source statement, copied exactly, or "

@@ -523,6 +523,8 @@ async def write(s: S, tools: Tools) -> S:
             claims = await asyncio.to_thread(claim_check.check_claims, text, s["passages"], conflicts,  # judge call
                                              ignore_prefixes=skip, judge=False if used.startswith("stub") else None)
             problems = res.problems + claims.problems + rainfall.draft_problems(text)
+            if not used.startswith("stub"):
+                problems += llm.stray_choice_problems(text, conflicts)
             attempts.append({"draft_mode": used, "ok": not problems, "problems": problems,
                              "figures_checked": res.checked, "sentences_checked": claims.checked,
                              **({"judge": {k: v for k, v in claims.judge.items() if k != "raw"}} if claims.judge else {})})
