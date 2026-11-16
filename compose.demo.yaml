@@ -1,5 +1,7 @@
-# Local-only boundary. Do not directly publish these ports or expose the officer token.
-# External HTTPS, access policy, backups, and domain setup must be verified separately.
+# Local-only boundary. Do not directly publish these ports; put HTTPS and an access policy in front of the portals.
+# Officers sign in with email and password (provision: docker compose exec api python scripts/officer_accounts.py
+# create EMAIL "NAME" --password-stdin). Legacy pasted officer tokens are OFF here (AGRIREACH_LEGACY_OFFICER_TOKENS).
+# The API port must stay reachable by the portals only: it trusts their per-browser client header for rate limits.
 x-common: &common
   build: .
   restart: unless-stopped
@@ -18,6 +20,14 @@ x-common: &common
     LLM_API_KEY: ""
     AGRIREACH_JUDGE_BASE_URL: ""
     AGRIREACH_JUDGE_API_KEY: ""
+    AGRIREACH_LEGACY_OFFICER_TOKENS: "${AGRIREACH_LEGACY_OFFICER_TOKENS:-0}"
+    AGRIREACH_OFFICER_SESSION_HOURS: "${AGRIREACH_OFFICER_SESSION_HOURS:-8}"
+    AGRIREACH_LOGIN_MAX_FAILURES: "${AGRIREACH_LOGIN_MAX_FAILURES:-5}"
+    AGRIREACH_LOGIN_WINDOW_SECONDS: "${AGRIREACH_LOGIN_WINDOW_SECONDS:-900}"
+    AGRIREACH_SUBMIT_LIMIT: "${AGRIREACH_SUBMIT_LIMIT:-10}"
+    AGRIREACH_SUBMIT_WINDOW_SECONDS: "${AGRIREACH_SUBMIT_WINDOW_SECONDS:-600}"
+    AGRIREACH_FARMER_SESSION_HOURS: "${AGRIREACH_FARMER_SESSION_HOURS:-24}"
+    AGRIREACH_TRUST_PORTAL_CLIENT_HEADER: "1"
   volumes:
     - demo_data:/var/lib/agrireach
 

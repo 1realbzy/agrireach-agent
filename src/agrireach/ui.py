@@ -266,13 +266,37 @@ def review_queue(headers):
         st.caption(f"Submitted {case.get('created_at', 'time unavailable')}")
 
 
+def _officer_email_signin():
+    """Email and password sign-in (POST /officer/auth/login). The session token stays in this server-side
+    Streamlit session; it is never shown. Interface layout is owned by the UI redesign (API_AUTH_CONTRACT.md)."""
+    with st.form('officer_email_signin', clear_on_submit=True):
+        st.subheader("Or sign in with your officer account")
+        email = st.text_input("Officer email", key="officer_email_input")
+        password = st.text_input("Password", type="password", key="officer_password_input")
+        submitted = st.form_submit_button("Sign in with email", key="officer_email_submit")
+    if not submitted:
+        return
+    status, data = request("POST", "/officer/auth/login", json={"email": email, "password": password})
+    if status == 200 and isinstance(data, dict) and data.get("session_token"):
+        st.session_state['officer_token'] = data["session_token"]
+        st.session_state['officer_auth_kind'] = 'session'
+        st.session_state['officer_tab_forgotten'] = False
+        st.rerun()
+    elif status in (401, 429) and isinstance(data, dict) and isinstance(data.get("detail"), str):
+        st.error(data["detail"])
+    else:
+        show_result(status, data if isinstance(data, dict) else {})
+
+
 def officer_screen():
     # Restore only after the backend validates the officer credential. Refresh
     # must not skip the existing hashed-token authorization check.
     forgotten = st.session_state.get('officer_tab_forgotten', False)
     stored = tab_state(
         'officer',
-        value={'token': st.session_state['officer_token']} if st.session_state.get('officer_token') else None,
+        value=({'token': st.session_state['officer_token']}
+               | ({'kind': 'session'} if st.session_state.get('officer_auth_kind') == 'session' else {}))
+        if st.session_state.get('officer_token') else None,
         forget=forgotten,
     )
     if not forgotten and not st.session_state.get('officer_token') and isinstance(stored, dict):
@@ -281,6 +305,8 @@ def officer_screen():
             status, _ = request('GET', '/officer/queue', headers=auth_headers(restored_token))
             if status == 200:
                 st.session_state['officer_token'] = restored_token
+                if stored.get('kind') == 'session':
+                    st.session_state['officer_auth_kind'] = 'session'
                 st.rerun()
             if status == 401:
                 st.session_state['officer_tab_forgotten'] = True
@@ -305,6 +331,7 @@ def officer_screen():
                 show_result(status, queue)
         else:
             st.info("Sign in with your officer token to see the review queue.")
+        _officer_email_signin()
         return
     headers = auth_headers(st.session_state['officer_token'])
     status, _ = request("GET", "/officer/queue", headers=headers)
@@ -316,6 +343,8 @@ def officer_screen():
         show_result(status, {})
         return
     if st.button("Sign out", key="officer_signout"):
+        if st.session_state.get('officer_auth_kind') == 'session':  # end the server-side session too
+            request("POST", "/officer/auth/logout", headers=headers)
         clear_officer_state()
         st.session_state['officer_tab_forgotten'] = True
         st.rerun()
