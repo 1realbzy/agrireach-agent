@@ -189,7 +189,7 @@ def test_v6_rolls_back_when_first_ddl_ledger_or_commit_is_denied(tmp_path, actio
         assert con.execute("PRAGMA foreign_key_check").fetchall() == []
         assert migrations.validate_existing_ledger(con)[0] == 5
     with closing(db.connect(str(path))) as con:
-        assert migrations.validate_existing_ledger(con)[0] == 6
+        assert migrations.validate_existing_ledger(con)[0] == 7
 
 
 @pytest.mark.parametrize("version", [1, 6])
@@ -373,7 +373,7 @@ db.connect(sys.argv[1])
     with pytest.raises(SystemExit):
         migrations.main()
     with closing(db.connect(str(path))) as con:
-        assert migrations.validate_existing_ledger(con)[0] == 6
+        assert migrations.validate_existing_ledger(con)[0] == 7
     (backup,) = tmp_path.glob("*.before-v6-*.sqlite")
     with closing(sqlite3.connect(backup)) as con:
         assert migrations.validate_existing_ledger(con)[0] == 5

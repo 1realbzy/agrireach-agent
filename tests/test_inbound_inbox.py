@@ -16,7 +16,7 @@ def test_inbox_persists_and_deduplicates(tmp_path):
     row = reopened.execute("SELECT state,attempt_count,payload FROM channel_inbox").fetchone()
     assert row["state"] == "pending" and row["attempt_count"] == 0
     assert '"maize"' in row["payload"] and "overwritten" not in row["payload"]
-    assert [r[0] for r in reopened.execute("SELECT version FROM schema_migrations ORDER BY version")] == [1, 2, 3, 4, 5, 6]
+    assert [r[0] for r in reopened.execute("SELECT version FROM schema_migrations ORDER BY version")] == [1, 2, 3, 4, 5, 6, 7]
 
 
 def test_only_one_worker_can_claim_and_finish(tmp_path):
@@ -125,7 +125,8 @@ def test_upgrade_from_historical_schema_versions(tmp_path, version):
     con = sqlite3.connect(path)
     # Construct an actual historical schema by dropping only later additive
     # migrations in reverse order on a disposable database.
-    for table in ("acknowledgement_attempts", "acknowledgement_jobs", "farmer_sms_contacts"):
+    for table in ("farmer_session_cases", "farmer_sessions", "officer_login_attempts", "officer_sessions",
+                  "officer_accounts", "acknowledgement_attempts", "acknowledgement_jobs", "farmer_sms_contacts"):
         con.execute(f"DROP TABLE {table}")
     con.execute("DROP INDEX channel_inbox_sender_idx")
     con.execute("DROP TABLE channel_inbox")
@@ -155,6 +156,6 @@ def test_upgrade_from_historical_schema_versions(tmp_path, version):
         raw.commit()
         raw.close()
     upgraded = db.connect(path)
-    assert [r[0] for r in upgraded.execute("SELECT version FROM schema_migrations ORDER BY version")] == [1, 2, 3, 4, 5, 6]
+    assert [r[0] for r in upgraded.execute("SELECT version FROM schema_migrations ORDER BY version")] == [1, 2, 3, 4, 5, 6, 7]
     assert upgraded.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     assert upgraded.execute("PRAGMA foreign_key_check").fetchall() == []

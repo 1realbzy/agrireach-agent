@@ -29,7 +29,7 @@ def test_verify_only_detects_incompatible_approval_trigger(tmp_path, monkeypatch
     ("DROP TABLE schema_migrations", "Missing schema_migrations table"),
     ("DROP TABLE approvals", "Incomplete migration schema"),
     ("DROP TABLE channel_pending", "Incomplete bootstrap schema"),
-    ("UPDATE schema_migrations SET version=7 WHERE version=6", "Schema version or checksum mismatch"),
+    ("UPDATE schema_migrations SET version=8 WHERE version=7", "Schema version or checksum mismatch"),
     ("UPDATE schema_migrations SET checksum='wrong' WHERE version=2", "Schema version or checksum mismatch"),
 ])
 def test_verify_only_rejects_incomplete_or_incompatible_schema(tmp_path, monkeypatch, sql, error):

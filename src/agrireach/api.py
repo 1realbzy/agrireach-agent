@@ -14,8 +14,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from pydantic_core import PydanticCustomError
 
-from agrireach import (acknowledgement, approval, agent, db, emergency, farmer_reply, knowledge, llm, ratelimit,
-                       safe_logging)
+from agrireach import (acknowledgement, approval, agent, db, emergency, farmer_reply, knowledge, llm, officer_auth,
+                       ratelimit, safe_logging)
 from agrireach.phone import PhoneError, normalize as normalize_phone
 from agrireach.channels import service, simulator, sms, whatsapp
 from agrireach.channels.base import mask_sender
@@ -105,14 +105,64 @@ def _revision_conflict(exc: BaseException) -> bool:
     return "stale_revision" in text or "not waiting for farmer information" in text
 
 
+def _bearer(authorization: str | None) -> str:
+    return (authorization or "").removeprefix("Bearer ").strip()
+
+
 def current_officer(authorization: str | None = Header(None)) -> str:
-    """The signed-in officer's name, from their sign-in token (Authorization: Bearer <token>; tokens are issued by
-    scripts/add_officer.py). Every officer route and release depends on this; the name on the record comes from here."""
-    token = (authorization or "").removeprefix("Bearer ").strip()
-    name = db.officer_for_token(db.connect(), token)
+    """The signed-in officer's name (Authorization: Bearer <token>). The token is an expiring session from
+    POST /officer/auth/login, or (unless AGRIREACH_LEGACY_OFFICER_TOKENS=0) a legacy token from
+    scripts/add_officer.py. Every officer route and release depends on this; the name on the record comes from here."""
+    token = _bearer(authorization)
+    con = db.connect()
+    session = officer_auth.session_for_token(con, token)
+    name = session["officer"] if session else None
+    if not name and officer_auth.legacy_tokens_enabled():
+        name = db.officer_for_token(con, token)
     if not name:
         raise HTTPException(401, "officer sign-in required", headers={"WWW-Authenticate": "Bearer"})
     return name
+
+
+class Login(BaseModel):
+    email: str = Field(min_length=1, max_length=254)
+    password: str = Field(min_length=1, max_length=256)
+
+
+def _client_id(request: Request) -> str:
+    """The caller's address; behind the portals, their X-AgriReach-Client digest when explicitly trusted."""
+    client = request.client.host if request.client else "unknown"
+    marker = (request.headers.get("x-agrireach-client") or "").strip()
+    if marker and os.getenv("AGRIREACH_TRUST_PORTAL_CLIENT_HEADER") == "1":
+        client = "portal:" + marker[:128]
+    return client
+
+
+@app.post("/officer/auth/login")
+def officer_login(body: Login, request: Request):
+    """Email and password to an expiring session token. Wrong email and wrong password get the same answer."""
+    con = db.connect()
+    try:
+        session = officer_auth.login(con, body.email, body.password, _client_id(request))
+    except officer_auth.LoginLocked as exc:
+        raise HTTPException(429, officer_auth.LOCKED, headers={"Retry-After": str(exc.wait)}) from None
+    if not session:
+        raise HTTPException(401, officer_auth.INVALID_LOGIN)
+    return session
+
+
+@app.post("/officer/auth/logout")
+def officer_logout(authorization: str | None = Header(None)):
+    """Revoke this session. Idempotent; a legacy token is not revoked here (re-run scripts/add_officer.py)."""
+    return {"revoked": officer_auth.logout(db.connect(), _bearer(authorization))}
+
+
+@app.get("/officer/auth/me")
+def officer_me(authorization: str | None = Header(None), officer: str = Depends(current_officer)):
+    session = officer_auth.session_for_token(db.connect(), _bearer(authorization))
+    if session:
+        return {"officer": officer, "email": session["email"], "expires_at": session["expires_at"], "kind": "session"}
+    return {"officer": officer, "email": None, "expires_at": None, "kind": "legacy_token"}
 
 
 class Decision(BaseModel):
@@ -311,21 +361,49 @@ def _submission_allowed(request: Request, phone: str = "") -> None:
     With AGRIREACH_TRUST_PORTAL_CLIENT_HEADER=1 the portal's X-AgriReach-Client value (a digest of the browser's
     address) is used instead. Enable it only where the API port is reachable by the portals alone, otherwise a
     caller could pick a new value for each request."""
-    client = request.client.host if request.client else "unknown"
-    marker = (request.headers.get("x-agrireach-client") or "").strip()
-    if marker and os.getenv("AGRIREACH_TRUST_PORTAL_CLIENT_HEADER") == "1":
-        client = "portal:" + marker[:128]
+    client = _client_id(request)
     keys = [ratelimit.key("client", client)] + ([ratelimit.key("phone", phone)] if phone else [])
     wait = ratelimit.check(keys)
     if wait is not None:
         raise HTTPException(429, ratelimit.MESSAGE, headers={"Retry-After": str(wait)})
 
 
+@app.post("/farmer/session")
+def farmer_session(request: Request):
+    """A private farmer session for the farmer portal to keep server-side. It reads only cases filed with it."""
+    _submission_allowed(request)
+    return officer_auth.new_farmer_session(db.connect())
+
+
+@app.get("/farmer/session/cases")
+def farmer_session_cases(x_farmer_session: str | None = Header(None)):
+    """This session's own cases, newest first, as the farmer case view (approved text only). Never by phone."""
+    con = db.connect()
+    if not officer_auth.farmer_session_valid(con, x_farmer_session):
+        raise HTTPException(401, "farmer session expired or unknown")
+    items = []
+    for case_id in officer_auth.farmer_session_cases(con, x_farmer_session):
+        row = db.get_case(con, case_id)
+        if row:
+            items.append(_with_acknowledgement(con, case_id, _farmer_case_body(con, case_id, row))
+                         | {"question": row["question"], "created_at": row["created_at"]})
+    return items
+
+
+def _farmer_may_read(con, case_id: int, token: str | None, session: str | None) -> bool:
+    """A per-case access token or the private session that filed the case. A phone number never counts."""
+    return db.farmer_case_token_valid(con, case_id, token) or officer_auth.farmer_session_owns(con, session, case_id)
+
+
 @app.post("/ask")
-async def ask(a: Ask, request: Request):
+async def ask(a: Ask, request: Request, x_farmer_session: str | None = Header(None)):
     phone = _consented_phone(a.phone, a.sms_consent)
+    if x_farmer_session is not None and not officer_auth.farmer_session_valid(db.connect(), x_farmer_session):
+        raise HTTPException(401, "farmer session expired or unknown")
     _submission_allowed(request, phone)
     out = await agent.run(a.question, a.crop, a.region)
+    if x_farmer_session is not None:
+        officer_auth.link_farmer_case(db.connect(), x_farmer_session, out["case_id"])
     # The farmer gets only an acknowledgement or a clarifying question, never the draft.
     # The phone is applied after the case commit and is not passed to the model.
     access_token = db.issue_farmer_case_token(db.connect(), out["case_id"])
@@ -348,11 +426,11 @@ async def ask(a: Ask, request: Request):
 
 @app.post("/farmer/cases/{case_id}/supplement")
 async def supplement(case_id: int, body: Supplement, request: Request,
-                     x_case_access_token: str | None = Header(None)):
+                     x_case_access_token: str | None = Header(None), x_farmer_session: str | None = Header(None)):
     """Add the farmer's own missing crop or place to the same draft. Nothing is approved here."""
     con = db.connect()
     row = db.get_case(con, case_id)
-    if not row or not db.farmer_case_token_valid(con, case_id, x_case_access_token):
+    if not row or not _farmer_may_read(con, case_id, x_case_access_token, x_farmer_session):
         raise HTTPException(404, "not found")
     _submission_allowed(request)
     if row["status"] != "draft" or not db._open_clarification(row):
@@ -526,11 +604,12 @@ def release(case_id: int, officer: str = Depends(current_officer)):
 
 
 @app.get("/farmer/cases/{case_id}")
-def farmer_view(case_id: int, x_case_access_token: str | None = Header(None)):
-    """Case numbers are sequential; require a separate secret for every farmer view."""
+def farmer_view(case_id: int, x_case_access_token: str | None = Header(None),
+                x_farmer_session: str | None = Header(None)):
+    """Case numbers are sequential; require a separate secret (case token or the filing session) for every view."""
     con = db.connect()
     row = db.get_case(con, case_id)
-    if not row or not db.farmer_case_token_valid(con, case_id, x_case_access_token):
+    if not row or not _farmer_may_read(con, case_id, x_case_access_token, x_farmer_session):
         raise HTTPException(404, "not found")
     return _with_acknowledgement(con, case_id, _farmer_case_body(con, case_id, row))
 

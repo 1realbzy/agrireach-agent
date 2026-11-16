@@ -78,7 +78,7 @@ def test_connect_rejects_an_alias_to_a_partial_backup(tmp_path):
 @pytest.mark.parametrize("filename", ["partial-results.sqlite", "backup.partial.sqlite", ".agrireach-backup-notes.sqlite"])
 def test_connect_accepts_legitimate_database_names(tmp_path, filename):
     with closing(db.connect(tmp_path / filename)) as con:
-        assert con.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] == 6
+        assert con.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] == 7
 
 
 @pytest.mark.parametrize("path", [":memory:", Path(":memory:")])
@@ -172,7 +172,7 @@ def v5(tmp_path):
 
 def test_v5_upgrade_and_verified_backup(v5):
     with closing(db.connect(str(v5))) as con:
-        assert con.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] == 6
+        assert con.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] == 7
         assert con.execute("SELECT question FROM cases").fetchone()[0] == "legacy maize question"
         assert con.execute("SELECT count(*) FROM farmer_sms_contacts").fetchone()[0] == 0
         assert con.execute("PRAGMA foreign_key_check").fetchall() == []
@@ -226,7 +226,7 @@ def test_adopts_compatible_legacy_sms_data(v5, monkeypatch):
     with closing(db.connect(str(v5))) as con:
         for name in SMS_TABLES:
             assert con.execute(f"SELECT count(*) FROM {name}").fetchone()[0] == 1
-        assert con.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] == 6
+        assert con.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] == 7
 
 
 @pytest.mark.parametrize("defect", ["partial", "wrong_constraint", "trigger"])
@@ -306,7 +306,7 @@ def test_concurrent_upgraders_create_one_backup(v5):
             return con.execute("SELECT max(version) FROM schema_migrations").fetchone()[0]
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        assert list(pool.map(migrate, range(2))) == [6, 6]
+        assert list(pool.map(migrate, range(2))) == [7, 7]
     assert len(list(v5.parent.glob("*.before-v6-*.sqlite"))) == 1
 
 
@@ -320,7 +320,7 @@ def test_verify_only_is_read_only_and_checks_schema(v5, monkeypatch, capsys):
         pass
     before = v5.read_bytes()
     migrations.main()
-    assert "versions 1 through 6 verified" in capsys.readouterr().out
+    assert "versions 1 through 7 verified" in capsys.readouterr().out
     assert v5.read_bytes() == before
     with closing(sqlite3.connect(v5)) as con, con:
         con.execute("DROP TABLE acknowledgement_attempts")

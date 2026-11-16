@@ -36,7 +36,7 @@ def validate_database_path(path: str | Path) -> Path:
 
 
 def _migration_statements():
-    return (STATEMENTS, STATEMENTS_V2, STATEMENTS_V3, STATEMENTS_V4, STATEMENTS_V5, STATEMENTS_V6)
+    return (STATEMENTS, STATEMENTS_V2, STATEMENTS_V3, STATEMENTS_V4, STATEMENTS_V5, STATEMENTS_V6, STATEMENTS_V7)
 
 
 def validate_existing_ledger(con, *, adopt_legacy_sms=False):
@@ -58,7 +58,7 @@ def validate_existing_ledger(con, *, adopt_legacy_sms=False):
     if ledger not in _valid_ledgers() or any(not _valid_timestamp(row[2]) for row in rows):
         raise RuntimeError("Unsupported migration ledger; no bootstrap writes performed")
     version = len(ledger)
-    if _sms_tables_exist(con, required=version == 6) and version < 6:
+    if _sms_tables_exist(con, required=version >= 6) and version < 6:
         if version != 5 or not adopt_legacy_sms:
             raise RuntimeError("Unrecorded acknowledgement schema; explicit legacy adoption required")
     required = {"cases", "advisory_submissions", "safety_assessments"}
@@ -72,6 +72,8 @@ def validate_existing_ledger(con, *, adopt_legacy_sms=False):
         cols = {r[1] for r in con.execute("PRAGMA table_info(channel_inbox)")}
         if not {"sender_id", "outcome_reason"} <= cols:
             raise RuntimeError("Incomplete inbox migration; missing privacy or outcome columns")
+    if len(ledger) >= 7:
+        required |= set(V7_TABLES)
     if not required <= tables:
         raise RuntimeError("Incomplete migration schema; stop writers and recover from verified evidence")
     if _pending_bootstrap(con, tables):
@@ -214,10 +216,21 @@ def ensure_schema(con: sqlite3.Connection, path: str, *, existing_file=True, ado
         upgrade_v5(con)
     if version < 6:
         upgrade_v6(con, path if needs_backup else None, adopt_legacy_sms=adopt_legacy_sms)
-        # Check the committed state at the entry point as well as before commit.
+        # Another opener may already have continued to version 7. Version 6 must be present.
         con.execute("BEGIN")
         try:
-            _verify_migration(con, 6)
+            current, _ = validate_existing_ledger(con, adopt_legacy_sms=adopt_legacy_sms)
+            if current < 6:
+                raise RuntimeError("Schema version or checksum mismatch; migration 6 is incomplete")
+        finally:
+            con.rollback()
+    if version < 7:
+        upgrade_v7(con, path if needs_backup else None)
+        con.execute("BEGIN")
+        try:
+            current, _ = validate_existing_ledger(con)
+            if current < 7:
+                raise RuntimeError("Schema version or checksum mismatch; migration 7 is incomplete")
         finally:
             con.rollback()
 
@@ -289,6 +302,47 @@ STATEMENTS_V6 = (
 )
 CHECKSUM_V6 = hashlib.sha256("\n".join(STATEMENTS_V6).encode()).hexdigest()
 
+# Version 7: officer email/password accounts, expiring server-side sessions, login attempts for rate limiting,
+# and private farmer sessions. Additive only; versions 1 through 6 are unchanged. Passwords and session tokens
+# are stored only as hashes (agrireach.officer_auth). NOTE: work/case-followup-operations (8024205) also numbers
+# its follow-up tables as version 7; whichever lands second must renumber to version 8 (see AUTH_ASSESSMENT.md).
+V7_TABLES = ("officer_accounts", "officer_sessions", "officer_login_attempts", "farmer_sessions",
+             "farmer_session_cases")
+STATEMENTS_V7 = (
+    """CREATE TABLE officer_accounts (
+        email TEXT PRIMARY KEY CHECK (email = lower(trim(email)) AND length(email) BETWEEN 3 AND 254),
+        officer_name TEXT NOT NULL UNIQUE REFERENCES officers(name),
+        password_hash TEXT NOT NULL,
+        disabled INTEGER NOT NULL DEFAULT 0 CHECK (disabled IN (0, 1)),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL)""",
+    """CREATE TABLE officer_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        token_sha256 TEXT NOT NULL UNIQUE,
+        email TEXT NOT NULL REFERENCES officer_accounts(email),
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        revoked_at TEXT,
+        revoked_reason TEXT)""",
+    "CREATE INDEX officer_sessions_email ON officer_sessions(email, revoked_at)",
+    """CREATE TABLE officer_login_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key_sha256 TEXT NOT NULL,
+        ok INTEGER NOT NULL CHECK (ok IN (0, 1)),
+        created_at TEXT NOT NULL)""",
+    "CREATE INDEX officer_login_attempts_key ON officer_login_attempts(key_sha256, created_at)",
+    """CREATE TABLE farmer_sessions (
+        token_sha256 TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL)""",
+    """CREATE TABLE farmer_session_cases (
+        session_sha256 TEXT NOT NULL REFERENCES farmer_sessions(token_sha256),
+        case_id INTEGER NOT NULL REFERENCES cases(id),
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (session_sha256, case_id))""",
+)
+CHECKSUM_V7 = hashlib.sha256("\n".join(STATEMENTS_V7).encode()).hexdigest()
+
 
 def _valid_ledgers():
     first = [(1, CHECKSUM)]
@@ -296,7 +350,8 @@ def _valid_ledgers():
     third = second + [(3, CHECKSUM_V3)]
     fourth = third + [(4, CHECKSUM_V4)]
     fifth = fourth + [(5, CHECKSUM_V5)]
-    return (first, second, third, fourth, fifth, fifth + [(6, CHECKSUM_V6)])
+    sixth = fifth + [(6, CHECKSUM_V6)]
+    return (first, second, third, fourth, fifth, sixth, sixth + [(7, CHECKSUM_V7)])
 
 
 def upgrade_v2(con, *, reserved=False):
@@ -440,7 +495,7 @@ def upgrade_v6(con, path, *, adopt_legacy_sms=False):
     try:
         con.execute("BEGIN IMMEDIATE")
         version, _ = validate_existing_ledger(con, adopt_legacy_sms=adopt_legacy_sms)
-        if version == 6:
+        if version >= 6:
             con.rollback()
             return
         if version != 5:
@@ -458,6 +513,36 @@ def upgrade_v6(con, path, *, adopt_legacy_sms=False):
         con.execute("INSERT INTO schema_migrations VALUES (6,?,?)",
                     (CHECKSUM_V6, datetime.now(timezone.utc).isoformat()))
         _verify_migration(con, 6)
+        if con.execute("PRAGMA foreign_key_check").fetchone():
+            raise RuntimeError("Foreign key verification failed")
+        con.commit()
+    except BaseException:
+        con.rollback()
+        raise
+
+
+def upgrade_v7(con, path, *, reserved=False):
+    """Back up a version 6 database and add officer accounts, sessions and farmer sessions. 1-6 stay unchanged."""
+    try:
+        if not reserved:
+            con.execute("BEGIN IMMEDIATE")
+        version, _ = validate_existing_ledger(con)
+        if version >= 7:
+            con.rollback()
+            return
+        if version != 6:
+            raise RuntimeError("Unsupported migration ledger; version 7 refused")
+        if path is not None:
+            _verified_backup(con, path, "v7")
+        elif con.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            raise RuntimeError("SQLite integrity verification failed")
+        if con.execute("PRAGMA foreign_key_check").fetchone():
+            raise RuntimeError("Foreign key verification failed")
+        for statement in STATEMENTS_V7:
+            con.execute(statement)
+        con.execute("INSERT INTO schema_migrations VALUES (7,?,?)",
+                    (CHECKSUM_V7, datetime.now(timezone.utc).isoformat()))
+        _verify_migration(con, 7)
         if con.execute("PRAGMA foreign_key_check").fetchone():
             raise RuntimeError("Foreign key verification failed")
         con.commit()
@@ -490,8 +575,8 @@ def main():
                 raise RuntimeError("Missing schema_migrations table")
             if con.execute("SELECT version,checksum FROM schema_migrations ORDER BY version").fetchall() != _valid_ledgers()[-1]:
                 raise RuntimeError("Schema version or checksum mismatch")
-            _verify_migration(con, 6)
-        print("Schema versions 1 through 6 verified; integrity, foreign keys and immutable evidence triggers OK")
+            _verify_migration(con, 7)
+        print("Schema versions 1 through 7 verified; integrity, foreign keys and immutable evidence triggers OK")
     else:
         from agrireach import db
         con = db.connect(str(args.path), adopt_legacy_sms=args.adopt_legacy_sms)
