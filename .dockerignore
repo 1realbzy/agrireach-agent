@@ -14,3 +14,11 @@
 demo-evidence*/
 *.log
 _split_probe.py
+# Runtime farmer media, delivery outboxes, backups and local secrets must never enter an image.
+data/media/
+data/outbox/
+data/pilot-media/
+data/pilot-outbox/
+.agrireach-backup-*/
+*.partial
+pilot-env.ps1
