@@ -273,25 +273,30 @@ def _case(row) -> dict:
     return d
 
 
-def _generation(con, case_id: int) -> dict:
-    """How the draft was made (live model or offline stub) and the case's model usage totals, from the tool log."""
-    proposal = con.execute("SELECT args FROM tool_log WHERE case_id=? AND tool='farmer_text_proposal' "
-                           "ORDER BY id DESC LIMIT 1", (case_id,)).fetchone()
-    draft_mode = None
-    if proposal:
-        try:
-            draft_mode = json.loads(proposal["args"] or "{}").get("draft_mode") or None
-        except ValueError:
-            draft_mode = None
-    calls = prompt = completion = 0
-    cost, cost_complete, models = 0.0, True, set()
-    for row in con.execute("SELECT args FROM tool_log WHERE case_id=? AND tool='model_usage' ORDER BY id", (case_id,)):
+DECIDED_STATUSES = ("approved", "released", "not_delivered", "undeliverable")
+
+
+def _usage_rows(con, case_id: int) -> list[tuple[str, str | None, dict | None]]:
+    """(actor, path, usage) per model_usage row; usage None when the row can't be read (cost then incomplete)."""
+    rows = []
+    for row in con.execute("SELECT actor, args FROM tool_log WHERE case_id=? AND tool='model_usage' ORDER BY id", (case_id,)):
         try:
             usage = json.loads(row["args"] or "{}")
         except ValueError:
+            usage = None
+        rows.append((row["actor"], (usage or {}).get("path"), usage))
+    return rows
+
+
+def _usage_totals(rows) -> dict:
+    attempted = calls = prompt = completion = 0
+    cost, cost_complete, models = 0.0, True, set()
+    for _actor, _path, usage in rows:
+        if usage is None:
             cost_complete = False
             continue
         calls += usage.get("calls") or 0
+        attempted += usage.get("attempted", usage.get("calls")) or 0
         for role in (usage.get("by_role") or {}).values():
             prompt += role.get("prompt_tokens") or 0
             completion += role.get("completion_tokens") or 0
@@ -302,12 +307,103 @@ def _generation(con, case_id: int) -> dict:
             cost += usage["cost_usd"]
         elif usage.get("calls"):
             cost_complete = False
+    return {"model_calls": calls, "attempted_calls": attempted, "prompt_tokens": prompt, "completion_tokens": completion,
+            "models": sorted(models), "cost_usd": round(cost, 6) if cost_complete else None, "cost_complete": cost_complete}
+
+
+def _money(cost) -> str:
+    return "cost unknown" if cost is None else f"${cost:.6f}"
+
+
+def _generation(con, case_id: int) -> dict:
+    """How the draft and the response were made, from recorded rows only (tool_log, cases).
+
+    state: live_model_draft (a model draft passed every check), model_draft_rejected_source_fallback (the model drafted,
+    failed the checks, verbatim passages shown instead; paid calls were made), model_error_source_fallback (the model
+    call failed), offline_source_draft (no model call), officer_written (the officer wrote or edited the response that
+    was approved), or no_draft. Paid calls are always counted and named: a label never says 'no model' when the case's
+    draft run made a model call. Officer-side calls (approval check, farmer-text re-propose) are reported separately."""
+    proposal = con.execute("SELECT args FROM tool_log WHERE case_id=? AND tool='farmer_text_proposal' AND actor='agent' "
+                           "ORDER BY id DESC LIMIT 1", (case_id,)).fetchone()
+    draft_mode = None
+    if proposal:
+        try:
+            draft_mode = json.loads(proposal["args"] or "{}").get("draft_mode") or None
+        except ValueError:
+            draft_mode = None
+    rows = _usage_rows(con, case_id)
+    totals = _usage_totals(rows)
+    drafting = _usage_totals([r for r in rows if r[0] == "agent" and not r[1]])
+    review = _usage_totals([r for r in rows if not (r[0] == "agent" and not r[1])])
+    checks = con.execute("SELECT args FROM tool_log WHERE case_id=? AND tool='draft_checks' ORDER BY id DESC LIMIT 1",
+                         (case_id,)).fetchone()
+    attempts = None
+    if checks:
+        try:
+            attempts = len(json.loads(checks["args"] or "{}").get("attempts") or [])
+        except ValueError:
+            attempts = None
     live = bool(draft_mode and draft_mode.startswith("llm"))
-    label = ("LIVE MODEL DRAFT" if live else "NO MODEL DRAFT (offline stub or rule-based)" if draft_mode
-             else "NO DRAFT (clarification, emergency or not yet drafted)")
-    return {"draft_mode": draft_mode, "live_model": live, "label": label, "model_calls": calls,
-            "prompt_tokens": prompt, "completion_tokens": completion, "models": sorted(models),
-            "cost_usd": round(cost, 6) if cost_complete else None, "cost_complete": cost_complete}
+    n, cost = drafting["attempted_calls"], _money(drafting["cost_usd"])
+    if live:
+        state, label = "live_model_draft", "LIVE MODEL DRAFT"
+    elif draft_mode and draft_mode.startswith("stub(citation-check-fallback"):
+        state = "model_draft_rejected_source_fallback"
+        tried = f" after {attempts} attempt(s)" if attempts else ""
+        label = (f"SOURCE DRAFT AFTER REJECTED LIVE MODEL DRAFT: the model draft failed the citation check{tried}, "
+                 f"verbatim passages shown ({n} model calls, {cost})")
+    elif draft_mode and draft_mode.startswith("stub(llm-error"):
+        state = "model_error_source_fallback"
+        label = f"SOURCE DRAFT AFTER MODEL ERROR: verbatim passages shown ({n} model calls attempted, {cost})"
+    elif draft_mode and n:
+        state = "source_draft_with_model_calls"
+        label = f"SOURCE DRAFT: verbatim passages shown; the draft run made {n} model calls ({cost})"
+    elif draft_mode:
+        state, label = "offline_source_draft", "NO MODEL CALLS: offline source draft (verbatim passages)"
+    else:
+        state, label = "no_draft", "NO DRAFT (clarification, emergency or not yet drafted)"
+    draft_state, draft_label = state, label
+    case = con.execute("SELECT status, draft, final_text, farmer_text, farmer_draft, officer FROM cases WHERE id=?",
+                       (case_id,)).fetchone()
+    officer_edited = officer_farmer_text = False
+    if case is not None and case["status"] in DECIDED_STATUSES and case["final_text"] is not None:
+        officer_edited = (case["final_text"] or "").strip() != (case["draft"] or "").strip()
+        try:
+            proposed = (json.loads(case["farmer_draft"] or "null") or {}).get("text") or ""
+        except ValueError:
+            proposed = ""
+        officer_farmer_text = bool(case["farmer_text"]) and case["farmer_text"].strip() != proposed.strip()
+    if officer_edited or officer_farmer_text:
+        what = " and ".join(x for x, on in (("officer text", officer_edited), ("farmer text", officer_farmer_text)) if on)
+        state = "officer_written"
+        label = f"OFFICER-WRITTEN RESPONSE: {case['officer']} wrote or edited the approved {what}; draft was: {draft_label}"
+    return {"state": state, "draft_state": draft_state, "draft_label": draft_label,
+            "draft_mode": draft_mode, "live_model": live, "label": label, "model_used": totals["attempted_calls"] > 0,
+            "draft_attempts": attempts, "officer_edited_officer_text": officer_edited,
+            "officer_wrote_farmer_text": officer_farmer_text,
+            "drafting_usage": drafting, "review_usage": review,
+            "model_calls": totals["model_calls"], "attempted_calls": totals["attempted_calls"],
+            "prompt_tokens": totals["prompt_tokens"], "completion_tokens": totals["completion_tokens"],
+            "models": totals["models"], "cost_usd": totals["cost_usd"], "cost_complete": totals["cost_complete"]}
+
+
+def _tool_evidence(con, case_id: int) -> dict:
+    """Recorded tool execution for the case, in order. Nothing is inferred: runs before the mcp_tool_calls and
+    draft_checks rows existed say recorded=false. Server-side retrieval rows (search_guidance etc.) are written
+    before the MCP server knows the case and carry no case id, so they are not listed here."""
+    rows = [dict(r) for r in con.execute("SELECT id, ts, actor, tool, args, result_summary, ok FROM tool_log "
+                                         "WHERE case_id=? ORDER BY id", (case_id,))]
+    def load(r):
+        try:
+            return json.loads(r["args"] or "null")
+        except ValueError:
+            return None
+    mcp = [load(r) | {"logged_at": r["ts"]} for r in rows if r["tool"] == "mcp_tool_calls" and isinstance(load(r), dict)]
+    checks = [load(r) | {"logged_at": r["ts"]} for r in rows if r["tool"] == "draft_checks" and isinstance(load(r), dict)]
+    timeline = [{"seq": i + 1, "ts": r["ts"], "actor": r["actor"], "tool": r["tool"], "ok": bool(r["ok"]),
+                 "summary": (r["result_summary"] or "")[:300]} for i, r in enumerate(rows)]
+    return {"mcp_runs": mcp, "mcp_recorded": bool(mcp), "draft_checks": checks, "draft_checks_recorded": bool(checks),
+            "timeline": timeline}
 
 
 @app.get("/health")
@@ -525,7 +621,7 @@ def case_detail(case_id: int, officer: str = Depends(current_officer)):
     row = db.get_case(con, case_id)
     if not row:
         raise HTTPException(404, "not found")
-    return _case(row) | {"log": db.case_log(con, case_id)}
+    return _case(row) | {"log": db.case_log(con, case_id), "tool_evidence": _tool_evidence(con, case_id)}
 
 
 @app.post("/officer/cases/{case_id}/voice-preview")

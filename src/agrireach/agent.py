@@ -11,6 +11,7 @@ import json
 import os
 import re
 import sys
+import time
 from datetime import datetime
 from contextlib import AsyncExitStack
 from dataclasses import asdict
@@ -251,17 +252,37 @@ def _server_params(own_only=False):
     return own, fetch
 
 
+TOOL_ERROR_CHARS = 160
+EVIDENCE_PROBLEMS, EVIDENCE_CHARS = 8, 300
+
+
 class Tools:
     """Holds the MCP client sessions for one agent run."""
 
     def __init__(self, own: ClientSession, fetch: ClientSession | None):
         self.own, self.fetch = own, fetch
+        # Client-side record of every MCP tool call in this run (order, outcome, error, timing). Arguments and
+        # results are not kept here: the server's own tool_log rows hold those. Logged once per run on the case.
+        self.calls: list[dict] = []
+        self._t0 = time.monotonic()
+
+    def record(self, server: str, name: str, started: float, ok: bool, error: str | None = None) -> None:
+        self.calls.append({"seq": len(self.calls) + 1, "server": server, "tool": name, "ok": ok,
+                           "start_ms": round((started - self._t0) * 1000), "ms": round((time.monotonic() - started) * 1000),
+                           "error": (error or "")[:TOOL_ERROR_CHARS] or None})
 
     async def call(self, name: str, args: dict):
-        res = await asyncio.wait_for(self.own.call_tool(name, args), timeout=float(os.getenv("MCP_TIMEOUT", "20")))
+        started = time.monotonic()
+        try:
+            res = await asyncio.wait_for(self.own.call_tool(name, args), timeout=float(os.getenv("MCP_TIMEOUT", "20")))
+        except BaseException as e:
+            self.record("agrireach", name, started, False, f"{type(e).__name__}: {e}")
+            raise
         text = res.content[0].text if res.content else ""
         if res.isError:
+            self.record("agrireach", name, started, False, text)
             raise RuntimeError(f"{name} failed: {text}")
+        self.record("agrireach", name, started, True)
         return json.loads(text)
 
 
@@ -445,14 +466,19 @@ async def check_sources(s: S, tools: Tools) -> S:
         if p["source_id"] in seen or p.get("kind") == "record":  # a data record, not a guide page
             continue
         seen.add(p["source_id"])
+        started, recorded = time.monotonic(), False
         try:
             r = await asyncio.wait_for(tools.fetch.call_tool("fetch", {"url": src["landing_url"], "max_length": 20000,
                                                                       "raw": True}), timeout=30)
             body = r.content[0].text if r.content else ""
+            tools.record("fetch", "fetch", started, not r.isError, body[:TOOL_ERROR_CHARS] if r.isError else None)
+            recorded = True
             ok = (not r.isError) and bool(re.search(_crop_pattern(p["crop"]), body, re.I))
             checks.append({"source_id": p["source_id"], "url": src["landing_url"], "reachable": ok,
                            "detail": "" if ok else body[:160]})
         except Exception as e:
+            if not recorded:
+                tools.record("fetch", "fetch", started, False, f"{type(e).__name__}: {e}")
             checks.append({"source_id": p["source_id"], "url": src["landing_url"], "reachable": False,
                            "detail": f"fetch error: {e}"[:160]})
     return {"source_checks": checks}
@@ -689,7 +715,8 @@ async def _invoke(question, crop, region, use_fetch, extra_urgent_reasons, queue
                 await fetch.initialize()
             except Exception:
                 fetch = None
-        graph = build_graph(Tools(own, fetch))
+        tools = Tools(own, fetch)
+        graph = build_graph(tools)
         calls = llm.start_usage()
         state = {"question": question, "crop": crop, "region": region,
                  "extra_urgent_reasons": list(extra_urgent_reasons or []), "queue": queue, "inbound_claim": inbound_claim}
@@ -698,6 +725,7 @@ async def _invoke(question, crop, region, use_fetch, extra_urgent_reasons, queue
         if case_id is not None:
             state |= {"case_id": case_id, "expected_revision": expected_revision or 0, "require_draft": True}
         out = await graph.ainvoke(state)
+    _log_run_evidence(out, tools)
     return {k: out.get(k) for k in ("case_id", "status", "crop", "region", "clarification", "draft", "draft_mode",
                                      "urgent_reasons", "source_checks", "errors", "language",
                                      "citation_check", "farmer_draft")} | {
@@ -709,6 +737,53 @@ async def _invoke(question, crop, region, use_fetch, extra_urgent_reasons, queue
         "priority": "urgent" if out.get("urgent_reasons") else "routine",
         "sources": [p["id"] for p in out.get("passages") or []],
         "usage": _log_usage(out.get("case_id"), calls)}
+
+
+def _clip_text(value, limit: int = EVIDENCE_CHARS) -> str:
+    value = str(value or "")
+    return value if len(value) <= limit else value[:limit - 1] + "\u2026"
+
+
+def run_evidence(out: dict, tools: Tools) -> tuple[dict, dict]:
+    """(mcp_tool_calls, draft_checks) payloads for one run, bounded. Recorded facts only; nothing is inferred.
+
+    draft_checks keeps each draft attempt's outcome and (up to EVIDENCE_PROBLEMS) check problems, the judge's
+    verdicts (verdict and short reason, no raw output) and the source-page checks. Before t43 these were returned
+    to the caller and dropped, so an officer could not see why a live model draft was replaced by sources."""
+    calls = {"calls": tools.calls, "count": len(tools.calls), "failed": sum(not c["ok"] for c in tools.calls)}
+    check = out.get("citation_check") or {}
+    attempts = []
+    for number, a in enumerate(check.get("attempts") or [], 1):
+        judge_part = a.get("judge") or {}
+        attempts.append({
+            "attempt": number, "draft_mode": a.get("draft_mode"), "ok": bool(a.get("ok")),
+            "figures_checked": a.get("figures_checked"), "sentences_checked": a.get("sentences_checked"),
+            "problems": [_clip_text(x) for x in (a.get("problems") or [])[:EVIDENCE_PROBLEMS]],
+            "problems_total": len(a.get("problems") or []),
+            "judge": ({"model": judge_part.get("model"), "error": _clip_text(judge_part["error"]) if judge_part.get("error") else None,
+                       "verdicts": [{"verdict": v.get("verdict"), "why": _clip_text(v.get("why"), 120)}
+                                    for v in (judge_part.get("verdicts") or [])[:20]]} if judge_part else None)})
+    checks = {"draft_mode": out.get("draft_mode"), "ok": check.get("ok"), "attempts": attempts,
+              "fallback_to_sources": "rejected_draft" in check,
+              "source_checks": [{"source_id": c.get("source_id"), "url": c.get("url"), "reachable": bool(c.get("reachable")),
+                                 "detail": _clip_text(c.get("detail"), 160)} for c in (out.get("source_checks") or [])]}
+    return calls, checks
+
+
+def _log_run_evidence(out: dict, tools: Tools) -> None:
+    case_id = out.get("case_id")
+    if not case_id:
+        return
+    calls, checks = run_evidence(out, tools)
+    con = db.connect()
+    db.log(con, "agent", "mcp_tool_calls", calls, f"{calls['count']} MCP tool calls, {calls['failed']} failed",
+           ok=not calls["failed"], case_id=case_id, args_limit=None, commit=False)
+    if out.get("citation_check") or out.get("source_checks"):
+        db.log(con, "agent", "draft_checks", checks,
+               f"draft {'passed' if checks['ok'] else 'failed'} checks after {len(checks['attempts'])} attempt(s)"
+               + ("; fell back to verbatim sources" if checks["fallback_to_sources"] else ""),
+               ok=bool(checks["ok"]), case_id=case_id, args_limit=None, commit=False)
+    con.commit()
 
 
 def _log_usage(case_id, calls: list) -> dict:
