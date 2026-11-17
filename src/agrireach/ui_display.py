@@ -184,6 +184,78 @@ def tool_execution_view(evidence, log=None) -> dict:
     return {"recorded": recorded, "rows": rows, "timeline": timeline, "note": note}
 
 
+def _unique_source_count(case: dict) -> int:
+    sources = case.get("sources") or []
+    if not isinstance(sources, list):
+        return 0
+    return len(unique_labels([source for source in sources if source]))
+
+
+def _source_phrase(count: int) -> str:
+    if count == 1:
+        return "from 1 guidance source"
+    if count > 1:
+        return f"from {count} guidance sources"
+    return ""
+
+
+def _recorded_checks_passed(case: dict) -> bool:
+    """True only when a stored draft-check record says the checks passed."""
+    evidence = case.get("tool_evidence")
+    if not isinstance(evidence, dict) or not evidence.get("draft_checks_recorded"):
+        return False
+    checks = [item for item in (evidence.get("draft_checks") or []) if isinstance(item, dict)]
+    if not checks or "ok" not in checks[-1]:
+        return False
+    return checks[-1]["ok"] is True
+
+
+def officer_case_summary(case: dict, offline_marker: str = "") -> str:
+    """Plain-English line for the officer case view.
+
+    Never claims AI drafting when no model calls were recorded, and never
+    claims checks passed unless a draft-check record says so.
+    """
+    if is_emergency_case(case):
+        return "Emergency: referral only"
+    shown = generation_presentation(case.get("generation"), case.get("draft") or "", offline_marker)
+    generation = case.get("generation") if isinstance(case.get("generation"), dict) else {}
+    state = generation.get("state")
+    sources = _source_phrase(_unique_source_count(case))
+    passed = " · Passed safety and citation checks" if _recorded_checks_passed(case) else ""
+    if shown["model_used"]:
+        if state == "officer_written":
+            return "Officer wrote or edited the approved answer"
+        if state == "model_draft_rejected_source_fallback":
+            if sources:
+                return f"Source draft {sources} after an AI draft did not pass checks"
+            return "Source draft after an AI draft did not pass checks"
+        if state == "model_error_source_fallback":
+            if sources:
+                return f"Source draft {sources} after an AI model error"
+            return "Source draft after an AI model error"
+        if state == "source_draft_with_model_calls":
+            if sources:
+                return f"Source draft {sources}; an AI model was used during drafting"
+            return "Source draft; an AI model was used during drafting"
+        if state == "live_model_draft":
+            line = f"Drafted by AI {sources}".strip() if sources else "Drafted by AI"
+            return line + passed
+        line = f"An AI model was used on this case {sources}".strip() if sources else "An AI model was used on this case"
+        return line + passed
+    if shown["known"]:
+        if state == "no_draft" or str(shown.get("headline") or "").startswith("NO DRAFT"):
+            return "No draft yet"
+        if state == "officer_written":
+            return "Officer wrote or edited the approved answer"
+        line = "Offline draft (no AI model used)"
+        if sources:
+            line = f"{line} {sources}"
+        return line + passed
+    return "How this draft was produced is in the audit trail"
+
+
+
 def acknowledgement_text(ack) -> str | None:
     """Use the server message. Never present a blank status as a delivery."""
     if not isinstance(ack, dict):

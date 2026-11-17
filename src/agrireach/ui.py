@@ -12,7 +12,7 @@ from agrireach.phone import PhoneError, normalize as normalize_phone
 from agrireach.tab_recovery import tab_state
 from agrireach.ui_display import (
     acknowledgement_text, citation_groups, classify_login, emergency_reasons,
-    generation_presentation, is_emergency_case, other_routing_notes, provenance_caption,
+    generation_presentation, is_emergency_case, officer_case_summary, other_routing_notes, provenance_caption,
     queue_actions, readable_advice, tool_execution_view, unique_labels,
 )
 from agrireach.ui_feedback import auth_headers, feedback
@@ -208,9 +208,11 @@ def render_case(case, headers):
         else:
             for reason in case.get("urgent_reasons") or []:
                 st.warning(reason)
-        _show_generation(case)
-        _show_tool_record(case)
-        render_delivery(cid, headers, "queue")
+        st.info(officer_case_summary(case, llm.STUB_LABEL))
+        with st.expander("Audit trail", expanded=False):
+            _show_generation(case)
+            _show_tool_record(case)
+            render_delivery(cid, headers, "queue")
         if case["status"] == "not_delivered" and st.button("Retry release and delivery", key=f"retry{cid}"):
             show_result(*request("POST", f"/cases/{cid}/release", headers=headers))
         st.subheader("Source evidence")

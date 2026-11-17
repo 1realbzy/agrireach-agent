@@ -1,7 +1,7 @@
 """Display rules for auth, emergencies, tool evidence and generation labels."""
 from agrireach.ui_display import (
     acknowledgement_text, citation_groups, classify_login, emergency_reasons,
-    generation_presentation, is_emergency_case, provenance_caption, queue_actions,
+    generation_presentation, is_emergency_case, officer_case_summary, provenance_caption, queue_actions,
     readable_advice, tool_execution_view, unique_labels,
 )
 
@@ -130,3 +130,57 @@ def test_acknowledgement_and_sources_and_farmer_provenance():
     caption = provenance_caption({"approved_by": "Ada", "approved_at": "2026-11-16T12:00:00Z"})
     assert "Ada" in caption
     assert "not a text-message delivery receipt" in caption
+
+
+def test_officer_summary_never_claims_ai_when_no_model_calls():
+    offline = {
+        "urgent_reasons": [], "sources": ["A", "A", "B"], "draft": MARKER,
+        "generation": {"state": "offline_source_draft", "model_used": False, "attempted_calls": 0,
+                       "label": "NO MODEL CALLS: offline source draft (verbatim passages)"},
+        "tool_evidence": {"draft_checks_recorded": False},
+    }
+    text = officer_case_summary(offline, MARKER)
+    assert text.startswith("Offline draft (no AI model used)")
+    assert "2 guidance sources" in text
+    assert "Drafted by AI" not in text
+    assert "Passed safety" not in text
+
+
+def test_officer_summary_claims_checks_only_when_recorded():
+    live = {
+        "urgent_reasons": [], "sources": ["A"], "draft": "Advice",
+        "generation": {"state": "live_model_draft", "model_used": True, "attempted_calls": 1,
+                       "label": "LIVE MODEL DRAFT"},
+        "tool_evidence": {"draft_checks_recorded": True, "draft_checks": [{"ok": True}]},
+    }
+    assert officer_case_summary(live, MARKER) == (
+        "Drafted by AI from 1 guidance source · Passed safety and citation checks")
+    unchecked = dict(live, tool_evidence={"draft_checks_recorded": False, "draft_checks": []})
+    assert officer_case_summary(unchecked, MARKER) == "Drafted by AI from 1 guidance source"
+    rejected = {
+        "urgent_reasons": [], "sources": ["MOFA-MAIZE:p4", "MOFA-MAIZE:p4"],
+        "draft": MARKER + "\nHarvest",
+        "generation": {"state": "model_draft_rejected_source_fallback", "model_used": True,
+                       "attempted_calls": 2, "label": "SOURCE DRAFT AFTER REJECTED LIVE MODEL DRAFT"},
+        "tool_evidence": {"draft_checks_recorded": True,
+                          "draft_checks": [{"ok": False, "fallback_to_sources": True}]},
+    }
+    text = officer_case_summary(rejected, MARKER)
+    assert text == "Source draft from 1 guidance source after an AI draft did not pass checks"
+    assert "Drafted by AI" not in text
+    assert "Passed safety" not in text
+
+
+def test_officer_summary_emergency_and_unknown_metadata():
+    emergency = {
+        "urgent_reasons": ["EMERGENCY: chemical swallowed."], "sources": [], "draft": "",
+        "generation": {"state": "no_draft", "model_used": False, "attempted_calls": 0,
+                       "label": "NO DRAFT (clarification, emergency or not yet drafted)"},
+    }
+    assert officer_case_summary(emergency, MARKER) == "Emergency: referral only"
+    unknown = {"urgent_reasons": [], "sources": ["A"], "generation": None, "draft": MARKER + "\nPassage"}
+    text = officer_case_summary(unknown, MARKER)
+    assert "audit trail" in text.lower()
+    assert "no AI model used" not in text
+    assert "Drafted by AI" not in text
+    assert "Passed safety" not in text

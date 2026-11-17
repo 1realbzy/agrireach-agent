@@ -211,6 +211,10 @@ def test_opened_case_shows_recorded_tools_and_the_rejected_model_label(monkeypat
     app.button(key="open4").click().run()
     rendered = _rendered(app)
     assert not app.exception
+    assert any(getattr(item, "label", None) == "Audit trail" for item in app.expander)
+    assert "Source draft from 1 guidance source after an AI draft did not pass checks" in rendered
+    assert "Drafted by AI" not in rendered
+    assert "Passed safety and citation checks" not in rendered
     assert "SOURCE DRAFT AFTER REJECTED LIVE MODEL DRAFT" in rendered
     assert "No language model was used" not in rendered
     assert "cost unknown" in rendered
