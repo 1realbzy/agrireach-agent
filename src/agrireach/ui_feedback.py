@@ -20,7 +20,7 @@ def feedback(status: int, data: dict) -> tuple[str, str]:
         return "warning", detail if isinstance(detail, str) and detail else (
             "Too many questions were sent in a short time. Please wait a few minutes and try again.")
     if status == 401:
-        return "info", "Sign in with a valid officer token to continue."
+        return "info", "Your session has ended. Sign in again."
     if status == 409:
         return "warning", "The action could not proceed with the current case or delivery state. Reload the case; reconcile any uncertain delivery before retrying."
     if status == 400 and isinstance(detail, str) and detail:
