@@ -1,0 +1,15 @@
+# Theme tokens from DESIGN.md (GOV.UK Design System via https://designmd.app/library/govuk-design).
+# GDS Transport is not bundled; Streamlit "sans serif" follows the Helvetica Neue / Arial fallback stack.
+[theme]
+base = "light"
+primaryColor = "#00703c"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f3f2f1"
+textColor = "#0b0c0c"
+font = "sans serif"
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"

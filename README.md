@@ -80,6 +80,8 @@ To use a model, copy `.env.example` to `.env` and set `LLM_BASE_URL`, `LLM_MODEL
 2. **Sign in as an officer.** In a second terminal, from the repo root, run `.venv/bin/python scripts/add_officer.py "Ama Mensah"`. It prints `Officer 'Ama Mensah' registered. Sign-in token (shown once, keep it private):` and the token on the next line. Paste the token into **Officer sign in token** on the **Extension officer** tab. Running the script again for the same name issues a new token, and the old one stops working. If your `.env` sets `DATABASE_URL`, run `set -a; . ./.env; set +a` first, so the script uses the same database as the app.
 3. **Ask, then approve.** On the **Farmer** tab, ask "When should I harvest soybean in Tamale?" and click **Send**. Note the case number. On the **Extension officer** tab, click **Reload cases** and open the case. Check the draft and farmer text against the sources, tick **Required for approval: I checked every advice line against the cited sources**, and click **Approve and release**. Back on the **Farmer** tab, enter the case number and click **Check answer** to see the approved text.
 
+The officer screen follows the GOV.UK Design System tokens in [DESIGN.md](DESIGN.md) (from [designmd.app](https://designmd.app/library/govuk-design)): high-contrast case cards, draft advice, evidence, safety flags, and a clear Approve / Edit / Reject area.
+
 The Farmer tab's default question, "When should I plant soybean in Tamale?", shows a hold instead. The guides give different planting windows, so approval returns a SOURCE_CONFLICT hold. The officer can reject or request info, or approve farmer text with no figures that keeps the line "Your extension officer will confirm which to follow."
 
 ## Usage instructions
