@@ -8,6 +8,7 @@ import pytest
 
 from agrireach import db
 from agrireach.channels import retention, service, simulator, stt
+import officer_helpers
 
 CLIP = str(Path(__file__).parent / "fixtures/audio/en_harvest_tamale_piper.wav")
 SENDER = "sim:farmer-9"
@@ -63,7 +64,7 @@ def test_stop_after_an_answer_was_filed_removes_the_number_and_blocks_delivery()
     send("stop")
     assert db.get_contact(con, cid)["sender_id"] == db.OPTED_OUT
     assert SENDER not in {r[0] for r in con.execute("SELECT sender_id FROM channel_consent")}
-    r = simulator.officer_approve(cid, officer="Ama Mensah", farmer_text="Harvest at 9 of 10 brown pods.", token=db.add_officer(db.connect(), "Ama Mensah"), expected_revision=db.get_case(db.connect(), cid)["revision"])
+    r = simulator.officer_approve(cid, officer="Ama Mensah", farmer_text="Harvest at 9 of 10 brown pods.", token=officer_helpers.add_officer(db.connect(), "Ama Mensah"), expected_revision=db.get_case(db.connect(), cid)["revision"])
     assert r["ok"] is False and "opted out" in r["detail"]
     # The officer's record stays (approved text, officer); the case is 'undeliverable', never 'released'.
     row = db.get_case(con, cid)

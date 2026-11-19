@@ -22,11 +22,18 @@ def validate_existing_ledger(con):
     if "schema_migrations" not in tables:
         return
     ledger = [tuple(r) for r in con.execute("SELECT version,checksum FROM schema_migrations ORDER BY version")]
-    if ledger not in ([(1, CHECKSUM)], [(1, CHECKSUM), (2, CHECKSUM_V2)]):
+    accepted = (
+        [(1, CHECKSUM)],
+        [(1, CHECKSUM), (2, CHECKSUM_V2)],
+        [(1, CHECKSUM), (2, CHECKSUM_V2), (3, CHECKSUM_V3)],
+    )
+    if ledger not in accepted:
         raise RuntimeError("Unsupported migration ledger; no bootstrap writes performed")
     required = {"cases", "advisory_submissions", "safety_assessments"}
-    if len(ledger) == 2:
+    if len(ledger) >= 2:
         required |= {"approvals", "acknowledgement_challenges", "audit_events", "delivery_jobs", "delivery_attempts"}
+    if len(ledger) >= 3:
+        required |= {"officer_sessions", "officer_login_lockouts"}
     if not required <= tables:
         raise RuntimeError("Incomplete migration schema; stop writers and recover from verified evidence")
 
@@ -42,7 +49,12 @@ def ensure_schema(con: sqlite3.Connection, path: str) -> None:
     exists = con.execute("SELECT 1 FROM sqlite_master WHERE name='schema_migrations'").fetchone()
     if exists:
         rows = con.execute("SELECT version,checksum FROM schema_migrations ORDER BY version").fetchall()
-        if [(r[0], r[1]) for r in rows] not in ([(VERSION, CHECKSUM)], [(VERSION, CHECKSUM), (2, CHECKSUM_V2)]):
+        accepted = (
+            [(VERSION, CHECKSUM)],
+            [(VERSION, CHECKSUM), (2, CHECKSUM_V2)],
+            [(VERSION, CHECKSUM), (2, CHECKSUM_V2), (3, CHECKSUM_V3)],
+        )
+        if [(r[0], r[1]) for r in rows] not in accepted:
             raise RuntimeError("Unsupported migration ledger; stop writers and inspect the database")
         if len(rows) == 1 and path != ":memory:":
             backup_path = Path(f"{path}.before-v2-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f')}.sqlite")
@@ -52,6 +64,14 @@ def ensure_schema(con: sqlite3.Connection, path: str) -> None:
                 if backup.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                     raise RuntimeError("Version two backup verification failed")
         upgrade_v2(con)
+        if not con.execute("SELECT 1 FROM schema_migrations WHERE version=3").fetchone() and path != ":memory:":
+            backup_path = Path(f"{path}.before-v3-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f')}.sqlite")
+            backup_path.touch(mode=0o600, exist_ok=False)
+            with sqlite3.connect(backup_path) as backup:
+                con.backup(backup)
+                if backup.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                    raise RuntimeError("Version three backup verification failed")
+        upgrade_v3(con)
         return
     if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
         raise RuntimeError("Database integrity check failed; no migration applied")
@@ -77,6 +97,7 @@ def ensure_schema(con: sqlite3.Connection, path: str) -> None:
             raise RuntimeError("Foreign key verification failed")
         con.commit()
         upgrade_v2(con)
+        upgrade_v3(con)
     except BaseException:
         con.rollback()
         raise
@@ -123,6 +144,57 @@ def upgrade_v2(con):
         raise
 
 
+
+STATEMENTS_V3 = [
+    "CREATE TABLE officer_sessions(token_sha256 TEXT PRIMARY KEY, officer_name TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL)",
+    "CREATE TABLE officer_login_lockouts(email TEXT PRIMARY KEY, failures INTEGER NOT NULL DEFAULT 0, locked_until TEXT, updated_at TEXT NOT NULL)",
+]
+CHECKSUM_V3 = hashlib.sha256("\n".join(STATEMENTS_V3).encode()).hexdigest()
+
+
+def _officers_v3_columns(con):
+    if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='officers'").fetchone():
+        return set()
+    return {r[1] for r in con.execute("PRAGMA table_info(officers)")}
+
+
+def upgrade_v3(con):
+    """Add unique officer email and password hash; replace long-lived sign-in tokens with sessions.
+
+    Existing token-only officer rows are kept by name, with a null email and password
+    hash, so they cannot sign in until scripts/add_officer.py sets a password. Token
+    hashes are not copied; the previous token sign-in mechanism is retired.
+    """
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        if con.execute("SELECT 1 FROM schema_migrations WHERE version=3").fetchone():
+            con.rollback()
+            return
+        cols = _officers_v3_columns(con)
+        if not cols:
+            con.execute(
+                "CREATE TABLE officers(name TEXT PRIMARY KEY, email TEXT UNIQUE, password_hash TEXT, created_at TEXT NOT NULL)"
+            )
+        elif "password_hash" not in cols:
+            con.execute(
+                "CREATE TABLE officers_v3(name TEXT PRIMARY KEY, email TEXT UNIQUE, password_hash TEXT, created_at TEXT NOT NULL)"
+            )
+            con.execute("INSERT INTO officers_v3(name, created_at) SELECT name, created_at FROM officers")
+            con.execute("DROP TABLE officers")
+            con.execute("ALTER TABLE officers_v3 RENAME TO officers")
+        elif "email" not in cols:
+            raise RuntimeError("officers table is missing email; stop writers and inspect the database")
+        for statement in STATEMENTS_V3:
+            con.execute(statement)
+        con.execute("INSERT INTO schema_migrations VALUES (3,?,?)", (CHECKSUM_V3, datetime.now(timezone.utc).isoformat()))
+        if con.execute("PRAGMA foreign_key_check").fetchone():
+            raise RuntimeError("Foreign key verification failed")
+        con.commit()
+    except BaseException:
+        con.rollback()
+        raise
+
+
 def main():
     """Offline operator migration/verification entry point. Never sends messages."""
     import argparse
@@ -135,9 +207,9 @@ def main():
             if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok" or con.execute("PRAGMA foreign_key_check").fetchone():
                 raise RuntimeError("SQLite integrity verification failed")
             ledger = con.execute("SELECT version,checksum FROM schema_migrations ORDER BY version").fetchall()
-            if ledger != [(1, CHECKSUM), (2, CHECKSUM_V2)]:
+            if ledger != [(1, CHECKSUM), (2, CHECKSUM_V2), (3, CHECKSUM_V3)]:
                 raise RuntimeError("Schema version or checksum mismatch")
-        print("Schema versions 1 and 2 verified; integrity and foreign keys OK")
+        print("Schema versions 1, 2 and 3 verified; integrity and foreign keys OK")
     else:
         from agrireach import db
         con = db.connect(str(args.path))

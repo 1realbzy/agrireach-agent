@@ -77,12 +77,12 @@ To use a model, copy `.env.example` to `.env` and set `LLM_BASE_URL`, `LLM_MODEL
 ### Three-step demo
 
 1. **Start the app.** Run `./run.sh`, then open http://127.0.0.1:8501. With no `.env`, it runs in offline stub mode.
-2. **Sign in as an officer.** In a second terminal, from the repo root, run `.venv/bin/python scripts/add_officer.py "Ama Mensah"`. It prints `Officer 'Ama Mensah' registered. Sign-in token (shown once, keep it private):` and the token on the next line. Paste the token into **Officer sign in token** on the **Extension officer** tab. Running the script again for the same name issues a new token, and the old one stops working. If your `.env` sets `DATABASE_URL`, run `set -a; . ./.env; set +a` first, so the script uses the same database as the app.
-3. **Ask, then approve.** On the **Farmer** tab, ask "When should I harvest soybean in Tamale?" and click **Send**. Note the case number. On the **Extension officer** tab, click **Reload cases** and open the case. Check the draft and farmer text against the sources, tick **Required for approval: I checked every advice line against the cited sources**, and click **Approve and release**. Back on the **Farmer** tab, enter the case number and click **Check answer** to see the approved text.
+2. **Sign in as an officer.** In a second terminal, from the repo root, run `.venv/bin/python scripts/add_officer.py "Ama Mensah" ama@agrireach.demo`. The script prompts for a password, then a confirmation (nothing is echoed). The password must be at least 12 characters and is never accepted on the command line. On the **Extension officer** tab, sign in with the email and password. Running the script again for the same name updates the email and password and signs out existing sessions. If your `.env` sets `DATABASE_URL`, run `set -a; . ./.env; set +a` first, so the script uses the same database as the app. For non-interactive use, see the docstring in `scripts/add_officer.py` (`AGRIREACH_OFFICER_PASSWORD` or two stdin lines).
+3. **Ask, then approve.** On the **Farmer** tab, ask "When should I harvest soybean in Tamale?" and click **Send**. You will see the answer if it is auto-released, or "An officer is reviewing this" otherwise; the farmer screen updates on its own after an officer approves, with no case number to enter. On the **Extension officer** tab, click **Reload cases** and open the case. Check the draft and farmer text against the sources, tick **Required for approval: I checked every advice line against the cited sources**, and click **Approve and release**. If you reload the Farmer tab while a question is still under review, that pending question is no longer shown (the case remains in the officer queue).
 
 The officer screen follows the Nature Distilled tokens in [DESIGN.md](DESIGN.md) (from [designmd.app](https://designmd.app/library/nature-distilled)), adapted for this tool: a warm cream background, leaf-green primary actions, soil-brown text, rounded cards and a clear Approve / Edit / Reject area. Auto-released cases are marked on the officer screen with an audit of the released text, evidence, judge result and time.
 
-Routine auto-release is off by default (`AGRIREACH_AUTO_RELEASE` unset or `0`). Set it to `1` only for a supervised demo or after review. When it is on, a low-risk planting/harvest/spacing question is released automatically only if a real claim-check judge supported every advice line and no safety flag or source conflict was raised; anything else, or a judge failure or timeout, still goes to the officer. Auto-released answers are also retrievable by case number on the Farmer tab.
+Routine auto-release is off by default (`AGRIREACH_AUTO_RELEASE` unset or `0`). Set it to `1` only for a supervised demo or after review. When it is on, a low-risk planting/harvest/spacing question is released automatically only if a real claim-check judge supported every advice line and no safety flag or source conflict was raised; anything else, or a judge failure or timeout, still goes to the officer. Auto-released answers appear on the Farmer tab as soon as the checks pass.
 
 The Farmer tab's default question, "When should I plant soybean in Tamale?", shows a hold instead. The guides give different planting windows, so approval returns a SOURCE_CONFLICT hold. The officer can reject or request info, or approve farmer text with no figures that keeps the line "Your extension officer will confirm which to follow."
 
@@ -90,7 +90,7 @@ The Farmer tab's default question, "When should I plant soybean in Tamale?", sho
 
 - UI: as in the demo. Urgent cases are listed first. The officer can edit the draft and the farmer text, re-propose the farmer text, approve, reject or request info. When a case opens, any hold on the farmer text is shown with the line it applies to and the reason. The farmer only sees an answer after it is approved.
 - CLI: `PYTHONPATH=src .venv/bin/python -m agrireach.agent "When should I harvest soybean in Tamale?"`
-- API: `POST /ask`, `GET /farmer/cases/{id}`. Officer routes need `Authorization: Bearer <token>`: `GET /officer/queue`, `GET /officer/cases/{id}` (with its tool log), `POST /officer/cases/{id}/assess` (read-only safety check), `POST /officer/cases/{id}/decision`, and `POST /cases/{id}/release`, which refuses any case without a valid officer approval.
+- API: `POST /ask`, `GET /farmer/cases/{id}`. Officers sign in with `POST /officer/login` (email and password) and then send `Authorization: Bearer <session>` to officer routes: `GET /officer/queue`, `GET /officer/cases/{id}` (with its tool log), `POST /officer/cases/{id}/assess` (read-only safety check), `POST /officer/cases/{id}/decision`, and `POST /cases/{id}/release`, which refuses any case without a valid officer approval.
 
 ## Technology stack
 
@@ -235,7 +235,7 @@ src/agrireach/
   instruction_policy.py  the hard-stop word lists: unsourced input, REPEAT, skips officer, burning
   approval.py         approval assessment, binding, immutable approvals and release
   delivery.py         atomic delivery claims; unknown outcomes are never retried automatically
-  db.py               SQLite case store, officer tokens and the approval gate entry points
+  db.py               SQLite case store, officer accounts and the approval gate entry points
   migrations.py       versioned SQLite upgrades
   language.py         Twi detection and keyword gloss (not a translator)
   voice_script.py     short spoken script for an approved answer
@@ -246,7 +246,7 @@ src/agrireach/channels/
   base.py  service.py  simulator.py  stt.py  tts.py  location.py  retention.py
   whatsapp.py  sms.py   (both code only, off by default)
 scripts/
-  add_officer.py              register an officer and print their sign-in token once
+  add_officer.py              register an officer with name, email and a prompted password
   run_evals.py                run the EVALS task set against the real agent and MCP servers
   verify_corpus.py            check every passage appears verbatim in its source document
   replay_safety.py            deterministic replay of recorded live cases through the gate (CI, --strict)

@@ -27,14 +27,41 @@ class Ask(BaseModel):
     region: str = ""
 
 
+class OfficerLogin(BaseModel):
+    email: str
+    password: str
+
+
+def _bearer_token(authorization: str | None) -> str:
+    return (authorization or "").removeprefix("Bearer ").strip()
+
+
 def current_officer(authorization: str | None = Header(None)) -> str:
-    """The signed-in officer's name, from their sign-in token (Authorization: Bearer <token>; tokens are issued by
-    scripts/add_officer.py). Every officer route and release depends on this; the name on the record comes from here."""
-    token = (authorization or "").removeprefix("Bearer ").strip()
-    name = db.officer_for_token(db.connect(), token)
+    """The signed-in officer's name, from a session issued by POST /officer/login after email and password
+    verification. Every officer route and release depends on this; the name on the record comes from here."""
+    name = db.officer_for_session(db.connect(), _bearer_token(authorization))
     if not name:
         raise HTTPException(401, "officer sign-in required", headers={"WWW-Authenticate": "Bearer"})
     return name
+
+
+@app.post("/officer/login")
+def officer_login(body: OfficerLogin):
+    """Issue a session bearer after email and password verification. Errors do not say which field was wrong."""
+    con = db.connect()
+    result = db.login_officer(con, body.email, body.password)
+    if not result:
+        if db.login_locked(con, body.email):
+            raise HTTPException(429, "Too many sign-in attempts. Try again later.")
+        raise HTTPException(401, "Sign in details were not recognised.")
+    name, token, expires_at = result
+    return {"officer": name, "token": token, "expires_at": expires_at}
+
+
+@app.post("/officer/logout")
+def officer_logout(authorization: str | None = Header(None), officer: str = Depends(current_officer)):
+    db.revoke_session(db.connect(), _bearer_token(authorization))
+    return {"ok": True, "officer": officer}
 
 
 class Decision(BaseModel):
@@ -287,8 +314,12 @@ def farmer_view(case_id: int):
         return {"case_id": case_id, "status": "not_delivered", "answer": None,
                 "message": "Your answer has not been sent yet. An extension officer is working on it."}
     if row["status"] != "released":
+        messages = {
+            "rejected": "An officer reviewed this question and could not approve it. Please ask again, or send more detail.",
+            "needs_info": "An officer has asked for more information. Please send a new question with the details they need.",
+        }
         return {"case_id": case_id, "status": row["status"], "answer": None,
-                "message": "Waiting for an extension officer to review your question."}
+                "message": messages.get(row["status"], "An officer is reviewing this.")}
     contact = db.get_contact(con, case_id)
     job = con.execute("SELECT j.state FROM delivery_jobs j JOIN approvals a ON a.id=j.approval_id WHERE a.case_id=? ORDER BY j.id DESC LIMIT 1", (case_id,)).fetchone()
     if contact and job and job["state"] != "accepted":

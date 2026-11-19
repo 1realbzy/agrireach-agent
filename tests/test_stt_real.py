@@ -14,6 +14,7 @@ import pytest
 
 from agrireach import db
 from agrireach.channels import simulator, stt
+import officer_helpers
 
 AUDIO = Path(__file__).parent / "fixtures/audio"
 CACHE = Path(os.getenv("AGRIREACH_STT_DIR", str(Path.home() / ".cache/agrireach/whisper")))
@@ -60,7 +61,7 @@ def test_voice_note_end_to_end_through_the_simulator_with_real_stt(whisper):
 
     con = db.connect()
     proposed = json.loads(db.get_case(con, out["case_id"])["farmer_draft"])["text"]
-    token = db.add_officer(con, "Test Officer")
+    token = officer_helpers.add_officer(con, "Test Officer")
     delivered = simulator.officer_approve(out["case_id"], officer="Test Officer", farmer_text=proposed,
         token=token, expected_revision=db.get_case(con, out["case_id"])["revision"])
     assert delivered["ok"]

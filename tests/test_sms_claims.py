@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from agrireach import db, farmer_reply as fr, judge, knowledge, llm
 from agrireach.api import app
+import officer_helpers
 
 PS = [knowledge.reference("IITA-SSPING-2022:p18-moisture")]
 
@@ -68,7 +69,7 @@ def test_model_sms_keeps_the_sources_differ_sentence(monkeypatch):
 def test_officer_approving_an_unsourced_sms_is_warned_and_logged_not_blocked(monkeypatch):
     _seen, call = judge_rejecting("Dispose")
     monkeypatch.setattr(judge, "_call", call)
-    h = {"Authorization": f"Bearer {db.add_officer(db.connect(), 'Ama Mensah')}"}
+    h = {"Authorization": f"Bearer {officer_helpers.add_officer(db.connect(), 'Ama Mensah')}"}
     c = TestClient(app)
     cid = c.post("/ask", json={"question": "My maize is mouldy, can I feed it to my animals in Tamale?"}).json()["case_id"]
     r = c.post(f"/officer/cases/{cid}/decision", headers=h, json=({

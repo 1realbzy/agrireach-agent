@@ -100,7 +100,7 @@ A favourable judge verdict never overrides a deterministic hold.
 
 ## Officer approval binding (`approval.py`)
 
-Officers sign in with a bearer token from `scripts/add_officer.py`; only its SHA-256 hash is stored. Approval needs the exact farmer text, the officer's confirmation that they checked it, and the current case revision.
+Officers sign in with email and password (`scripts/add_officer.py` stores an Argon2id hash only; `POST /officer/login` issues a short-lived session bearer, stored as SHA-256). Approval needs the exact farmer text, the officer's confirmation that they checked it, and the current case revision. The approval fingerprint binds the officer's password hash, not the session.
 
 1. `context()` snapshots the case, the full text of its sources, the farmer contact, `POLICY_VERSION` and the voice setting.
 2. The assessment runs before any write lock, so a slow model call doesn't block other cases.

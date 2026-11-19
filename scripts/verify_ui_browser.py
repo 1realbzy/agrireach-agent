@@ -2,7 +2,7 @@
 
 Requires Playwright only in the developer environment. Start the API and Streamlit
 with the same disposable DATABASE_URL before running. Never use production data.
-Screenshots contain synthetic cases and a masked generated officer credential.
+Screenshots contain synthetic cases. Do not capture a typed password.
 """
 import os
 import json
@@ -19,7 +19,8 @@ def run_browser():
     if "round2-demo" not in os.environ.get("DATABASE_URL", ""):
         raise RuntimeError("Use a disposable round2-demo database")
     con = db.connect()
-    token = db.add_officer(con, "Browser QA")
+    email, password = "browser.qa@agrireach.test", "test-officer-pass-12"
+    db.add_officer(con, "Browser QA", email=email, password=password)
     def seed(name, text):
         cid = db.agent_upsert_case(con, status="pending_review", question=name, draft="Source supported draft",
             sources=["APNI-SARI-2023:harvest"])
@@ -35,12 +36,13 @@ def run_browser():
         browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
         page = browser.new_page(viewport={"width": 1280, "height": 1000})
         page.goto("http://127.0.0.1:8501")
-        page.get_by_text("Sign in with your officer token to see the review queue.", exact=True).wait_for(state="attached")
+        page.get_by_text("Sign in with your officer email and password to see the review queue.", exact=True).wait_for(state="attached")
         assert page.get_by_text("Illegal header value", exact=False).count() == 0
         page.screenshot(path=str(output / "signed-out.png"), full_page=True)
         page.get_by_role("tab", name="Extension officer").click()
-        page.get_by_label("Officer sign in token").fill(token)
-        page.get_by_label("Officer sign in token").press("Enter")
+        page.get_by_label("Officer email").fill(email)
+        page.get_by_label("Officer password").fill(password)
+        page.get_by_role("button", name="Sign in").click()
         page.get_by_text(f"Case {good}: Browser approval", exact=True).wait_for()
         def section(cid, title):
             label = page.get_by_text(f"Case {cid}: {title}", exact=True)

@@ -410,12 +410,73 @@ def render_auto_audit(case, headers):
                 json={"expected_revision": case["revision"], "information": flag}))
 
 
-def officer_screen():
-    token = st.text_input("Officer sign in token", type="password")
-    if not token.strip():
-        st.info("Sign in with your officer token to see the review queue.")
+
+FARMER_REVIEWING = "An officer is reviewing this."
+FARMER_REJECTED = "An officer reviewed this question and could not approve it. Please ask again, or send more detail."
+FARMER_NEEDS_INFO = "An officer has asked for more information. Please send a new question with the details they need."
+
+
+def farmer_waiting_message(payload: dict) -> str:
+    """Farmer-facing status when no answer is available. Never includes a case number."""
+    status = payload.get("status")
+    if status == "rejected":
+        return FARMER_REJECTED
+    if status == "needs_info":
+        return FARMER_NEEDS_INFO
+    return payload.get("message") or FARMER_REVIEWING
+
+
+def render_farmer_case(payload: dict) -> None:
+    if payload.get("answer"):
+        if payload.get("auto_released"):
+            st.caption("Auto-released")
+        st.success(payload["answer"])
         return
-    headers = auth_headers(token)
+    message = farmer_waiting_message(payload)
+    if payload.get("status") == "rejected":
+        st.warning(message)
+    else:
+        st.info(message)
+
+
+@st.fragment(run_every=2)
+def watch_farmer_case():
+    """Poll the pending case stored in session state. Reloading the page drops this id."""
+    cid = st.session_state.get("farmer_case_id")
+    if not cid:
+        return
+    status, data = request("GET", f"/farmer/cases/{cid}")
+    if status == 200:
+        render_farmer_case(data)
+    else:
+        show_result(status, data)
+
+
+def officer_screen():
+    if not st.session_state.get("officer_token"):
+        email = st.text_input("Officer email")
+        password = st.text_input("Officer password", type="password")
+        if st.button("Sign in"):
+            status, data = request("POST", "/officer/login", json={"email": email, "password": password})
+            if status == 200 and isinstance(data, dict) and data.get("token"):
+                st.session_state.officer_token = data["token"]
+                st.session_state.officer_name = data.get("officer") or ""
+                st.rerun()
+            elif status == 429:
+                st.error((data.get("detail") if isinstance(data, dict) else None) or "Too many sign-in attempts. Try again later.")
+            else:
+                st.error("Sign in details were not recognised.")
+        else:
+            st.info("Sign in with your officer email and password to see the review queue.")
+        return
+    headers = auth_headers(st.session_state.officer_token)
+    signed = st.session_state.get("officer_name") or "Signed in"
+    st.caption(signed)
+    if st.button("Sign out"):
+        request("POST", "/officer/logout", headers=headers)
+        st.session_state.pop("officer_token", None)
+        st.session_state.pop("officer_name", None)
+        st.rerun()
     if st.button("Reload cases"):
         st.rerun()
     status, queue = request("GET", "/officer/queue", headers=headers)
@@ -477,27 +538,11 @@ def main():
         if st.button("Send"):
             status, data = request("POST", "/ask", json={"question": question})
             if status == 200:
-                st.info(f"Case {data['case_id']}: keep this case number. You can check the answer with it if the network drops.")
-                if data.get("answer"):
-                    if data.get("auto_released"):
-                        st.caption("Auto-released")
-                    st.success(data["answer"])
-                else:
-                    st.info(data.get("message") or "Your question is waiting for review.")
+                st.session_state.farmer_case_id = data.get("case_id")
             else:
+                st.session_state.pop("farmer_case_id", None)
                 show_result(status, data)
-        cid = st.number_input("Check case number", min_value=1, step=1)
-        if st.button("Check answer"):
-            status, data = request("GET", f"/farmer/cases/{cid}")
-            if status == 200:
-                if data.get("answer"):
-                    if data.get("auto_released"):
-                        st.caption("Auto-released")
-                    st.success(data["answer"])
-                else:
-                    st.info(data.get("answer") or data.get("message") or "Your case is waiting for officer review or confirmed delivery.")
-            else:
-                show_result(status, data)
+        watch_farmer_case()
     with voice:
         st.caption("Local demonstration only. Use a simulated sender, never a real number.")
         sender = st.text_input("Simulated sender", "sim:farmer-1")

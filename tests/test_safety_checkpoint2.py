@@ -8,6 +8,7 @@ import pytest
 from agrireach import approval, db, delivery, judge, knowledge
 from agrireach.channels import service
 from agrireach.channels.base import SendResult
+import officer_helpers
 
 REFERRAL = "Consult your local agricultural extension officer before choosing or applying a pesticide."
 
@@ -109,7 +110,7 @@ def test_judge_failure_is_not_acknowledgeable(monkeypatch):
 
 def test_acknowledgement_bound_and_single_use(monkeypatch):
     con = db.connect()
-    db.add_officer(con, "Ama")
+    officer_helpers.add_officer(con, "Ama")
     cid = db.agent_upsert_case(con, status="pending_review", question="maize", draft="x", sources=["APNI-SARI-2023-MAIZE:p18-scouting"])
     monkeypatch.setattr(judge, "_call", lambda u: json.dumps({"verdicts": [{"n": i+1, "verdict": "not_supported", "why": "test concern"} for i in range(u.count('. SENTENCE: '))]}))
     args = dict(officer="Ama", decision="approve", farmer_text="Inspect maize leaves carefully.", expected_revision=1)
@@ -126,8 +127,8 @@ def test_acknowledgement_bound_and_single_use(monkeypatch):
 @pytest.mark.parametrize("change", ["text", "officer", "credential", "expiry", "case", "policy", "sources"])
 def test_changed_acknowledgement_binding_is_refused(monkeypatch, change):
     con = db.connect()
-    db.add_officer(con, "Ama")
-    db.add_officer(con, "Kofi")
+    officer_helpers.add_officer(con, "Ama")
+    officer_helpers.add_officer(con, "Kofi")
     cid = db.agent_upsert_case(con, status="pending_review", question="maize", draft="x", sources=["APNI-SARI-2023-MAIZE:p18-scouting"])
     monkeypatch.setattr(judge, "_call", lambda u: json.dumps({"verdicts": [{"n": i+1, "verdict": "not_supported", "why": "test concern"} for i in range(u.count('. SENTENCE: '))]}))
     args = dict(officer="Ama", decision="approve", farmer_text="Inspect maize leaves carefully.", expected_revision=1)
@@ -139,7 +140,7 @@ def test_changed_acknowledgement_binding_is_refused(monkeypatch, change):
     elif change == "officer":
         args["officer"] = "Kofi"
     elif change == "credential":
-        db.add_officer(con, "Ama")
+        officer_helpers.add_officer(con, "Ama")
     elif change == "case":
         cid = db.agent_upsert_case(con, status="pending_review", question="maize", draft="x", sources=["APNI-SARI-2023-MAIZE:p18-scouting"])
     elif change == "policy":
@@ -158,7 +159,7 @@ def test_changed_acknowledgement_binding_is_refused(monkeypatch, change):
 
 def test_migration_ledger_and_foreign_keys():
     con = db.connect()
-    assert [r[0] for r in con.execute("SELECT version FROM schema_migrations ORDER BY version")] == [1, 2]
+    assert [r[0] for r in con.execute("SELECT version FROM schema_migrations ORDER BY version")] == [1, 2, 3]
     assert con.execute("PRAGMA foreign_keys").fetchone()[0] == 1
     assert not con.execute("PRAGMA foreign_key_check").fetchall()
     assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
@@ -273,7 +274,7 @@ def test_expired_send_claim_becomes_unknown_not_retryable():
 
 def test_concurrent_acknowledgement_consumption_has_one_winner(monkeypatch):
     con = db.connect()
-    db.add_officer(con, "Ama")
+    officer_helpers.add_officer(con, "Ama")
     cid = db.agent_upsert_case(con, status="pending_review", question="maize", draft="x",
                               sources=["APNI-SARI-2023-MAIZE:p18-scouting"])
     args = dict(officer="Ama", decision="approve", farmer_text="Inspect maize leaves carefully.", expected_revision=1)
@@ -312,7 +313,7 @@ def test_unknown_future_schema_is_not_modified_by_bootstrap(tmp_path):
     path = tmp_path / "future.sqlite"
     con = db.connect(str(path))
     con.execute("ALTER TABLE cases DROP COLUMN farmer_text")
-    con.execute("UPDATE schema_migrations SET version=99 WHERE version=2")
+    con.execute("UPDATE schema_migrations SET version=99 WHERE version=3")
     con.commit()
     con.close()
     with pytest.raises(RuntimeError, match="no bootstrap writes"):
