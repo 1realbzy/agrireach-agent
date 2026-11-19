@@ -12,22 +12,27 @@ from agrireach.ui_feedback import auth_headers, feedback
 API = os.getenv("AGRIREACH_API", "http://127.0.0.1:8000")
 logger = logging.getLogger(__name__)
 
-# Visual tokens from DESIGN.md (https://designmd.app/library/govuk-design). Logic is unchanged.
+# Visual tokens from DESIGN.md (Nature Distilled, https://designmd.app/library/nature-distilled), adapted for contrast. Logic is unchanged.
 THEME_CSS = """
 <style>
 :root {
-  --ar-primary: #00703c;
-  --ar-primary-hover: #005a30;
-  --ar-accent: #1d70b8;
-  --ar-bg: #ffffff;
-  --ar-surface: #f3f2f1;
-  --ar-surface-strong: #ebeae9;
-  --ar-border: #0b0c0c;
-  --ar-text: #0b0c0c;
-  --ar-muted: #505a5f;
-  --ar-focus: #ffdd00;
-  --ar-error: #d4351c;
-  --ar-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --ar-primary: #2D5A27;
+  --ar-primary-hover: #234720;
+  --ar-accent: #C67B5C;
+  --ar-bg: #F5F0E1;
+  --ar-surface: #FFF9F0;
+  --ar-surface-strong: #EDE4D0;
+  --ar-border: #C9B89A;
+  --ar-soil: #6B3E24;
+  --ar-text: #2C2118;
+  --ar-muted: #6B5E4E;
+  --ar-focus: #E0A84A;
+  --ar-error: #8B2E1F;
+  --ar-success: #6B7B3C;
+  --ar-font: ui-sans-serif, "Segoe UI", system-ui, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --ar-radius: 12px;
+  --ar-radius-sm: 8px;
+  --ar-shadow: 0 2px 12px rgba(44, 33, 24, 0.08);
 }
 html, body, [data-testid="stAppViewContainer"], .stApp, .stMarkdown, .stText, .stCaption,
 [data-testid="stWidgetLabel"], [data-testid="stExpander"] {
@@ -49,17 +54,18 @@ html, body, [data-testid="stAppViewContainer"], .stApp, .stMarkdown, .stText, .s
   box-sizing: border-box;
 }
 .ar-masthead {
-  background: #0b0c0c !important;
-  color: #ffffff !important;
-  padding: 12px 24px;
+  background: #2D5A27 !important;
+  color: #FFF9F0 !important;
+  padding: 14px 24px;
 }
-.ar-masthead, .ar-masthead * { color: #ffffff !important; background: transparent; }
-.ar-masthead-inner { font-weight: 700; font-size: 1.15rem; letter-spacing: 0.02em; }
+.ar-masthead, .ar-masthead * { color: #FFF9F0 !important; background: transparent; }
+.ar-masthead-inner { font-weight: 700; font-size: 1.15rem; letter-spacing: 0.04em; }
 .ar-service {
   background: var(--ar-surface);
-  border-bottom: 1px solid #b1b4b6;
+  border-bottom: 1px solid var(--ar-border);
   margin-bottom: 1.5rem;
-  padding: 16px 24px 18px;
+  padding: 18px 24px 20px;
+  box-shadow: var(--ar-shadow);
 }
 .ar-service h1 {
   font-size: 1.7rem;
@@ -69,13 +75,25 @@ html, body, [data-testid="stAppViewContainer"], .stApp, .stMarkdown, .stText, .s
   color: var(--ar-text);
 }
 .ar-service p { margin: 0; color: var(--ar-muted); font-size: 1rem; }
+.ar-badge {
+  display: inline-block;
+  background: #C67B5C;
+  color: #FFF9F0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  margin: 0.2rem 0 0.6rem;
+}
 h3.ar-section {
   font-family: var(--ar-font);
   font-size: 1.15rem;
   font-weight: 700;
   margin: 1.25rem 0 0.4rem;
   padding-top: 0.75rem;
-  border-top: 2px solid var(--ar-border);
+  border-top: 1px solid var(--ar-border);
   color: var(--ar-text);
 }
 h3.ar-section:first-child, .ar-first h3.ar-section { border-top: 0; padding-top: 0; }
@@ -84,30 +102,31 @@ h3.ar-section:first-child, .ar-first h3.ar-section { border-top: 0; padding-top:
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--ar-muted);
+  color: var(--ar-soil);
   margin: 0.5rem 0 0.2rem;
 }
 details, [data-testid="stExpander"] {
-  border: 2px solid var(--ar-border) !important;
-  border-radius: 0 !important;
-  background: #ffffff !important;
+  border: 1px solid var(--ar-border) !important;
+  border-radius: var(--ar-radius) !important;
+  background: var(--ar-surface) !important;
+  box-shadow: var(--ar-shadow);
   margin-bottom: 1rem;
 }
-[data-testid="stExpander"] details { border: 0 !important; margin-bottom: 0; }
+[data-testid="stExpander"] details { border: 0 !important; margin-bottom: 0; box-shadow: none; }
 [data-testid="stExpander"] summary, [data-testid="stExpander"] summary p {
   font-weight: 700 !important;
   font-size: 1.05rem !important;
 }
 .stButton > button {
-  border-radius: 0 !important;
-  font-weight: 700 !important;
-  border: 2px solid var(--ar-border) !important;
-  background: #ffffff !important;
+  border-radius: var(--ar-radius-sm) !important;
+  font-weight: 600 !important;
+  border: 1px solid var(--ar-soil) !important;
+  background: var(--ar-surface) !important;
   color: var(--ar-text) !important;
-  padding: 0.5rem 1rem !important;
-  box-shadow: none !important;
+  padding: 0.55rem 1.05rem !important;
+  box-shadow: var(--ar-shadow) !important;
 }
-.stButton > button:hover { background: var(--ar-surface) !important; }
+.stButton > button:hover { background: var(--ar-surface-strong) !important; }
 .stButton > button:focus, .stButton > button:focus-visible {
   outline: 3px solid var(--ar-focus) !important;
   outline-offset: 2px !important;
@@ -116,7 +135,7 @@ details, [data-testid="stExpander"] {
 .stButton > button[kind="primary"],
 .stButton > button[data-testid="baseButton-primary"] {
   background: var(--ar-primary) !important;
-  color: #ffffff !important;
+  color: #FFF9F0 !important;
   border-color: var(--ar-primary) !important;
 }
 .stButton > button[kind="primary"]:hover,
@@ -128,18 +147,20 @@ details, [data-testid="stExpander"] {
   opacity: 0.45 !important;
   background: var(--ar-surface-strong) !important;
   color: var(--ar-muted) !important;
-  border-color: #b1b4b6 !important;
+  border-color: var(--ar-border) !important;
+  box-shadow: none !important;
 }
 .stTextInput input, .stTextArea textarea, .stNumberInput input, [data-baseweb="select"] {
-  border-radius: 0 !important;
+  border-radius: var(--ar-radius-sm) !important;
   border-color: var(--ar-border) !important;
+  background: #FFFdf8 !important;
 }
 .stTextInput input:focus, .stTextArea textarea:focus, .stNumberInput input:focus {
   outline: 3px solid var(--ar-focus) !important;
   outline-offset: 0 !important;
   box-shadow: none !important;
 }
-[data-testid="stAlert"] { border-radius: 0 !important; border-left-width: 5px !important; }
+[data-testid="stAlert"] { border-radius: var(--ar-radius-sm) !important; border-left-width: 5px !important; }
 div[data-testid="stTabs"] button[data-baseweb="tab"] {
   font-weight: 600;
   color: var(--ar-text);
@@ -159,7 +180,7 @@ def apply_theme():
     st.markdown(
         '<div class="ar-masthead"><div class="ar-masthead-inner">AgriReach</div></div>'
         '<div class="ar-service"><h1>Agricultural advisory review</h1>'
-        '<p>A named extension officer reviews every draft before a farmer sees it.</p></div>',
+        '<p>Advice reaches a farmer only after it is released: by a named officer, or automatically when a routine case passes every safety check.</p></div>',
         unsafe_allow_html=True,
     )
 
@@ -270,6 +291,8 @@ def render_delivery(case_id, headers, key):
 def render_case(case, headers):
     cid = case["id"]
     with st.expander(f"Case {cid}: {case['question']}"):
+        if case.get("auto_released"):
+            render_auto_audit(case, headers)
         render_delivery(cid, headers, "queue")
         if case["status"] == "not_delivered" and st.button("Retry release and delivery", key=f"retry{cid}"):
             show_result(*request("POST", f"/cases/{cid}/release", headers=headers))
@@ -354,6 +377,39 @@ def render_case(case, headers):
                 submit(body | {"acknowledgement": challenge["token"]})
 
 
+def render_auto_audit(case, headers):
+    """Show why a case was auto-released, and let the officer retract it when delivery is not accepted."""
+    audit = case.get("auto_release") or {}
+    st.markdown('<div class="ar-badge">Auto-released</div>', unsafe_allow_html=True)
+    if audit.get("retracted"):
+        st.warning("This auto-released answer was later flagged and returned to the review queue.")
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    raw = audit.get("released_at") or case.get("decided_at")
+    when = "unknown"
+    if raw:
+        try:
+            when = datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(ZoneInfo("Africa/Nairobi")).strftime("%d %b %Y, %H:%M East Africa Time")
+        except ValueError:
+            when = raw
+    st.caption("Released at: " + when)
+    st.caption("Why it qualified: " + (audit.get("reason") or "routine_allowlisted_judge_passed").replace("_", " "))
+    st.markdown('<div class="ar-panel-label">Released answer</div>', unsafe_allow_html=True)
+    st.text(audit.get("farmer_text") or case.get("farmer_text") or "")
+    heading("Evidence")
+    for source in audit.get("sources") or []:
+        st.caption((source.get("title") or source.get("id") or "Cited source") + (f", {source['page']}" if source.get("page") else ""))
+    heading("Judge result")
+    st.caption("Judge: " + (audit.get("judge_status") or "unknown"))
+    for verdict in audit.get("verdicts") or []:
+        st.caption(f"Line {verdict.get('n')}: {verdict.get('verdict')}")
+    if case.get("status") == "released" and not audit.get("retracted"):
+        flag = st.text_input("Reason to flag this auto-released answer for officer review", key=f"flagreason{case['id']}")
+        if st.button("Flag and return to review", key=f"flag{case['id']}", disabled=not flag.strip()):
+            show_result(*request("POST", f"/officer/cases/{case['id']}/reopen", headers=headers,
+                json={"expected_revision": case["revision"], "information": flag}))
+
+
 def officer_screen():
     token = st.text_input("Officer sign in token", type="password")
     if not token.strip():
@@ -369,6 +425,17 @@ def officer_screen():
     heading("Review queue")
     if not queue:
         st.info("No cases waiting for review.")
+    status, released = request("GET", "/officer/cases", params={"status": "released"}, headers=headers)
+    auto_cases = [c for c in (released or []) if isinstance(c, dict) and c.get("auto_released")] if status == 200 else []
+    heading("Auto-released")
+    if status != 200:
+        show_result(status, released)
+    elif not auto_cases:
+        st.caption("No auto-released cases yet.")
+    else:
+        for case in auto_cases:
+            with st.expander(f"Auto-released case {case['id']}: {case['question']}", expanded=True):
+                render_auto_audit(case, headers)
     with st.expander("Case history and delivery recovery"):
         status, cases = request("GET", "/officer/cases", headers=headers)
         if status == 200:
@@ -400,21 +467,35 @@ def main():
     elif health.get("draft_mode") == "stub":
         st.caption("Drafting is in offline stub mode. Configure a model to produce a live advisory draft.")
     else:
-        st.caption("A language model will draft each advisory. A named officer still has to approve it.")
+        if health.get("auto_release"):
+            st.caption("A language model will draft each advisory. Routine, low-risk answers may be auto-released after the safety checks and judge pass; everything else waits for a named officer.")
+        else:
+            st.caption("A language model will draft each advisory. A named officer still has to approve it.")
     farmer, voice, officer = st.tabs(["Farmer", "Voice note simulator", "Extension officer"])
     with farmer:
         question = st.text_area("Your question", "When should I plant soybean in Tamale?")
         if st.button("Send"):
             status, data = request("POST", "/ask", json={"question": question})
             if status == 200:
-                st.info(f"Case {data['case_id']}: your question is waiting for review.")
+                st.info(f"Case {data['case_id']}: keep this case number. You can check the answer with it if the network drops.")
+                if data.get("answer"):
+                    if data.get("auto_released"):
+                        st.caption("Auto-released")
+                    st.success(data["answer"])
+                else:
+                    st.info(data.get("message") or "Your question is waiting for review.")
             else:
                 show_result(status, data)
         cid = st.number_input("Check case number", min_value=1, step=1)
         if st.button("Check answer"):
             status, data = request("GET", f"/farmer/cases/{cid}")
             if status == 200:
-                st.info(data.get("answer") or "Your case is waiting for officer review or confirmed delivery.")
+                if data.get("answer"):
+                    if data.get("auto_released"):
+                        st.caption("Auto-released")
+                    st.success(data["answer"])
+                else:
+                    st.info(data.get("answer") or data.get("message") or "Your case is waiting for officer review or confirmed delivery.")
             else:
                 show_result(status, data)
     with voice:

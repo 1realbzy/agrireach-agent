@@ -180,8 +180,10 @@ def reopen_case(con, case_id: int, *, officer: str, expected_revision: int, info
         active = con.execute("SELECT 1 FROM delivery_jobs j JOIN approvals a ON a.id=j.approval_id WHERE a.case_id=? AND j.state IN ('sending','unknown','accepted')", (case_id,)).fetchone()
         if active:
             raise GateError("Active or unresolved delivery must be reconciled before reopening")
+        # released is allowed only when no accepted/active delivery exists (checked above),
+        # so an officer can retract an auto-released web answer back into the review queue.
         changed = con.execute("UPDATE cases SET status='pending_review', revision=revision+1, updated_at=? "
-                              "WHERE id=? AND revision=? AND status IN ('needs_info','approved','not_delivered')",
+                              "WHERE id=? AND revision=? AND status IN ('needs_info','approved','not_delivered','released')",
                               (now(), case_id, expected_revision))
         if changed.rowcount != 1:
             raise GateError("stale_revision: reload the needs_info case")

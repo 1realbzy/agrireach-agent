@@ -208,6 +208,11 @@ async def _file(con, msg: InboundMessage, channel, question, extra, audio_path, 
     if out["status"] == "draft" and not out["clarification"]:
         db.queue_with_contact(con, case_id, **contact)  # contact + pending_review in one transaction
         out["status"] = "pending_review"
+        from agrireach import auto_release
+        applied = auto_release.consider(case_id)
+        if applied.get("released"):
+            out["status"] = "released"
+            out["auto_released"] = True
     else:
         db.save_contact(con, case_id, **contact)  # a clarifying question: the case waits for the farmer
     db.log(con, f"channel:{msg.channel}", "inbound_message",

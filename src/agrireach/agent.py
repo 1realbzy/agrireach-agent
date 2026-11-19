@@ -559,7 +559,7 @@ async def run(question: str, crop: str = "", region: str = "", use_fetch: bool |
         calls = llm.start_usage()
         out = await graph.ainvoke({"question": question, "crop": crop, "region": region,
                                    "extra_urgent_reasons": list(extra_urgent_reasons or []), "queue": queue})
-    return {k: out.get(k) for k in ("case_id", "status", "crop", "region", "clarification", "draft", "draft_mode",
+    result = {k: out.get(k) for k in ("case_id", "status", "crop", "region", "clarification", "draft", "draft_mode",
                                      "urgent_reasons", "source_checks", "errors", "language",
                                      "citation_check", "farmer_draft")} | {
         # True when the farmer's place is known and some passage used is for another agroecological zone (or the
@@ -570,6 +570,17 @@ async def run(question: str, crop: str = "", region: str = "", use_fetch: bool |
         "priority": "urgent" if out.get("urgent_reasons") else "routine",
         "sources": [p["id"] for p in out.get("passages") or []],
         "usage": _log_usage(out.get("case_id"), calls)}
+    # Auto-release is not part of the graph. The graph still only files pending_review
+    # (or draft when queue=False). When the setting is on, a separate fail-closed check
+    # may then release a routine case; otherwise the officer queue is unchanged.
+    if queue and result.get("status") == "pending_review" and result.get("case_id"):
+        from agrireach import auto_release
+        applied = auto_release.consider(result["case_id"])
+        if applied.get("released"):
+            result["status"] = "released"
+            result["auto_released"] = True
+            result["farmer_text"] = applied.get("farmer_text")
+    return result
 
 
 def _log_usage(case_id, calls: list) -> dict:

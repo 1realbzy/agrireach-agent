@@ -108,18 +108,29 @@ def _case(row) -> dict:
     d["farmer_draft"] = json.loads(d.get("farmer_draft") or "null")
     if d.get("status") in ("not_delivered", "undeliverable"):  # the send failed or can never happen: say why
         d["delivery_problem"] = db.delivery_problem(db.connect(), d["id"]) or "the send failed"
+    from agrireach import auto_release
+    audit = auto_release.audit_view(db.connect(), d["id"])
+    if audit:
+        d["auto_released"] = True
+        d["auto_release"] = audit
     return d
 
 
 @app.get("/health")
 def health():
-    return {"ok": True, "draft_mode": llm.mode()}
+    from agrireach import auto_release
+    return {"ok": True, "draft_mode": llm.mode(), "auto_release": auto_release.enabled()}
 
 
 @app.post("/ask")
 async def ask(a: Ask):
     out = await agent.run(a.question, a.crop, a.region)
-    # The farmer gets only an acknowledgement or a clarifying question, never the draft.
+    # Auto-released answers are shown immediately, with the case number as a fallback.
+    # Pending cases still return only an acknowledgement, never an unreleased draft.
+    if out.get("auto_released") and out.get("status") == "released":
+        return {"case_id": out["case_id"], "status": "released", "clarification": out.get("clarification") or "",
+                "auto_released": True, "answer": out.get("farmer_text"),
+                "message": "Your question was answered. Keep this case number if the network drops and you need to check it again."}
     return {"case_id": out["case_id"], "status": out["status"], "clarification": out["clarification"],
             "message": out["clarification"] or "Your question was sent to an extension officer for review."}
 
@@ -294,9 +305,12 @@ def farmer_view(case_id: int):
             return {"case_id": case_id, "status": "released", "answer": historic.get("farmer_text") or historic.get("final_text"),
                     "assessment_status": "legacy_unvalidated", "approved_by": historic.get("officer")}
         return {"case_id": case_id, "status": "review_required", "answer": None}
+    from agrireach import auto_release
+    auto = auto_release.is_auto_released_actor(row["officer"])
     return {"case_id": case_id, "status": "released", "answer": payload["farmer_text"],
-            "approved_by": row["officer"],
-            "approved_at": row["decided_at"]}
+            "approved_by": "Auto-released" if auto else row["officer"],
+            "approved_at": row["decided_at"],
+            "auto_released": auto}
 
 
 # --- Voice notes and channels (local simulator; WhatsApp and SMS only if enabled) -----------------------------
