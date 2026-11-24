@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from agrireach import db, knowledge, safety_gate
 from agrireach.api import app
 from agrireach.channels import service, simulator
+import officer_helpers
 
 ATTACKS = ["Put mancozeb on the leaves.",
     "Put mancozeb on the pods when they are mature.",
@@ -28,7 +29,7 @@ def test_round2_cannot_approve_acknowledge_release_or_deliver(text, judge_verdic
     cid = db.agent_upsert_case(con, status="pending_review", question="Scout maize",
         draft="Internal draft", sources=["APNI-SARI-2023-MAIZE:p18-scouting"])
     db.save_contact(con, cid, channel="simulator", sender_id="sim:round2")
-    token = db.add_officer(con, "QA")
+    token = officer_helpers.add_officer(con, "QA")
     args = dict(officer="QA", decision="approve", farmer_text=text, expected_revision=2)
     with pytest.raises(db.SafetyError) as blocked:
         db.officer_decide(con, cid, **args)

@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from agrireach import api, db, voice_script
 from agrireach.channels import service, simulator, stt, tts
 from agrireach.channels.base import mask_sender
+import officer_helpers
 
 CLIP = str(Path(__file__).parent / "fixtures/audio/en_harvest_tamale_piper.wav")
 SENDER = "sim:farmer-1"
@@ -110,7 +111,7 @@ def test_clarifying_question_goes_back_through_the_channel():
 def test_api_simulator_flow_and_officer_decision_delivers(monkeypatch):
     monkeypatch.setattr(stt, "default", lambda: FakeTranscriber("When should I harvest my soybean? I farm near Tamale."))
     c = TestClient(api.app)
-    h = {"Authorization": f"Bearer {db.add_officer(db.connect(), 'Ama Mensah')}"}
+    h = {"Authorization": f"Bearer {officer_helpers.add_officer(db.connect(), 'Ama Mensah')}"}
     assert c.post("/channels/simulator/inbound", data={"sender": "+233000000000", "text": "hi"}).status_code == 400
     with open(CLIP, "rb") as f:
         r = c.post("/channels/simulator/inbound", data={"sender": SENDER}, files={"audio": ("q.wav", f, "audio/wav")})

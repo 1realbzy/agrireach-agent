@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from agrireach import agent, db, farmer_reply as fr, llm
 from agrireach.api import app
+import officer_helpers
 
 run = lambda q, **k: asyncio.run(agent.run(q, use_fetch=False, **k))
 
@@ -40,7 +41,7 @@ def test_caveat_names_the_zone_the_passages_are_for_not_always_northern_ghana():
 
 
 def test_officer_is_warned_when_the_approved_farmer_text_drops_the_caveat():
-    h = {"Authorization": f"Bearer {db.add_officer(db.connect(), 'Ama Mensah')}"}
+    h = {"Authorization": f"Bearer {officer_helpers.add_officer(db.connect(), 'Ama Mensah')}"}
     c = TestClient(app)
     cid = c.post("/ask", json={"question": "When should I harvest soybean in Kumasi?"}).json()["case_id"]
     r = c.post(f"/officer/cases/{cid}/decision", headers=h, json=({
@@ -52,7 +53,7 @@ def test_officer_is_warned_when_the_approved_farmer_text_drops_the_caveat():
 
 
 def test_no_warning_when_the_caveat_is_kept():
-    h = {"Authorization": f"Bearer {db.add_officer(db.connect(), 'Ama Mensah')}"}
+    h = {"Authorization": f"Bearer {officer_helpers.add_officer(db.connect(), 'Ama Mensah')}"}
     c = TestClient(app)
     cid = c.post("/ask", json={"question": "When should I harvest soybean in Kumasi?"}).json()["case_id"]
     text = c.get(f"/officer/cases/{cid}", headers=h).json()["farmer_draft"]["text"]

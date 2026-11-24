@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from agrireach import api, db, farmer_reply
 from agrireach.channels import service, sms
 from tests.test_sms import CFG, FARMER, FakeAT, TWI_QUESTION, callback
+import officer_helpers
 
 EJURA_SMS = ("In the transition zone, plant major-season maize from mid-March to end of April (MoFA). In the transition "
              "zone, plant major-season maize from end of March to end of April (IITA). In the transition zone, plant "
@@ -64,7 +65,7 @@ def _sms_case(question="When should I plant maize in Ejura?"):
 
 
 def _officer():
-    tok = db.add_officer(db.connect(), "Ama Mensah")
+    tok = officer_helpers.add_officer(db.connect(), "Ama Mensah")
     return {"Authorization": f"Bearer {tok}"}
 
 

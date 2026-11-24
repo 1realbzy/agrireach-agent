@@ -150,7 +150,7 @@ def decide(con, case_id: int, *, officer: str, decision: str, edited_text=None,
             assessment = {"outcome": "review_required", "reason": "Preview and approve the exact spoken script; remove unsafe markup explicitly", "findings": [safety_gate.Finding("VOICE_APPROVAL", "", "Preview and approve the exact spoken script").to_dict()], "judge_status": "not_required"}
         else:
             script_text = script.text
-    credential = con.execute("SELECT token_sha256 FROM officers WHERE name=?", (officer,)).fetchone()
+    credential = con.execute("SELECT password_hash FROM officers WHERE name=?", (officer,)).fetchone()
     credential_hash = credential[0] if credential else None
     # Bind stable warning identity, not model explanation prose, which may change
     # between identical assessments. New sentences/rules/evidence still invalidate.
@@ -169,7 +169,7 @@ def decide(con, case_id: int, *, officer: str, decision: str, edited_text=None,
     try:
         con.execute("BEGIN IMMEDIATE")
         fresh = db.get_case(con, case_id)
-        current_credential = con.execute("SELECT token_sha256 FROM officers WHERE name=?", (officer,)).fetchone()
+        current_credential = con.execute("SELECT password_hash FROM officers WHERE name=?", (officer,)).fetchone()
         if fresh["status"] != row["status"] or (context(con, fresh) if approving else {"revision": fresh["revision"]}) != ctx or (current_credential[0] if current_credential else None) != credential_hash:
             raise db.GateError("stale_revision: assessment context changed")
         submission = con.execute("INSERT INTO advisory_submissions(case_id,revision,officer,farmer_text,officer_text,decision,note,created_at) VALUES (?,?,?,?,?,?,?,?)",

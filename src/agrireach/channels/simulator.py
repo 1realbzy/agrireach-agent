@@ -75,7 +75,7 @@ def officer_approve(case_id: int, officer: str, farmer_text: str, edited_text: s
     if not (farmer_text or "").strip():
         raise ValueError("farmer_text required: the officer approves the exact text the farmer will receive")
     con = db.connect()
-    if db.officer_for_token(con, token) != officer:
+    if db.officer_for_session(con, token) != officer:
         raise db.GateError("registered officer credential required")
     db.officer_decide(con, case_id, officer=officer, decision="edit_approve" if edited_text else "approve",
                       edited_text=edited_text, farmer_text=farmer_text, expected_revision=expected_revision, acknowledgement=acknowledgement, approved_voice_script=approved_voice_script)

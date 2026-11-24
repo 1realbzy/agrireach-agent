@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from agrireach import db, knowledge, safety_gate
 from agrireach.api import app
+import officer_helpers
 
 FIXTURES = json.loads((Path(__file__).parent / "fixtures/safety/frozen_cases.json").read_text())
 
@@ -31,7 +32,7 @@ def create_case(con):
     "Consult your local AEA for advice on the recommended fall army worm control pesticide in your area (APNI). Spray pesticide every week."])
 def test_original_api_bypasses_blocked(text):
     con = db.connect()
-    token = db.add_officer(con, "Ama")
+    token = officer_helpers.add_officer(con, "Ama")
     cid = create_case(con)
     response = TestClient(app).post(f"/officer/cases/{cid}/decision",
         headers={"Authorization": f"Bearer {token}"}, json={"decision": "approve", "farmer_text": text,
@@ -96,7 +97,7 @@ def test_simulator_cli_cannot_release_unsafe_text(monkeypatch, capsys):
     from agrireach.channels import simulator
     con = db.connect()
     cid = create_case(con)
-    token = db.add_officer(con, "Ama")
+    token = officer_helpers.add_officer(con, "Ama")
     db.save_contact(con, cid, channel="simulator", sender_id="sim:safety-test")
     monkeypatch.setenv("AGRIREACH_OFFICER_TOKEN", token)
     exit_code = simulator.main(["officer-approve", "--case", str(cid), "--officer", "Ama", "--revision",

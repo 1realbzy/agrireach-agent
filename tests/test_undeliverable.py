@@ -12,6 +12,7 @@ from agrireach import api, db
 from agrireach.channels import service, simulator, sms
 from agrireach.channels.base import OutboundMessage
 from tests.test_sms import CFG, FARMER, FakeAT
+import officer_helpers
 
 SENDER = "sim:farmer-u"
 Q = "When should I harvest soybean in Tamale?"
@@ -22,7 +23,7 @@ def _case():
 
 
 def _officer():
-    return {"Authorization": f"Bearer {db.add_officer(db.connect(), 'Ama Mensah')}"}
+    return {"Authorization": f"Bearer {officer_helpers.add_officer(db.connect(), 'Ama Mensah')}"}
 
 
 def test_opt_out_after_filing_makes_the_approved_case_undeliverable():
@@ -61,7 +62,7 @@ def test_retention_purge_after_filing_is_undeliverable_with_its_own_reason(monke
     later = (datetime.now(timezone.utc) + timedelta(days=31)).isoformat(timespec="seconds")
     monkeypatch.setenv("AGRIREACH_RETENTION_DAYS", "30")
     db.purge_old(con, now_ts=later)
-    out = simulator.officer_approve(cid, officer="Ama Mensah", farmer_text="Harvest.", token=db.add_officer(db.connect(), "Ama Mensah"), expected_revision=db.get_case(db.connect(), cid)["revision"])
+    out = simulator.officer_approve(cid, officer="Ama Mensah", farmer_text="Harvest.", token=officer_helpers.add_officer(db.connect(), "Ama Mensah"), expected_revision=db.get_case(db.connect(), cid)["revision"])
     assert out["ok"] is False
     assert db.get_case(con, cid)["status"] == "undeliverable"
     assert db.delivery_problem(con, cid) == "not sent: the number was removed by the retention purge"
@@ -79,7 +80,7 @@ def test_opted_out_marker_survives_a_later_purge(monkeypatch):
 
 def test_released_means_sent_for_channel_cases():
     cid = _case()
-    out = simulator.officer_approve(cid, officer="Ama Mensah", farmer_text="Harvest.", token=db.add_officer(db.connect(), "Ama Mensah"), expected_revision=db.get_case(db.connect(), cid)["revision"])
+    out = simulator.officer_approve(cid, officer="Ama Mensah", farmer_text="Harvest.", token=officer_helpers.add_officer(db.connect(), "Ama Mensah"), expected_revision=db.get_case(db.connect(), cid)["revision"])
     assert out["ok"] is True and db.get_case(db.connect(), cid)["status"] == "released"
 
 

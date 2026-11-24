@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import os
 import secrets
 import sqlite3
@@ -64,7 +65,7 @@ def connect(path: str | None = None) -> sqlite3.Connection:
           officer TEXT, decided_at TEXT, officer_note TEXT,
           created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS officers (
-          name TEXT PRIMARY KEY, token_sha256 TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL);
+          name TEXT PRIMARY KEY, email TEXT UNIQUE, password_hash TEXT, created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS tool_log (
           id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL,
           case_id INTEGER, actor TEXT NOT NULL, tool TEXT NOT NULL,
@@ -180,8 +181,10 @@ def reopen_case(con, case_id: int, *, officer: str, expected_revision: int, info
         active = con.execute("SELECT 1 FROM delivery_jobs j JOIN approvals a ON a.id=j.approval_id WHERE a.case_id=? AND j.state IN ('sending','unknown','accepted')", (case_id,)).fetchone()
         if active:
             raise GateError("Active or unresolved delivery must be reconciled before reopening")
+        # released is allowed only when no accepted/active delivery exists (checked above),
+        # so an officer can retract an auto-released web answer back into the review queue.
         changed = con.execute("UPDATE cases SET status='pending_review', revision=revision+1, updated_at=? "
-                              "WHERE id=? AND revision=? AND status IN ('needs_info','approved','not_delivered')",
+                              "WHERE id=? AND revision=? AND status IN ('needs_info','approved','not_delivered','released')",
                               (now(), case_id, expected_revision))
         if changed.rowcount != 1:
             raise GateError("stale_revision: reload the needs_info case")
@@ -192,24 +195,121 @@ def reopen_case(con, case_id: int, *, officer: str, expected_revision: int, info
     return dict(get_case(con, case_id))
 
 
-def add_officer(con, name: str) -> str:
-    """Register a named officer (or replace their sign-in) and return a new sign-in token. Only its SHA-256 is stored,
-    so the token is shown once (scripts/add_officer.py) and cannot be read back from the database."""
-    if not name or not name.strip():
+EMAIL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9._%+-]*[a-z0-9])?@[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$")
+SESSION_TTL = timedelta(hours=12)
+LOGIN_FAILURE_LIMIT = 5
+LOGIN_LOCKOUT = timedelta(minutes=15)
+
+
+def normalize_email(email: str) -> str:
+    return (email or "").strip().lower()
+
+
+def valid_email(email: str) -> bool:
+    return bool(EMAIL_RE.fullmatch(normalize_email(email)))
+
+
+def add_officer(con, name: str, email: str, password: str) -> None:
+    """Register a named officer, or update the same name's email and password.
+
+    The password is stored as an Argon2id hash only. Existing sessions for this
+    officer are revoked. Officers migrated from the retired token sign-in have
+    no email or password until this is called for their name.
+    """
+    from agrireach.passwords import MIN_LENGTH, hash_password
+    name = (name or "").strip()
+    email = normalize_email(email)
+    if not name:
         raise ValueError("officer name required")
-    token = secrets.token_urlsafe(24)
-    con.execute("INSERT INTO officers(name, token_sha256, created_at) VALUES (?,?,?) "
-                "ON CONFLICT(name) DO UPDATE SET token_sha256=excluded.token_sha256, created_at=excluded.created_at",
-                (name.strip(), _token_hash(token), now()))
+    if not valid_email(email):
+        raise ValueError("valid officer email required")
+    if len(password or "") < MIN_LENGTH:
+        raise ValueError(f"password must be at least {MIN_LENGTH} characters")
+    taken = con.execute("SELECT name FROM officers WHERE email=?", (email,)).fetchone()
+    if taken and taken["name"] != name:
+        raise ValueError("email already registered")
+    con.execute(
+        "INSERT INTO officers(name, email, password_hash, created_at) VALUES (?,?,?,?) "
+        "ON CONFLICT(name) DO UPDATE SET email=excluded.email, password_hash=excluded.password_hash",
+        (name, email, hash_password(password), now()),
+    )
+    con.execute("DELETE FROM officer_sessions WHERE officer_name=?", (name,))
     con.commit()
-    return token
+
+
+def issue_session(con, officer_name: str) -> tuple[str, str]:
+    """Issue a short-lived session bearer. Only its SHA-256 is stored; the token is returned once."""
+    token = secrets.token_urlsafe(32)
+    created = now()
+    expires = (datetime.now(timezone.utc) + SESSION_TTL).isoformat(timespec="seconds")
+    con.execute(
+        "INSERT INTO officer_sessions(token_sha256, officer_name, created_at, expires_at) VALUES (?,?,?,?)",
+        (_token_hash(token), officer_name, created, expires),
+    )
+    con.commit()
+    return token, expires
+
+
+def officer_for_session(con, token: str | None) -> str | None:
+    if not token:
+        return None
+    r = con.execute(
+        "SELECT officer_name, expires_at FROM officer_sessions WHERE token_sha256=?",
+        (_token_hash(token),),
+    ).fetchone()
+    if not r or r["expires_at"] <= now():
+        return None
+    return r["officer_name"]
 
 
 def officer_for_token(con, token: str | None) -> str | None:
+    """Alias for officer_for_session; the retired long-lived officer token is no longer accepted."""
+    return officer_for_session(con, token)
+
+
+def revoke_session(con, token: str | None) -> None:
     if not token:
-        return None
-    r = con.execute("SELECT name FROM officers WHERE token_sha256=?", (_token_hash(token),)).fetchone()
-    return r["name"] if r else None
+        return
+    con.execute("DELETE FROM officer_sessions WHERE token_sha256=?", (_token_hash(token),))
+    con.commit()
+
+
+def login_locked(con, email: str) -> bool:
+    email = normalize_email(email)
+    row = con.execute("SELECT locked_until FROM officer_login_lockouts WHERE email=?", (email,)).fetchone()
+    return bool(row and row["locked_until"] and row["locked_until"] > now())
+
+
+def login_officer(con, email: str, password: str) -> tuple[str, str, str] | None:
+    """Verify email and password. Returns (officer_name, session_token, expires_at) or None.
+
+    Failures, unknown emails, token-only migrated accounts, and lockouts all return
+    None. A dummy hash is verified when no password is stored so the path is similar.
+    """
+    from agrireach.passwords import verify_password
+    email = normalize_email(email)
+    locked = login_locked(con, email)
+    row = con.execute("SELECT name, password_hash FROM officers WHERE email=?", (email,)).fetchone() if email else None
+    stored = row["password_hash"] if row else None
+    ok = verify_password(password or "", stored) and not locked
+    if ok:
+        con.execute("DELETE FROM officer_login_lockouts WHERE email=?", (email,))
+        con.commit()
+        token, expires = issue_session(con, row["name"])
+        return row["name"], token, expires
+    # Record a failure against the attempted email, including unknown addresses,
+    # so lockout does not reveal whether an account exists.
+    if email:
+        existing = con.execute("SELECT failures FROM officer_login_lockouts WHERE email=?", (email,)).fetchone()
+        failures = (existing["failures"] if existing else 0) + 1
+        locked_until = (datetime.now(timezone.utc) + LOGIN_LOCKOUT).isoformat(timespec="seconds") if failures >= LOGIN_FAILURE_LIMIT else None
+        con.execute(
+            "INSERT INTO officer_login_lockouts(email, failures, locked_until, updated_at) VALUES (?,?,?,?) "
+            "ON CONFLICT(email) DO UPDATE SET failures=excluded.failures, locked_until=excluded.locked_until, updated_at=excluded.updated_at",
+            (email, failures, locked_until, now()),
+        )
+        con.commit()
+    return None
 
 
 def release_to_farmer(con, case_id: int, actor: str = "system") -> dict:

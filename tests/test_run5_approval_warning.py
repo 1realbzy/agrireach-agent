@@ -8,12 +8,13 @@ from fastapi.testclient import TestClient
 
 from agrireach import db, farmer_reply as fr
 from agrireach.api import app
+import officer_helpers
 
 Q = "Fall armyworm is eating my maize in Kintampo. What pesticide should I use?"
 
 
 def officer():
-    return {"Authorization": f"Bearer {db.add_officer(db.connect(), 'Ama Mensah')}"}
+    return {"Authorization": f"Bearer {officer_helpers.add_officer(db.connect(), 'Ama Mensah')}"}
 
 
 @pytest.mark.parametrize("decision", ["approve", "edit_approve"])

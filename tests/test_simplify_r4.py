@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from agrireach import approval, db, instruction_policy, judge, knowledge, safety_gate
 from agrireach.api import app
+import officer_helpers
 
 HARVEST = knowledge.reference("APNI-SARI-2023:harvest")
 MUST_HOLD = [
@@ -109,7 +110,7 @@ def test_retry_assessment_endpoint_is_read_only():
     con = db.connect()
     cid = db.agent_upsert_case(con, status="pending_review", question="When do I harvest soybean?",
                                draft="Internal draft", sources=["APNI-SARI-2023:harvest"])
-    token = db.add_officer(con, "QA")
+    token = officer_helpers.add_officer(con, "QA")
     response = TestClient(app).post(f"/officer/cases/{cid}/assess", headers={"Authorization": f"Bearer {token}"},
                                     json={"farmer_text": "Pour it on the leaves."})
     assert response.status_code == 200

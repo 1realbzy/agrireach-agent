@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from agrireach import agent, db, farmer_reply as fr, knowledge, llm
 from agrireach.api import app
 from agrireach.channels import simulator, sms
+import officer_helpers
 
 FAW_IDS = ["APNI-SARI-2023-MAIZE:p18-scouting", "APNI-SARI-2023-MAIZE:p20-faw-prevention",
            "APNI-SARI-2023-MAIZE:p20-faw-control"]
@@ -141,7 +142,7 @@ def test_rule_rewrite_cut_is_also_named(monkeypatch):
 # --- 3. claim 1: added at proposal time only; what is approved is what is sent ---
 
 def officer():
-    return {"Authorization": f"Bearer {db.add_officer(db.connect(), 'Ama Mensah')}"}
+    return {"Authorization": f"Bearer {officer_helpers.add_officer(db.connect(), 'Ama Mensah')}"}
 
 
 def sms_case(c):

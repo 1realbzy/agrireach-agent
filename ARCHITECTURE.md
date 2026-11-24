@@ -100,12 +100,16 @@ A favourable judge verdict never overrides a deterministic hold.
 
 ## Officer approval binding (`approval.py`)
 
-Officers sign in with a bearer token from `scripts/add_officer.py`; only its SHA-256 hash is stored. Approval needs the exact farmer text, the officer's confirmation that they checked it, and the current case revision.
+Officers sign in with email and password (`scripts/add_officer.py` stores an Argon2id hash only; `POST /officer/login` issues a short-lived session bearer, stored as SHA-256). Approval needs the exact farmer text, the officer's confirmation that they checked it, and the current case revision. The approval fingerprint binds the officer's password hash, not the session.
 
 1. `context()` snapshots the case, the full text of its sources, the farmer contact, `POLICY_VERSION` and the voice setting.
 2. The assessment runs before any write lock, so a slow model call doesn't block other cases.
 3. Inside `BEGIN IMMEDIATE`, the snapshot and the officer credential are checked again. If anything changed, the officer must reload.
 4. The submission, the assessment and the approval are written together. The approval payload holds the farmer text, officer text, context, assessment and a binding fingerprint. Database triggers make approvals, submissions, assessments and audit events immutable.
+
+## Routine auto-release (`auto_release.py`)
+
+Off by default (`AGRIREACH_AUTO_RELEASE` unset). The agent graph still only files `draft` or `pending_review`; it has no path to approve or release. After the graph (or after a channel queues a contact), `auto_release.consider()` may release a case, but only when the setting is on and every conservative rule holds: the topic is on a planting/harvest/spacing allow-list, the draft is a real model draft, the existing `assess_candidate()` gate returns `pass` with no findings, and the claim-check judge actually ran and supported every line. A judge that does not run, errors or times out fails closed to the officer queue, as does any safety flag, source conflict, urgent case or excluded topic (pesticides, doses, health, money). Auto-release writes the same `advisory_submissions`, `safety_assessments`, `approvals` and `audit_events` rows as an officer approval, with actor `auto-release`. The officer can inspect that audit and retract a released case that has no accepted delivery (`reopen_case`).
 
 ## Delivery (`approval.release()`, `delivery.py`, `channels/`)
 

@@ -1,0 +1,15 @@
+# Theme tokens adapted from DESIGN.md (Nature Distilled via https://designmd.app/library/nature-distilled).
+# Leaf green is darkened for contrast; cream background and soil-brown text keep the warm palette readable on a recording.
+[theme]
+base = "light"
+primaryColor = "#2D5A27"
+backgroundColor = "#F5F0E1"
+secondaryBackgroundColor = "#FFF9F0"
+textColor = "#2C2118"
+font = "sans serif"
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"

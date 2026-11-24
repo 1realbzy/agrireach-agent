@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from agrireach import api, db
 from agrireach.channels import service, simulator, sms
 from tests.test_sms import CFG, FARMER, FakeAT, callback
+import officer_helpers
 
 
 class SwitchableAT(FakeAT):
@@ -37,7 +38,7 @@ def _setup(monkeypatch):
     monkeypatch.setattr(service, "configured_channels", lambda: {"sms": ch, "simulator": simulator.SimulatorChannel()})
     item = sms.parse(urlencode(callback("When should I harvest soybean in Tamale?")).encode())
     cid = asyncio.run(sms.process(CFG, [item], channel=ch))[0]["case_id"]
-    tok = db.add_officer(db.connect(), "Ama Mensah")
+    tok = officer_helpers.add_officer(db.connect(), "Ama Mensah")
     return at, cid, {"Authorization": f"Bearer {tok}"}, TestClient(api.app)
 
 

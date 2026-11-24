@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from agrireach import agent, db, farmer_reply, knowledge, rainfall, season
+import officer_helpers
 
 FIX = Path(__file__).parent / "fixtures" / "rainfall"
 run = lambda q, **k: asyncio.run(agent.run(q, use_fetch=False, **k))
@@ -186,7 +187,7 @@ def test_reproposed_sms_keeps_the_prompt_and_never_carries_it(monkeypatch):
     from agrireach import api
     _received_on(monkeypatch, "2026-10-25T09:00:00+00:00")
     out = run(KUMASI_MINOR)
-    h = {"Authorization": f"Bearer {db.add_officer(db.connect(), 'Ama Mensah')}"}
+    h = {"Authorization": f"Bearer {officer_helpers.add_officer(db.connect(), 'Ama Mensah')}"}
     r = TestClient(api.app).post(f"/officer/cases/{out['case_id']}/farmer-draft", json={"officer_text": out["draft"]},
                                  headers=h)
     fd = r.json()

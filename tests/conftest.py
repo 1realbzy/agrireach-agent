@@ -20,8 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 def isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/test.db")
     monkeypatch.setenv("AGRIREACH_SOURCE_CHECK", "0")  # no network in unit tests
-    for k in ("LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY", "AGRIREACH_JUDGE_MODEL"):
-        monkeypatch.delenv(k, raising=False)  # tests run in labelled offline stub mode
+    for k in ("LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY", "AGRIREACH_JUDGE_MODEL", "AGRIREACH_AUTO_RELEASE"):
+        monkeypatch.delenv(k, raising=False)  # tests run in labelled offline stub mode; auto-release stays off
     monkeypatch.setenv("AGRIREACH_MEDIA_DIR", str(tmp_path / "media"))
     monkeypatch.setenv("AGRIREACH_OUTBOX", str(tmp_path / "outbox"))
     monkeypatch.setenv("AGRIREACH_CONSENT", "0")  # consent flow has its own tests (test_consent.py) that turn it on

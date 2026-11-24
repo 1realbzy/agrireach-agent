@@ -2,6 +2,7 @@
 import pytest
 
 from agrireach import approval, knowledge, safety_gate
+import officer_helpers
 
 
 @pytest.mark.parametrize("text", [
@@ -60,7 +61,7 @@ def test_authenticated_reconciliation_single_use():
     db.release_to_farmer(con, cid)
     job, claim = delivery.claim(con, cid)
     delivery.complete(con, cid, job, claim, "unknown")
-    token = db.add_officer(con, "Ama")
+    token = officer_helpers.add_officer(con, "Ama")
     client = TestClient(app)
     url = f"/officer/delivery-jobs/{job}/reconcile"
     body = {"accepted": False, "provider_evidence": "Verified sandbox nonacceptance record QA-1"}
@@ -125,7 +126,7 @@ def test_model_independent_voice_note_approval():
         transcriber=FakeTranscriber("When should I harvest my soybean? I farm near Tamale.")))
     con = db.connect()
     row = db.get_case(con, out["case_id"])
-    token = db.add_officer(con, "QA Officer")
+    token = officer_helpers.add_officer(con, "QA Officer")
     # The officer chooses complete source text, independently of model drafting.
     text = "Harvest when 9 out of 10 pods are mature."
     result = simulator.officer_approve(row["id"], "QA Officer", text,
@@ -143,7 +144,7 @@ def test_product_hold_survives_api_db_release_delivery(monkeypatch):
     cid = db.agent_upsert_case(con, status="pending_review", question="Weeds in maize", draft="draft",
                                sources=["APNI-SARI-2023-MAIZE:p18-scouting"])
     db.save_contact(con, cid, channel="simulator", sender_id="sim:c1")
-    token = db.add_officer(con, "QA")
+    token = officer_helpers.add_officer(con, "QA")
     body = {"decision": "approve", "farmer_text": "Use Gramoxone on the weeds.",
             "expected_revision": 2, "confirmed": True}
     client = TestClient(app)
@@ -168,7 +169,7 @@ def test_acknowledgement_binding_ignores_explanation_wording(monkeypatch):
     import json
     from agrireach import db, judge
     con = db.connect()
-    db.add_officer(con, "QA")
+    officer_helpers.add_officer(con, "QA")
     cid = db.agent_upsert_case(con, status="pending_review", question="maize", draft="draft",
                                sources=["APNI-SARI-2023-MAIZE:p18-scouting"])
     explanations = iter(["First explanation", "Same concern, different prose"])

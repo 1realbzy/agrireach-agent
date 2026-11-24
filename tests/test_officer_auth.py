@@ -6,12 +6,13 @@ from fastapi.testclient import TestClient
 
 from agrireach import db
 from agrireach.api import app
+import officer_helpers
 
 c = TestClient(app)
 
 
 def _officer(name="Ama Mensah"):
-    return db.add_officer(db.connect(), name)  # returns the one-time token
+    return officer_helpers.add_officer(db.connect(), name)  # returns a session bearer
 
 
 def _case():
@@ -53,6 +54,11 @@ def test_tokens_are_not_stored_in_clear():
     con = db.connect()
     dump = "\n".join(con.iterdump())
     assert tok not in dump
+    assert officer_helpers.TEST_PASSWORD not in dump
+    row = con.execute("SELECT email, password_hash FROM officers WHERE name=?", ("Ama Mensah",)).fetchone()
+    assert row["email"] == "ama.mensah@agrireach.test"
+    assert row["password_hash"].startswith("$argon2")
+    assert officer_helpers.TEST_PASSWORD not in row["password_hash"]
 
 
 def test_concurrent_approvals_only_one_wins():

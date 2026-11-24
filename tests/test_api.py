@@ -2,12 +2,13 @@ from fastapi.testclient import TestClient
 
 from agrireach import db
 from agrireach.api import app
+import officer_helpers
 
 c = TestClient(app)
 
 
 def test_end_to_end_officer_gate():
-    h = {"Authorization": f"Bearer {db.add_officer(db.connect(), 'Ama Mensah')}"}
+    h = {"Authorization": f"Bearer {officer_helpers.add_officer(db.connect(), 'Ama Mensah')}"}
     r = c.post("/ask", json={"question": "When should I harvest soybean in Tamale?"}).json()
     cid = r["case_id"]
     assert c.get(f"/farmer/cases/{cid}").json()["answer"] is None

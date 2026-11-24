@@ -6,13 +6,14 @@ from fastapi.testclient import TestClient
 
 from agrireach import db, farmer_reply as fr, knowledge
 from agrireach.api import app
+import officer_helpers
 
 Q = "Fall armyworm is eating my maize in Kintampo. What pesticide should I use?"
 PS = [knowledge.reference(i) for i in ["APNI-SARI-2023-MAIZE:p20-faw-control", "APNI-SARI-2023-MAIZE:p18-scouting"]]
 
 
 def officer():
-    return {"Authorization": f"Bearer {db.add_officer(db.connect(), 'Ama Mensah')}"}
+    return {"Authorization": f"Bearer {officer_helpers.add_officer(db.connect(), 'Ama Mensah')}"}
 
 
 def strip_safety(t):

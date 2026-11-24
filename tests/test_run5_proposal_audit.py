@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from agrireach import agent, db, farmer_reply as fr, judge, knowledge, llm
 from agrireach.api import app
+import officer_helpers
 
 F1_Q = "Adaklu maize farmer planted late Feb, saw worms mid-March, sprayed the recommended chemicals with no effect."
 DRAFT = "Scout the maize field at least once a week [APNI-SARI-2023-MAIZE:p18-scouting]."
@@ -79,7 +80,7 @@ def test_accepted_model_sms_is_audited_as_model_path(monkeypatch):
 
 
 def test_officer_re_proposal_is_audited_with_the_officer_as_actor():
-    h = {"Authorization": f"Bearer {db.add_officer(db.connect(), 'Ama Mensah')}"}
+    h = {"Authorization": f"Bearer {officer_helpers.add_officer(db.connect(), 'Ama Mensah')}"}
     c = TestClient(app)
     cid = c.post("/ask", json={"question": "Fall armyworm is eating my maize in Kintampo. What pesticide?"}).json()[
         "case_id"]
